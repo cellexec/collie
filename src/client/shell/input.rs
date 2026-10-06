@@ -102,6 +102,27 @@ impl ClientShellState {
         self.host_reports_key_releases = reports;
     }
 
+    pub(crate) fn set_host_reports_all_keys(&mut self, reports_all: bool) {
+        self.host_reports_all_keys = reports_all;
+    }
+
+    /// While the pane asks for every key as an escape code, committed text
+    /// (IME, compose) must reach it as text, not as invented key reports.
+    /// On a Kitty host switched to report-all, typed keys arrive as reports,
+    /// so any plain text is a commit (kitty sends those as text too). A legacy
+    /// host sends both as plain text; non-ASCII text has no key in the
+    /// keyboard model, so only that is treated as a commit there.
+    fn host_text_commit(&self, key: &crate::input::TerminalKey) -> Option<String> {
+        if !self.host_reports_all_keys || key.kind != KeyEventKind::Press {
+            return None;
+        }
+        let plain_text = key
+            .vt_bytes()
+            .is_some_and(|bytes| bytes.first().is_some_and(|byte| *byte != 0x1b));
+        let text = key.generated_text.as_ref().filter(|_| plain_text)?;
+        (self.host_reports_key_releases || !text.is_ascii()).then(|| text.clone())
+    }
+
     pub(crate) fn set_host_erase_byte(&mut self, erase: Option<u8>) {
         self.host_erase_is_ctrl_h = erase == Some(0x08);
     }
@@ -199,6 +220,13 @@ impl ClientShellState {
             outcome.repaint = true;
         }
         for event in events {
+            let event = match event {
+                RawInputEvent::Key(key) => match self.host_text_commit(&key) {
+                    Some(text) => RawInputEvent::Text(crate::input::TextCommit::new(text)),
+                    None => RawInputEvent::Key(key),
+                },
+                other => other,
+            };
             if self.handle_machine_badge_event(&event, &mut outcome) {
                 continue;
             }
@@ -406,6 +434,12 @@ impl ClientShellState {
 
     fn release_input_leases(&mut self, outcome: &mut ClientShellInput) {
         for lease in self.input_leases.remove_source(LOCAL_INPUT_SOURCE) {
+            // Text (typed or committed by an IME) reached the pane as text, not as
+            // a key press, so there is no press to release. IME commits never get
+            // a host release, and inventing one per character is noise.
+            if lease.key.generated_text.is_some() && lease.key.physical_key_id().is_none() {
+                continue;
+            }
             self.push_pane_key(
                 lease.target,
                 lease.key.with_kind(KeyEventKind::Release),

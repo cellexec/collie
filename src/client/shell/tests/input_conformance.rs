@@ -280,10 +280,14 @@ struct HerdrPath {
     runtime: crate::terminal::TerminalRuntime,
     rx: tokio::sync::mpsc::Receiver<bytes::Bytes>,
     host: HostProfile,
+    host_reports_all: bool,
 }
 
 impl HerdrPath {
     fn new(host: HostProfile, app_output: &[u8]) -> Self {
+        // Mirrors the client: report-all is pushed to the host while the pane
+        // asks for it (`HostProfile::setup` picks 31 for those panes).
+        let host_reports_all = matches!(app_output, b"\x1b[>11u" | b"\x1b[>15u" | b"\x1b[>31u");
         let (runtime, mut rx) =
             crate::terminal::TerminalRuntime::test_with_channel_and_scrollback_bytes(
                 80, 24, 0, b"", 4096,
@@ -291,18 +295,20 @@ impl HerdrPath {
         runtime.test_process_pty_bytes(app_output);
         while rx.try_recv().is_ok() {}
         Self {
-            state: Self::fresh_state(host),
+            state: Self::fresh_state(host, host_reports_all),
             framer: Self::fresh_framer(host),
             runtime,
             rx,
             host,
+            host_reports_all,
         }
     }
 
-    fn fresh_state(host: HostProfile) -> ClientShellState {
+    fn fresh_state(host: HostProfile, host_reports_all: bool) -> ClientShellState {
         let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
         // Mirrors the client: Herdr pushes Kitty event types on Kitty hosts.
         state.set_host_reports_key_releases(host == HostProfile::Kitty);
+        state.set_host_reports_all_keys(host_reports_all);
         state.set_snapshot(Box::new(snapshot()));
         state.set_pane_surface(surface());
         state
@@ -371,7 +377,7 @@ impl HerdrPath {
     }
 
     fn reset_client(&mut self) {
-        self.state = Self::fresh_state(self.host);
+        self.state = Self::fresh_state(self.host, self.host_reports_all);
         self.framer = Self::fresh_framer(self.host);
     }
 
@@ -1217,6 +1223,53 @@ fn reporter_split_captures_decode_like_the_unsplit_input() {
 
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
+async fn ime_committed_text_reaches_every_pane_mode_exactly_once() {
+    // IME commits (CJK, Korean syllables) arrive as plain UTF-8 text on every
+    // host, with no key releases. Split reads can cut inside a character.
+    // (Spaces between words are the space key, not part of a commit.)
+    let text = "日本語한국어中文";
+    let bytes = text.as_bytes();
+    for host in [HostProfile::Kitty, HostProfile::Legacy] {
+        for &(pane_name, pane_mode) in PANE_MODES {
+            for cut in [None, Some(1), Some(4), Some(bytes.len() - 2)] {
+                let mut herdr = HerdrPath::new(host, pane_mode);
+                let got = match cut {
+                    None => herdr.feed(bytes),
+                    Some(cut) => {
+                        let mut chunks = herdr.framer.push(&bytes[..cut]);
+                        chunks.extend(herdr.framer.push(&bytes[cut..]));
+                        for _ in 0..3 {
+                            chunks.extend(herdr.framer.flush_timeout());
+                        }
+                        let outcomes = chunks
+                            .iter()
+                            .map(|chunk| herdr.state.handle_input_bytes(chunk))
+                            .collect();
+                        herdr.deliver(outcomes)
+                    }
+                }
+                .expect("text reaches the pane");
+                assert_eq!(
+                    String::from_utf8_lossy(&got),
+                    text,
+                    "{} {pane_name} cut {cut:?}",
+                    host.name()
+                );
+                // Losing focus must not replay releases for committed text.
+                let after = herdr.feed(b"\x1b[O").unwrap_or_default();
+                assert!(
+                    !String::from_utf8_lossy(&after).contains(":3u"),
+                    "{} {pane_name}: focus loss sent {}",
+                    host.name(),
+                    show(&after)
+                );
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
 async fn lab_kitty_function_keys_reach_the_pane() {
     // #4403, recorded from kitty 0.47.1 through real key presses: with Herdr's
     // keyboard flags pushed, unmodified F1, F2 and F4 arrive as bare CSI P/Q/S.
@@ -1237,17 +1290,28 @@ async fn lab_kitty_function_keys_reach_the_pane() {
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn reporter_text_key_release_reaches_kitty_event_pane() {
-    // #4184, kitty 0.48.2 host: `a` arrives as text, its release as a report;
-    // the pane app asked for event types and all keys (`CSI > 11 u`).
-    let mut herdr = HerdrPath::new(HostProfile::Kitty, b"\x1b[>11u");
-    let press = herdr.feed(b"a").expect("press reaches the pane");
-    let release = herdr
-        .feed(b"\x1b[97;1:3u")
-        .expect("release reaches the pane");
-    assert_eq!(
-        show(&[press, release].concat()),
-        show(b"\x1b[97u\x1b[97;1:3u")
-    );
+    // #4184: an app asking for event types gets typed-letter releases.
+    // (pane mode, kitty host bytes for `a` press then release, pane bytes)
+    for (pane_mode, press, want) in [
+        // Event types only: Herdr keeps the host at flags 7, so the press
+        // arrives as text and its release as a report (the reporter's capture).
+        (&b"\x1b[>3u"[..], &b"a"[..], &b"a\x1b[97;1:3u"[..]),
+        // All keys too: Herdr switches the host to report-all (31), so kitty
+        // reports the press with its text.
+        (b"\x1b[>11u", b"\x1b[97;;97u", b"\x1b[97u\x1b[97;1:3u"),
+    ] {
+        let mut herdr = HerdrPath::new(HostProfile::Kitty, pane_mode);
+        let press = herdr.feed(press).expect("press reaches the pane");
+        let release = herdr
+            .feed(b"\x1b[97;1:3u")
+            .expect("release reaches the pane");
+        assert_eq!(
+            show(&[press, release].concat()),
+            show(want),
+            "{}",
+            show(pane_mode)
+        );
+    }
 }
 
 #[cfg(unix)]

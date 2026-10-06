@@ -18,6 +18,12 @@ impl<Source> InputLeaseKey<Source> {
     }
 }
 
+/// A press that arrived as text (typed, or committed by an IME) rather than as
+/// a native key record.
+fn is_text_press(key: &TerminalKey) -> bool {
+    key.generated_text.is_some() && key.physical_key_id().is_none()
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct ForwardedInputLease<Target> {
     pub(crate) target: Target,
@@ -98,6 +104,9 @@ where
         }
         if let Some(target) = target {
             self.insert_forwarded(lease_key, target, key.clone());
+            if is_text_press(key) {
+                self.prune_unreleased_text_presses(lease_key);
+            }
             return RepeatPlan::Ignore;
         }
         if !self.leases.contains_key(&lease_key) {
@@ -175,6 +184,28 @@ where
         allowed
     }
 
+    /// IME commits are text presses that never get a release. Once more are
+    /// outstanding than anyone can hold, the older ones are such commits: drop
+    /// them so they cannot pile up or capture a later release.
+    fn prune_unreleased_text_presses(&mut self, newest: InputLeaseKey<Source>) {
+        const MAX_HELD_TEXT_PRESSES: usize = 10;
+        let stale: Vec<_> = self
+            .leases
+            .iter()
+            .filter(|(lease_key, lease)| {
+                lease_key.source == newest.source
+                    && **lease_key != newest
+                    && matches!(lease, InputLease::Forwarded(lease) if is_text_press(&lease.key))
+            })
+            .map(|(lease_key, _)| *lease_key)
+            .collect();
+        if stale.len() >= MAX_HELD_TEXT_PRESSES {
+            for lease_key in stale {
+                self.leases.remove(&lease_key);
+            }
+        }
+    }
+
     /// The forwarded text press from `source` when it is the only key held.
     /// A text press ("?") names a character, not a key, so its release ("/"
     /// after Shift was let go) cannot be matched by identity. When it is the
@@ -191,8 +222,8 @@ where
         let (Some((lease_key, lease)), None) = (held.next(), held.next()) else {
             return None;
         };
-        let is_text_press = matches!(lease, InputLease::Forwarded(lease)
-            if lease.key.generated_text.is_some() && lease.key.physical_key_id().is_none());
+        let is_text_press =
+            matches!(lease, InputLease::Forwarded(lease) if is_text_press(&lease.key));
         let lease_key = *lease_key;
         is_text_press
             .then(|| self.leases.remove(&lease_key))
