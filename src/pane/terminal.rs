@@ -2022,60 +2022,53 @@ impl GhosttyPaneTerminal {
             .unwrap_or((true, 0))
     }
 
+    /// libghostty encodes every key for the pane's live keyboard modes. The only
+    /// Herdr policy is the legacy shell table for panes that negotiated nothing.
+    ///
+    /// The terminal lock is held until the key and its grouped repeats are
+    /// encoded, so a mode change from the PTY reader cannot split the decision
+    /// (legacy table) from the encoder's configuration. Lock order matches
+    /// output processing: terminal core, then key encoder.
     pub fn encode_terminal_key(&self, key: crate::input::TerminalKey) -> Vec<u8> {
+        let Ok(core) = self.core.lock() else {
+            return Vec::new();
+        };
+        let negotiated_nothing = keyboard_negotiated_nothing(&core.terminal);
         #[cfg(windows)]
-        if self
-            .core
-            .lock()
-            .is_ok_and(|core| keyboard_negotiated_nothing(&core.terminal))
-        {
+        if negotiated_nothing {
             if let Some(bytes) = crate::platform::encode_windows_conpty_fallback(&key) {
                 return bytes;
             }
         }
+        let Ok(mut encoder) = self.key_encoder.lock() else {
+            return Vec::new();
+        };
 
         let repeat_count = key.repeat_count;
         let first = key.with_repeat_count(1);
-        let mut bytes = self.encode_terminal_key_once(first.clone());
+        let mut bytes = encode_key_with(&mut encoder, negotiated_nothing, first.clone());
         if repeat_count > 1 && first.kind != crossterm::event::KeyEventKind::Release {
             let repeated = first.with_kind(crossterm::event::KeyEventKind::Repeat);
-            let repeated_bytes = self.encode_terminal_key_once(repeated);
+            let repeated_bytes = encode_key_with(&mut encoder, negotiated_nothing, repeated);
             for _ in 1..repeat_count {
                 bytes.extend_from_slice(&repeated_bytes);
             }
         }
+        drop(encoder);
+        drop(core);
         bytes
     }
 
-    /// libghostty encodes every key for the pane's live keyboard modes. The only
-    /// Herdr policy is the legacy shell table for panes that negotiated nothing.
+    #[cfg(test)]
     fn encode_terminal_key_once(&self, key: crate::input::TerminalKey) -> Vec<u8> {
         let Ok(core) = self.core.lock() else {
             return Vec::new();
         };
         let negotiated_nothing = keyboard_negotiated_nothing(&core.terminal);
-        drop(core);
-        // Before the shell table: Super+Enter must not become a plain Enter.
-        if negotiated_nothing && legacy_super_chord(&key) {
-            debug!(code = ?key.code, "super chord in a pane without keyboard protocol; not forwarded");
-            return Vec::new();
-        }
-        let key = if negotiated_nothing {
-            legacy_shell_key(key)
-        } else {
-            key
-        };
-        let Some(event) = ghostty_key_event_from_terminal_key(&key, negotiated_nothing) else {
-            debug!(code = ?key.code, modifiers = ?key.modifiers, "key has no libghostty equivalent; not forwarded");
-            return Vec::new();
-        };
         let Ok(mut encoder) = self.key_encoder.lock() else {
             return Vec::new();
         };
-        encoder.encode(&event).unwrap_or_else(|err| {
-            warn!(?err, code = ?key.code, "libghostty key encoding failed");
-            Vec::new()
-        })
+        encode_key_with(&mut encoder, negotiated_nothing, key)
     }
 
     pub(crate) fn encode_mouse_button(
@@ -2483,6 +2476,33 @@ impl GhosttyPaneTerminal {
             })
             .unwrap_or(TerminalDirtyPatchOutcome::Fallback)
     }
+}
+
+/// Encode one key with an encoder configured for the same mode snapshot as
+/// `negotiated_nothing`.
+fn encode_key_with(
+    encoder: &mut crate::ghostty::KeyEncoder,
+    negotiated_nothing: bool,
+    key: crate::input::TerminalKey,
+) -> Vec<u8> {
+    // Before the shell table: Super+Enter must not become a plain Enter.
+    if negotiated_nothing && legacy_super_chord(&key) {
+        debug!(code = ?key.code, "super chord in a pane without keyboard protocol; not forwarded");
+        return Vec::new();
+    }
+    let key = if negotiated_nothing {
+        legacy_shell_key(key)
+    } else {
+        key
+    };
+    let Some(event) = ghostty_key_event_from_terminal_key(&key, negotiated_nothing) else {
+        debug!(code = ?key.code, modifiers = ?key.modifiers, "key has no libghostty equivalent; not forwarded");
+        return Vec::new();
+    };
+    encoder.encode(&event).unwrap_or_else(|err| {
+        warn!(?err, code = ?key.code, "libghostty key encoding failed");
+        Vec::new()
+    })
 }
 
 /// True when the pane's app asked for no enhanced keyboard protocol (no Kitty
