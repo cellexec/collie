@@ -252,6 +252,19 @@ fn legacy_shell_exception(pane_mode: &[u8], key: &str, mods: u16) -> Option<Vec<
         ("m", ghostty::MOD_CTRL) => b"\r",
         ("i", ghostty::MOD_CTRL) | ("tab", ghostty::MOD_CTRL) => b"\t",
         ("[", ghostty::MOD_CTRL) => b"\x1b",
+        // Real terminals (lab: Alacritty, WezTerm) send the control byte.
+        (letter, m)
+            if m == ghostty::MOD_CTRL | ghostty::MOD_SHIFT
+                && letter.len() == 1
+                && letter.as_bytes()[0].is_ascii_lowercase() =>
+        {
+            let control = [letter.as_bytes()[0] & 0x1f];
+            return Some(if alt {
+                [b"\x1b".as_slice(), &control].concat()
+            } else {
+                control.to_vec()
+            });
+        }
         _ => return None,
     };
     Some(if alt {

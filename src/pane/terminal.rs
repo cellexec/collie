@@ -5002,6 +5002,29 @@ mod tests {
     }
 
     #[test]
+    fn ctrl_shift_letters_reach_plain_shells_as_control_bytes() {
+        // Lab capture: Alacritty and WezTerm (with or without Kitty keyboard)
+        // send 0x01 for Ctrl+Shift+A; Ghostty's CSI u prints as garbage in a shell.
+        for (host_bytes, plain, kitty) in [
+            ("\x1b[97;6u", &b"\x01"[..], &b"\x1b[97;6u"[..]),
+            ("\x1b[65;5u", b"\x01", b"\x1b[97;6u"),
+            ("\x1b[97;8u", b"\x1b\x01", b"\x1b[97;8u"),
+        ] {
+            let key = crate::input::parse_terminal_key_sequence(host_bytes).expect("kitty key");
+            assert_eq!(
+                test_encode_key_for_app(b"", key.clone()),
+                plain,
+                "{host_bytes:?} in a plain shell"
+            );
+            assert_eq!(
+                test_encode_key_for_app(b"\x1b[>1u", key),
+                kitty,
+                "{host_bytes:?} in a Kitty pane"
+            );
+        }
+    }
+
+    #[test]
     fn legacy_alt_prefixes_the_produced_non_ascii_text() {
         // A legacy host's Alt+Shift+\u{f6}. libghostty on macOS would prefix the
         // unshifted "\u{f6}" instead.

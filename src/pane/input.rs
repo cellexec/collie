@@ -118,6 +118,24 @@ pub(super) fn legacy_shell_key(key: crate::input::TerminalKey) -> crate::input::
             KeyCode::Tab
         }
         (KeyCode::Char('['), KeyModifiers::CONTROL) => KeyCode::Esc,
+        // Ghostty reports Ctrl+Shift+letter as CSI u; every terminal sends the
+        // plain control byte, which is all a shell can read.
+        // WezTerm names it Ctrl plus an uppercase letter, without Shift.
+        (KeyCode::Char(c), chord)
+            if chord - KeyModifiers::SHIFT == KeyModifiers::CONTROL
+                && c.is_ascii_alphabetic()
+                && (chord.contains(KeyModifiers::SHIFT) || c.is_ascii_uppercase()) =>
+        {
+            // Ctrl+I and Ctrl+M then follow the rows above (Tab, Enter).
+            return legacy_shell_key(
+                crate::input::TerminalKey::new(
+                    KeyCode::Char(c.to_ascii_lowercase()),
+                    KeyModifiers::CONTROL | alt,
+                )
+                .with_kind(key.kind)
+                .with_repeat_count(key.repeat_count),
+            );
+        }
         _ => return key,
     };
     crate::input::TerminalKey::new(classic, alt)
