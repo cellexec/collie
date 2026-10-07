@@ -402,6 +402,45 @@ fn shifted_punctuation_release_after_shift_reaches_the_pane() {
 }
 
 #[test]
+fn held_key_reports_keep_their_release_around_ime_commits_and_focus_loss() {
+    use crate::protocol::{ClientKeyCode, ClientKeyKind};
+
+    let new_state = || {
+        let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+        state.set_host_reports_key_releases(true);
+        state.set_snapshot(Box::new(snapshot()));
+        state.set_pane_surface(surface());
+        state
+    };
+
+    // A key report carrying its text (report-all host) is a real held key:
+    // losing focus releases it.
+    let mut state = new_state();
+    let _ = state.handle_input_bytes(b"\x1b[97;;97u");
+    let blur = state.handle_input_bytes(b"\x1b[O");
+    assert_eq!(
+        pane_key_events(&blur),
+        [(ClientKeyCode::Char('a'), ClientKeyKind::Release)]
+    );
+
+    // Many IME commits while a key is held never displace that key: its
+    // release still reaches the pane as the held key.
+    let mut state = new_state();
+    let _ = state.handle_input_bytes(b"\x1b[120;;120u");
+    for ch in
+        "\u{65e5}\u{672c}\u{8a9e}\u{d55c}\u{ad6d}\u{c5b4}\u{4e2d}\u{6587}\u{3042}\u{3044}\u{3046}"
+            .chars()
+    {
+        let _ = state.handle_input_bytes(ch.to_string().as_bytes());
+    }
+    let release = state.handle_input_bytes(b"\x1b[120;1:3u");
+    assert_eq!(
+        pane_key_events(&release),
+        [(ClientKeyCode::Char('x'), ClientKeyKind::Release)]
+    );
+}
+
+#[test]
 fn unmatched_release_never_takes_a_held_key_while_herdr_owns_another_press() {
     use crate::protocol::{ClientKeyCode, ClientKeyKind};
 

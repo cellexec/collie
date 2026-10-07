@@ -104,9 +104,6 @@ where
         }
         if let Some(target) = target {
             self.insert_forwarded(lease_key, target, key.clone());
-            if is_text_press(key) {
-                self.prune_unreleased_text_presses(lease_key);
-            }
             return RepeatPlan::Ignore;
         }
         if !self.leases.contains_key(&lease_key) {
@@ -182,28 +179,6 @@ where
             self.insert_consumed(lease_key, ConsumedInputLease::SuppressRepeats);
         }
         allowed
-    }
-
-    /// IME commits are text presses that never get a release. Once more are
-    /// outstanding than anyone can hold, the older ones are such commits: drop
-    /// them so they cannot pile up or capture a later release.
-    fn prune_unreleased_text_presses(&mut self, newest: InputLeaseKey<Source>) {
-        const MAX_HELD_TEXT_PRESSES: usize = 10;
-        let stale: Vec<_> = self
-            .leases
-            .iter()
-            .filter(|(lease_key, lease)| {
-                lease_key.source == newest.source
-                    && **lease_key != newest
-                    && matches!(lease, InputLease::Forwarded(lease) if is_text_press(&lease.key))
-            })
-            .map(|(lease_key, _)| *lease_key)
-            .collect();
-        if stale.len() >= MAX_HELD_TEXT_PRESSES {
-            for lease_key in stale {
-                self.leases.remove(&lease_key);
-            }
-        }
     }
 
     /// The forwarded text press from `source` when it is the only key held.

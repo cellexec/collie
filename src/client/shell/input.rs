@@ -434,10 +434,17 @@ impl ClientShellState {
 
     fn release_input_leases(&mut self, outcome: &mut ClientShellInput) {
         for lease in self.input_leases.remove_source(LOCAL_INPUT_SOURCE) {
-            // Text (typed or committed by an IME) reached the pane as text, not as
-            // a key press, so there is no press to release. IME commits never get
-            // a host release, and inventing one per character is noise.
-            if lease.key.generated_text.is_some() && lease.key.physical_key_id().is_none() {
+            // A press that arrived as plain text (IME commits, and printable keys
+            // the host sends as text) reached the pane as text, not as a key
+            // event. IME commits never get a host release, so inventing one per
+            // character is noise. Key reports, with or without text, still get
+            // their release.
+            let plain_text_press = lease.key.generated_text.is_some()
+                && lease
+                    .key
+                    .vt_bytes()
+                    .is_some_and(|bytes| bytes.first().is_some_and(|byte| *byte != 0x1b));
+            if plain_text_press {
                 continue;
             }
             self.push_pane_key(
