@@ -441,6 +441,36 @@ fn held_key_reports_keep_their_release_around_ime_commits_and_focus_loss() {
 }
 
 #[test]
+fn non_latin_ctrl_chord_release_matches_after_ctrl_is_let_go() {
+    use crate::protocol::{ClientKeyCode, ClientKeyKind};
+
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_host_reports_key_releases(true);
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+
+    // Russian layout: Ctrl+\u{441} is the C key; Ctrl goes up before C.
+    let press = state.handle_input_bytes(b"\x1b[1089::99;5u");
+    assert_eq!(
+        pane_key_events(&press),
+        [(ClientKeyCode::Char('c'), ClientKeyKind::Press)]
+    );
+    let release = state.handle_input_bytes(b"\x1b[1089::99;1:3u");
+    assert_eq!(
+        pane_key_events(&release),
+        [(ClientKeyCode::Char('c'), ClientKeyKind::Release)]
+    );
+
+    // Plain Cyrillic typing still releases as its own key.
+    let _ = state.handle_input_bytes(b"\x1b[1089::99;;1089u");
+    let release = state.handle_input_bytes(b"\x1b[1089::99;1:3u");
+    assert_eq!(
+        pane_key_events(&release),
+        [(ClientKeyCode::Char('\u{441}'), ClientKeyKind::Release)]
+    );
+}
+
+#[test]
 fn unmatched_release_never_takes_a_held_key_while_herdr_owns_another_press() {
     use crate::protocol::{ClientKeyCode, ClientKeyKind};
 

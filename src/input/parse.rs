@@ -74,7 +74,12 @@ fn parse_kitty_key_sequence(data: &str) -> Option<TerminalKey> {
         modifiers |= KeyModifiers::SHIFT;
     }
 
-    let mut key = TerminalKey::new(code, modifiers).with_kind(kind);
+    let base_layout_key = base_layout_codepoint
+        .and_then(char::from_u32)
+        .filter(char::is_ascii_graphic);
+    let mut key = TerminalKey::new(code, modifiers)
+        .with_kind(kind)
+        .with_base_layout_key(base_layout_key);
     if let Some(shifted_codepoint) = shifted_codepoint {
         key = key.with_shifted_codepoint(shifted_codepoint);
     }
