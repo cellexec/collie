@@ -33,8 +33,28 @@ fn parse_kitty_key_sequence(data: &str) -> Option<TerminalKey> {
         .next()
         .filter(|field| !field.is_empty())
         .and_then(|field| field.parse::<u32>().ok());
+    let base_layout_codepoint = key_fields
+        .next()
+        .filter(|field| !field.is_empty())
+        .and_then(|field| field.parse::<u32>().ok());
 
-    let code = kitty_codepoint_to_keycode(codepoint)?;
+    let mut code = kitty_codepoint_to_keycode(codepoint)?;
+    // Ctrl chords on a non-Latin layout (Ctrl+\u{441} on Russian) are shortcuts
+    // for the physical key the host names in the base-layout field: Ctrl+C.
+    // Kitty sends ^C to a plain shell for them, and the Kitty spec tells apps
+    // to match shortcuts on that key.
+    let mut shifted_codepoint = shifted_codepoint;
+    if let (KeyCode::Char(ch), Some(base)) = (code, base_layout_codepoint.and_then(char::from_u32))
+    {
+        if key_modifiers_from_u8(modifier).contains(KeyModifiers::CONTROL)
+            && !ch.is_ascii()
+            && base.is_ascii_graphic()
+        {
+            code = KeyCode::Char(base);
+            // The shifted alternate belongs to the layout character.
+            shifted_codepoint = None;
+        }
+    }
     let associated_text = match associated_text {
         Some(value) => match parse_kitty_associated_text(value) {
             Some(text) => Some(text),
@@ -751,6 +771,43 @@ mod tests {
         assert_eq!(key.modifiers, KeyModifiers::empty());
         assert_eq!(key.kind, crossterm::event::KeyEventKind::Press);
         assert_eq!(key.generated_text.as_deref(), Some("你好"));
+    }
+
+    #[test]
+    fn parse_ctrl_chords_on_non_latin_layouts_as_their_base_layout_key() {
+        // Lab capture, kitty on a Russian layout: Ctrl+\u{441} is the C key.
+        for (sequence, code, modifiers) in [
+            (
+                "\x1b[1089::99;5u",
+                KeyCode::Char('c'),
+                KeyModifiers::CONTROL,
+            ),
+            (
+                "\x1b[1089:1057:99;6u",
+                KeyCode::Char('c'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            ),
+            (
+                "\x1b[1089::99;5:3u",
+                KeyCode::Char('c'),
+                KeyModifiers::CONTROL,
+            ),
+            // Without Ctrl it is text on that layout; without a base key
+            // nothing is known about the physical key.
+            (
+                "\x1b[1089::99u",
+                KeyCode::Char('\u{441}'),
+                KeyModifiers::empty(),
+            ),
+            (
+                "\x1b[1089;5u",
+                KeyCode::Char('\u{441}'),
+                KeyModifiers::CONTROL,
+            ),
+        ] {
+            let key = parse_terminal_key_sequence(sequence).expect(sequence);
+            assert_eq!((key.code, key.modifiers), (code, modifiers), "{sequence:?}");
+        }
     }
 
     #[test]

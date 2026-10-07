@@ -5045,6 +5045,15 @@ mod tests {
     }
 
     #[test]
+    fn ctrl_on_a_russian_layout_interrupts_a_plain_shell() {
+        // Lab capture: kitty reports Ctrl+\u{441} as `CSI 1089::99;5u`; kitty
+        // itself sends ^C to a plain shell.
+        let key = crate::input::parse_terminal_key_sequence("\x1b[1089::99;5u").expect("key");
+        assert_eq!(test_encode_key_for_app(b"", key.clone()), b"\x03");
+        assert_eq!(test_encode_key_for_app(b"\x1b[>1u", key), b"\x1b[99;5u");
+    }
+
+    #[test]
     fn legacy_alt_prefixes_the_produced_non_ascii_text() {
         // A legacy host's Alt+Shift+\u{f6}. libghostty on macOS would prefix the
         // unshifted "\u{f6}" instead.
