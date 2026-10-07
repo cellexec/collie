@@ -2034,6 +2034,12 @@ impl GhosttyPaneTerminal {
             return Vec::new();
         };
         let negotiated_nothing = keyboard_negotiated_nothing(&core.terminal);
+        // Before the Windows record fallback too: a remote client can report
+        // Super, and a record would deliver the bare key (#3710).
+        if negotiated_nothing && legacy_super_chord(&key) {
+            debug!(code = ?key.code, "super chord in a pane without keyboard protocol; not forwarded");
+            return Vec::new();
+        }
         #[cfg(windows)]
         if negotiated_nothing {
             if let Some(bytes) = crate::platform::encode_windows_conpty_fallback(&key) {
