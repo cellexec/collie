@@ -210,6 +210,10 @@ impl HeadlessServer {
             }
             return Err(err);
         }
+        // The replacement owns the session now. A service manager that watches
+        // this process would otherwise treat its exit as the service ending and
+        // stop the replacement with every pane.
+        crate::platform::notify_service_main_pid(child_pid);
 
         for (terminal_id, runtime) in self.app.terminal_runtimes.drain_for_handoff() {
             if !pane_by_terminal.contains_key(&terminal_id) {

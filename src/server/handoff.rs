@@ -95,6 +95,7 @@ pub(crate) fn spawn_handoff_import(
             .env_remove(crate::api::SOCKET_PATH_ENV_VAR)
             .env_remove(crate::server::socket_paths::CLIENT_SOCKET_PATH_ENV_VAR);
     }
+    crate::platform::pass_service_notify_socket(&mut command);
     crate::platform::detach_server_daemon_command(&mut command);
     command.spawn().map_err(|err| {
         io::Error::new(

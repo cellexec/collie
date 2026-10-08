@@ -3,6 +3,8 @@ use super::*;
 /// Run the headless server. This is the entry point called from main.rs.
 pub fn run_server() -> io::Result<()> {
     crate::platform::ignore_server_hangup();
+    // Before any thread starts: the variable leaves the process environment.
+    crate::platform::capture_service_notify_socket();
     let args: Vec<String> = std::env::args().collect();
     let handoff_import = args.get(2).map(String::as_str) == Some("--handoff-import");
     let process_context = crate::platform::prepare_server_process(handoff_import);
@@ -90,6 +92,7 @@ pub fn run_server() -> io::Result<()> {
             "herdr server started"
         );
         print_ready_message(&api::socket_path(), &client_socket_path());
+        crate::platform::notify_service_ready();
         server.app.run_plugin_startup_hooks();
 
         server.run().await
@@ -197,6 +200,8 @@ fn run_handoff_import_server(socket_path: &Path, token: &str) -> io::Result<()> 
         if let Err(err) = crate::server::handoff::report_owned(&mut received.stream) {
             warn!(err = %err, "failed to report handoff ownership; continuing as owner");
         }
+        // The old server reported this process as the service's main PID and
+        // readiness on its behalf after the commit, so no READY=1 here.
         info!("handoff import server started");
         print_ready_message(&api::socket_path(), &client_socket_path());
         server.app.run_plugin_startup_hooks();

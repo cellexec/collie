@@ -196,6 +196,8 @@ fn apply_pane_launch_env(cmd: &mut CommandBuilder, launch_env: &PaneLaunchEnv) {
     ] {
         cmd.env_remove(key);
     }
+    // Only the server reports to its service manager.
+    cmd.env_remove(crate::platform::SERVICE_NOTIFY_SOCKET_ENV_VAR);
     for (key, value) in &launch_env.extra {
         cmd.env(key, value);
     }
@@ -4151,9 +4153,14 @@ mod tests {
         }
         cmd.env("ANTHROPIC_API_KEY", "fake-api-key");
         cmd.env("DISPLAY", ":42");
+        cmd.env("NOTIFY_SOCKET", "/run/user/1000/systemd/notify");
 
         apply_pane_launch_env(&mut cmd, &PaneLaunchEnv::default());
 
+        assert!(
+            cmd.get_env("NOTIFY_SOCKET").is_none(),
+            "the service manager socket must not leak into panes"
+        );
         for key in keys {
             assert!(cmd.get_env(key).is_none(), "{key} must not leak into panes");
         }

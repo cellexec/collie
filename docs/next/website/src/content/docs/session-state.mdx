@@ -134,3 +134,33 @@ herdr --remote workbox --handoff
 Plain `herdr update` installs the new client and keeps endpoint-generation-1 servers running. Plain `herdr --remote workbox` also keeps a compatible remote server running across version differences. A stop is required only for the one-time upgrade from a pre-generation-1 server; use `--handoff` when you explicitly want to replace a supported running server without losing its pane processes.
 
 `herdr update --handoff` only applies to installs managed by Herdr's own updater. Homebrew, mise, and Nix installs are updated through their package managers, so `herdr update` is disabled there and cannot perform live handoff.
+
+### Running the server as a systemd user service
+
+On Linux, `herdr server` supports systemd's notify protocol. It reports readiness once it accepts connections. After a live handoff, the old server tells systemd the replacement server's PID before it exits. systemd then keeps supervising the new server instead of treating the old server's exit as the end of the service and stopping every pane.
+
+A minimal user unit, for example `~/.config/systemd/user/herdr.service`:
+
+```ini
+[Unit]
+Description=herdr server
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=%h/.local/bin/herdr server
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+Enable it with `systemctl --user enable --now herdr.service`. Adjust `ExecStart` to where your `herdr` binary lives.
+
+- `Type=notify` waits for the server to report readiness. If you keep `Type=simple`, still set `NotifyAccess=main` so the main PID update after a handoff is accepted.
+- `NotifyAccess=main` accepts notifications only from the current main process, which is the process that sends the main PID update. Avoid `NotifyAccess=all`: it would let any process in the service, including programs in panes, change the main PID.
+- Keep the default `KillMode=control-group`, so stopping the service also stops its panes.
+- With `Restart=on-failure`, systemd restarts the server if the replacement server crashes after a handoff.
+- The running server must already include this support. A server started from an older release does not report the new PID, so its first live handoff under systemd still ends the service.
+
+Herdr removes `NOTIFY_SOCKET` from the environment of panes, plugins, and other processes it starts, so they do not inherit the service's notification socket.

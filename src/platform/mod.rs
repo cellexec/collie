@@ -36,6 +36,22 @@ fn monitor_host_shutdown(
     None
 }
 
+/// The service manager notification socket (`sd_notify(3)`). Only the server
+/// may talk to it, so it never reaches pane or helper process environments.
+pub(crate) const SERVICE_NOTIFY_SOCKET_ENV_VAR: &str = "NOTIFY_SOCKET";
+
+#[cfg(not(target_os = "linux"))]
+pub(crate) fn capture_service_notify_socket() {}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+pub(crate) fn pass_service_notify_socket(_command: &mut std::process::Command) {}
+
+#[cfg(not(target_os = "linux"))]
+pub(crate) fn notify_service_ready() {}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+pub(crate) fn notify_service_main_pid(_pid: u32) {}
+
 #[cfg(not(windows))]
 pub(crate) fn host_shutdown_in_progress() -> bool {
     false

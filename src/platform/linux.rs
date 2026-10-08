@@ -26,7 +26,12 @@ pub(crate) use super::unix_common::{
 #[cfg(test)]
 mod config_file_tests;
 
+mod service_notify;
 mod shutdown;
+pub(crate) use service_notify::{
+    capture_service_notify_socket, notify_service_main_pid, notify_service_ready,
+    pass_service_notify_socket,
+};
 pub(crate) use shutdown::monitor_host_shutdown;
 
 const WSL_MARKER_ENV_VARS: &[&str] = &["WSL_DISTRO_NAME", "WSL_INTEROP"];

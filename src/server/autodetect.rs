@@ -231,6 +231,9 @@ fn build_server_daemon_command(exe: PathBuf) -> Command {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
     crate::platform::detach_server_daemon_command(&mut command);
+    // A server started on demand is not the main process of whatever service
+    // launched this CLI, so it must not report readiness or a main PID there.
+    command.env_remove(crate::platform::SERVICE_NOTIFY_SOCKET_ENV_VAR);
 
     match std::env::current_dir() {
         Ok(cwd) => {
@@ -463,6 +466,15 @@ mod tests {
         std::env::remove_var("HERDR_CLIENT_SOCKET_PATH");
         std::env::remove_var(crate::session::SESSION_ENV_VAR);
         crate::session::clear_explicit_session_for_test();
+    }
+
+    #[test]
+    fn server_daemon_command_drops_the_service_notify_socket() {
+        let command = build_server_daemon_command(PathBuf::from("/tmp/herdr-test"));
+
+        assert!(command.get_envs().any(|(key, value)| {
+            key == OsStr::new(crate::platform::SERVICE_NOTIFY_SOCKET_ENV_VAR) && value.is_none()
+        }));
     }
 
     #[test]
