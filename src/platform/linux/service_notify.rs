@@ -15,13 +15,14 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::net::{SocketAddr, UnixDatagram};
 use std::path::Path;
 use std::sync::OnceLock;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use super::super::SERVICE_NOTIFY_SOCKET_ENV_VAR;
 
-/// How long the old server waits for the manager to process the main PID
-/// change before it continues shutting down.
-const BARRIER_TIMEOUT: Duration = Duration::from_secs(1);
+/// Upper bound for one notification, including waiting for room in a full
+/// manager queue. Every socket operation is nonblocking and shares this
+/// deadline, so a stalled manager can never strand the server.
+const NOTIFY_TIMEOUT: Duration = Duration::from_secs(1);
 
 static NOTIFY_SOCKET: OnceLock<Option<OsString>> = OnceLock::new();
 
@@ -47,12 +48,12 @@ pub(crate) fn pass_service_notify_socket(command: &mut std::process::Command) {
     }
 }
 
-/// Reports that the server accepts connections.
+/// Reports that the server accepts connections. Failures are logged only.
 pub(crate) fn notify_service_ready() {
     let Some(socket) = captured_socket() else {
         return;
     };
-    match send_notification(socket, "READY=1") {
+    match notify_ready_on(socket, Instant::now() + NOTIFY_TIMEOUT) {
         Ok(()) => tracing::info!("notified service manager that the server is ready"),
         Err(err) => tracing::warn!(err = %err, "failed to notify service manager of readiness"),
     }
@@ -61,12 +62,13 @@ pub(crate) fn notify_service_ready() {
 /// Tells the service manager that `pid` is the service's main process now.
 ///
 /// This must run in the current main process before it exits, so a unit with
-/// `NotifyAccess=main` accepts it.
+/// `NotifyAccess=main` accepts it. Failures are logged and the caller keeps
+/// shutting down; the whole exchange is bounded by one deadline.
 pub(crate) fn notify_service_main_pid(pid: u32) {
     let Some(socket) = captured_socket() else {
         return;
     };
-    match notify_main_pid_on(socket, pid, BARRIER_TIMEOUT) {
+    match notify_main_pid_on(socket, pid, Instant::now() + NOTIFY_TIMEOUT) {
         Ok(()) => tracing::info!(pid, "notified service manager of the new main pid"),
         Err(err) => {
             tracing::warn!(pid, err = %err, "failed to notify service manager of the new main pid")
@@ -74,11 +76,18 @@ pub(crate) fn notify_service_main_pid(pid: u32) {
     }
 }
 
-fn notify_main_pid_on(socket: &OsStr, pid: u32, barrier_timeout: Duration) -> io::Result<()> {
-    send_notification(socket, &format!("MAINPID={pid}\nREADY=1"))?;
+fn notify_ready_on(socket: &OsStr, deadline: Instant) -> io::Result<()> {
+    let datagram = connect(socket)?;
+    send_until(&datagram, b"READY=1", None, deadline)
+}
+
+fn notify_main_pid_on(socket: &OsStr, pid: u32, deadline: Instant) -> io::Result<()> {
+    let datagram = connect(socket)?;
+    let message = format!("MAINPID={pid}\nREADY=1");
+    send_until(&datagram, message.as_bytes(), None, deadline)?;
     // The old server exits soon after this. Wait until the manager has handled
     // the message, so it already supervises the new PID when this one exits.
-    wait_for_barrier(socket, barrier_timeout)
+    wait_for_barrier(&datagram, deadline)
 }
 
 fn notify_socket_address(socket: &OsStr) -> io::Result<SocketAddr> {
@@ -96,59 +105,121 @@ fn notify_socket_address(socket: &OsStr) -> io::Result<SocketAddr> {
 fn connect(socket: &OsStr) -> io::Result<UnixDatagram> {
     let address = notify_socket_address(socket)?;
     let datagram = UnixDatagram::unbound()?;
+    datagram.set_nonblocking(true)?;
     datagram.connect_addr(&address)?;
     Ok(datagram)
-}
-
-fn send_notification(socket: &OsStr, message: &str) -> io::Result<()> {
-    let datagram = connect(socket)?;
-    let sent = datagram.send(message.as_bytes())?;
-    if sent != message.len() {
-        return Err(io::Error::other("short service notification write"));
-    }
-    Ok(())
 }
 
 /// `sd_notify_barrier(3)`: send `BARRIER=1` with the write end of a pipe and
 /// wait for the manager to close it, which it does after processing every
 /// earlier message from this process.
-fn wait_for_barrier(socket: &OsStr, timeout: Duration) -> io::Result<()> {
-    let datagram = connect(socket)?;
+fn wait_for_barrier(datagram: &UnixDatagram, deadline: Instant) -> io::Result<()> {
     let mut pipe = [0; 2];
     if unsafe { libc::pipe2(pipe.as_mut_ptr(), libc::O_CLOEXEC) } < 0 {
         return Err(io::Error::last_os_error());
     }
     let read_end = unsafe { OwnedFd::from_raw_fd(pipe[0]) };
     let write_end = unsafe { OwnedFd::from_raw_fd(pipe[1]) };
-    send_with_fd(&datagram, b"BARRIER=1", write_end.as_raw_fd())?;
+    send_until(
+        datagram,
+        b"BARRIER=1",
+        Some(write_end.as_raw_fd()),
+        deadline,
+    )?;
     drop(write_end);
-
-    let mut poll_fd = libc::pollfd {
-        fd: read_end.as_raw_fd(),
-        events: 0,
-        revents: 0,
-    };
-    let timeout_ms = timeout.as_millis().min(i32::MAX as u128) as i32;
-    loop {
-        let ready = unsafe { libc::poll(&mut poll_fd, 1, timeout_ms) };
-        if ready < 0 {
-            let err = io::Error::last_os_error();
-            if err.kind() == io::ErrorKind::Interrupted {
-                continue;
-            }
-            return Err(err);
-        }
-        if ready == 0 {
-            return Err(io::Error::new(
+    // POLLHUP is always reported, so no requested events are needed.
+    wait_for_fd(read_end.as_raw_fd(), 0, deadline).map_err(|err| {
+        if err.kind() == io::ErrorKind::TimedOut {
+            io::Error::new(
                 io::ErrorKind::TimedOut,
                 "service manager did not confirm the notification barrier",
-            ));
+            )
+        } else {
+            err
         }
-        return Ok(());
+    })
+}
+
+/// Sends one datagram on a nonblocking socket, waiting for queue space until
+/// `deadline`.
+fn send_until(
+    datagram: &UnixDatagram,
+    payload: &[u8],
+    fd: Option<libc::c_int>,
+    deadline: Instant,
+) -> io::Result<()> {
+    loop {
+        let result = match fd {
+            Some(fd) => send_with_fd(datagram, payload, fd),
+            None => datagram.send(payload),
+        };
+        match result {
+            Ok(sent) if sent == payload.len() => return Ok(()),
+            Ok(_) => return Err(io::Error::other("short service notification write")),
+            Err(err) if err.kind() == io::ErrorKind::Interrupted => {}
+            Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
+                wait_for_fd(datagram.as_raw_fd(), libc::POLLOUT, deadline).map_err(|err| {
+                    if err.kind() == io::ErrorKind::TimedOut {
+                        io::Error::new(
+                            io::ErrorKind::TimedOut,
+                            "service manager notification queue stayed full",
+                        )
+                    } else {
+                        err
+                    }
+                })?;
+            }
+            Err(err) => return Err(err),
+        }
     }
 }
 
-fn send_with_fd(datagram: &UnixDatagram, payload: &[u8], fd: libc::c_int) -> io::Result<()> {
+fn wait_for_fd(fd: libc::c_int, events: libc::c_short, deadline: Instant) -> io::Result<()> {
+    wait_until(deadline, |timeout_ms| {
+        let mut poll_fd = libc::pollfd {
+            fd,
+            events,
+            revents: 0,
+        };
+        match unsafe { libc::poll(&mut poll_fd, 1, timeout_ms) } {
+            ready if ready < 0 => Err(io::Error::last_os_error()),
+            0 => Ok(false),
+            _ => Ok(true),
+        }
+    })
+}
+
+/// Repeats `poll_once` until it reports readiness or `deadline` passes. Each
+/// attempt gets only the time left, so interruptions never extend the wait.
+fn wait_until(
+    deadline: Instant,
+    mut poll_once: impl FnMut(libc::c_int) -> io::Result<bool>,
+) -> io::Result<()> {
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let timeout_ms = remaining_poll_timeout_ms(remaining);
+        match poll_once(timeout_ms) {
+            Ok(true) => return Ok(()),
+            Ok(false) => {}
+            Err(err) if err.kind() == io::ErrorKind::Interrupted => {}
+            Err(err) => return Err(err),
+        }
+        if timeout_ms == 0 || Instant::now() >= deadline {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "timed out waiting for the service manager",
+            ));
+        }
+    }
+}
+
+fn remaining_poll_timeout_ms(remaining: Duration) -> libc::c_int {
+    // Round up, so a sub-millisecond remainder still sleeps instead of spinning.
+    let millis = remaining.as_nanos().div_ceil(1_000_000);
+    millis.min(libc::c_int::MAX as u128) as libc::c_int
+}
+
+fn send_with_fd(datagram: &UnixDatagram, payload: &[u8], fd: libc::c_int) -> io::Result<usize> {
     let iov = [libc::iovec {
         iov_base: payload.as_ptr() as *mut libc::c_void,
         iov_len: payload.len(),
@@ -174,11 +245,16 @@ fn send_with_fd(datagram: &UnixDatagram, payload: &[u8], fd: libc::c_int) -> io:
             libc::CMSG_DATA(cmsg),
             fd_bytes,
         );
-        if libc::sendmsg(datagram.as_raw_fd(), &msg, libc::MSG_NOSIGNAL) < 0 {
+        let sent = libc::sendmsg(
+            datagram.as_raw_fd(),
+            &msg,
+            libc::MSG_NOSIGNAL | libc::MSG_DONTWAIT,
+        );
+        if sent < 0 {
             return Err(io::Error::last_os_error());
         }
+        Ok(sent as usize)
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -202,6 +278,41 @@ mod tests {
         )
     }
 
+    fn abstract_receiver(label: &str) -> (UnixDatagram, String) {
+        let name = unique_name(label);
+        let address = SocketAddr::from_abstract_name(name.as_bytes()).unwrap();
+        let receiver = UnixDatagram::bind_addr(&address).unwrap();
+        (receiver, format!("@{name}"))
+    }
+
+    /// Fills the receiver's queue until a fresh sender cannot add a datagram.
+    /// Several senders are needed because each one also has its own send
+    /// buffer limit, which can run out before the receiver queue does.
+    fn saturate(socket: &str) -> Vec<UnixDatagram> {
+        let mut senders = Vec::new();
+        for _ in 0..4096 {
+            let sender = connect(OsStr::new(socket)).unwrap();
+            match sender.send(b"x") {
+                Ok(_) => {}
+                Err(err) if err.kind() == io::ErrorKind::WouldBlock => return senders,
+                Err(err) => panic!("saturate notify socket: {err}"),
+            }
+            while sender.send(b"x").is_ok() {}
+            senders.push(sender);
+        }
+        panic!("notify socket queue never filled");
+    }
+
+    fn drain(receiver: &UnixDatagram) -> Vec<String> {
+        receiver.set_nonblocking(true).unwrap();
+        let mut messages = Vec::new();
+        let mut buffer = [0u8; 256];
+        while let Ok(len) = receiver.recv(&mut buffer) {
+            messages.push(String::from_utf8_lossy(&buffer[..len]).into_owned());
+        }
+        messages
+    }
+
     #[test]
     fn ready_reaches_a_path_notify_socket() {
         let dir = std::env::temp_dir().join(unique_name("path"));
@@ -209,7 +320,7 @@ mod tests {
         let path = dir.join("notify.sock");
         let receiver = UnixDatagram::bind(&path).unwrap();
 
-        send_notification(path.as_os_str(), "READY=1").unwrap();
+        notify_ready_on(path.as_os_str(), Instant::now() + Duration::from_secs(5)).unwrap();
 
         assert_eq!(receive(&receiver), "READY=1");
         let _ = std::fs::remove_dir_all(dir);
@@ -217,9 +328,7 @@ mod tests {
 
     #[test]
     fn main_pid_reaches_an_abstract_notify_socket_and_waits_for_the_barrier() {
-        let name = unique_name("abstract");
-        let address = SocketAddr::from_abstract_name(name.as_bytes()).unwrap();
-        let receiver = UnixDatagram::bind_addr(&address).unwrap();
+        let (receiver, socket) = abstract_receiver("abstract");
         let reader = std::thread::spawn(move || {
             let main_pid = receive(&receiver);
             // A plain receive discards the passed pipe end, which closes it the
@@ -229,9 +338,9 @@ mod tests {
         });
 
         notify_main_pid_on(
-            OsStr::new(&format!("@{name}")),
+            OsStr::new(&socket),
             4242,
-            Duration::from_secs(5),
+            Instant::now() + Duration::from_secs(5),
         )
         .unwrap();
 
@@ -242,20 +351,130 @@ mod tests {
 
     #[test]
     fn barrier_times_out_when_the_manager_never_reads() {
-        let name = unique_name("silent");
-        let address = SocketAddr::from_abstract_name(name.as_bytes()).unwrap();
-        let _receiver = UnixDatagram::bind_addr(&address).unwrap();
+        let (receiver, socket) = abstract_receiver("silent");
 
-        let err = wait_for_barrier(OsStr::new(&format!("@{name}")), Duration::from_millis(50))
-            .unwrap_err();
+        let started = Instant::now();
+        let err = notify_main_pid_on(
+            OsStr::new(&socket),
+            4242,
+            Instant::now() + Duration::from_millis(50),
+        )
+        .unwrap_err();
 
         assert_eq!(err.kind(), io::ErrorKind::TimedOut);
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert_eq!(drain(&receiver), ["MAINPID=4242\nREADY=1", "BARRIER=1"]);
+    }
+
+    #[test]
+    fn main_pid_gives_up_at_the_deadline_when_the_queue_is_full() {
+        let (receiver, socket) = abstract_receiver("full-main-pid");
+        let _senders = saturate(&socket);
+
+        let started = Instant::now();
+        let err = notify_main_pid_on(
+            OsStr::new(&socket),
+            4242,
+            Instant::now() + Duration::from_millis(100),
+        )
+        .unwrap_err();
+
+        assert_eq!(err.kind(), io::ErrorKind::TimedOut, "{err}");
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert!(drain(&receiver).iter().all(|message| message == "x"));
+    }
+
+    #[test]
+    fn barrier_gives_up_at_the_deadline_when_the_queue_fills_after_main_pid() {
+        let (receiver, socket) = abstract_receiver("full-barrier");
+        let _senders = saturate(&socket);
+        // Room for exactly one more datagram: MAINPID fits, BARRIER does not.
+        assert_eq!(receive(&receiver), "x");
+
+        let started = Instant::now();
+        let err = notify_main_pid_on(
+            OsStr::new(&socket),
+            4242,
+            Instant::now() + Duration::from_millis(100),
+        )
+        .unwrap_err();
+
+        assert_eq!(err.kind(), io::ErrorKind::TimedOut, "{err}");
+        assert!(started.elapsed() < Duration::from_secs(1));
+        let messages = drain(&receiver);
+        assert_eq!(
+            messages.last().map(String::as_str),
+            Some("MAINPID=4242\nREADY=1")
+        );
+        assert!(!messages.iter().any(|message| message == "BARRIER=1"));
+    }
+
+    #[test]
+    fn ready_gives_up_at_the_deadline_when_the_queue_is_full() {
+        let (_receiver, socket) = abstract_receiver("full-ready");
+        let _senders = saturate(&socket);
+
+        let started = Instant::now();
+        let err = notify_ready_on(
+            OsStr::new(&socket),
+            Instant::now() + Duration::from_millis(100),
+        )
+        .unwrap_err();
+
+        assert_eq!(err.kind(), io::ErrorKind::TimedOut, "{err}");
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn interruptions_do_not_extend_the_deadline() {
+        let deadline = Instant::now() + Duration::from_millis(100);
+        let mut timeouts = Vec::new();
+
+        let err = wait_until(deadline, |timeout_ms| {
+            timeouts.push(timeout_ms);
+            std::thread::sleep(Duration::from_millis(15));
+            Err(io::Error::from(io::ErrorKind::Interrupted))
+        })
+        .unwrap_err();
+
+        assert_eq!(err.kind(), io::ErrorKind::TimedOut);
+        assert!(Instant::now() < deadline + Duration::from_millis(500));
+        assert!(timeouts.len() >= 3, "{timeouts:?}");
+        assert!(timeouts[0] <= 100, "{timeouts:?}");
+        assert!(
+            timeouts.windows(2).all(|pair| pair[1] < pair[0]),
+            "every retry must get less time: {timeouts:?}"
+        );
+    }
+
+    #[test]
+    fn readiness_after_interruptions_succeeds() {
+        let mut attempts = 0;
+
+        wait_until(Instant::now() + Duration::from_secs(5), |_| {
+            attempts += 1;
+            if attempts < 4 {
+                Err(io::Error::from(io::ErrorKind::Interrupted))
+            } else {
+                Ok(true)
+            }
+        })
+        .unwrap();
+
+        assert_eq!(attempts, 4);
+    }
+
+    #[test]
+    fn sub_millisecond_remainders_round_up() {
+        assert_eq!(remaining_poll_timeout_ms(Duration::ZERO), 0);
+        assert_eq!(remaining_poll_timeout_ms(Duration::from_micros(1)), 1);
+        assert_eq!(remaining_poll_timeout_ms(Duration::from_millis(7)), 7);
     }
 
     #[test]
     fn relative_and_vsock_addresses_are_rejected() {
         for socket in ["notify.sock", "vsock:2:1234"] {
-            let err = send_notification(OsStr::new(socket), "READY=1").unwrap_err();
+            let err = notify_ready_on(OsStr::new(socket), Instant::now()).unwrap_err();
             assert_eq!(err.kind(), io::ErrorKind::Unsupported, "{socket}");
         }
     }

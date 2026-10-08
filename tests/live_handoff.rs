@@ -2118,3 +2118,440 @@ fn live_handoff_import_failure_rolls_back_old_server_at(failure_point: &str) {
 fn live_handoff_after_restored_failure_rolls_back_old_server() {
     live_handoff_import_failure_rolls_back_old_server_at("after_restored");
 }
+
+/// A stand-in for the systemd notify socket. It records every datagram with the
+/// sender PID from `SCM_CREDENTIALS` and closes passed descriptors, which is how
+/// systemd acknowledges a `BARRIER=1` message.
+#[cfg(target_os = "linux")]
+struct FakeNotifySocket {
+    path: PathBuf,
+    messages: std::sync::Arc<Mutex<Vec<(i32, String)>>>,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    reader: Option<thread::JoinHandle<()>>,
+}
+
+#[cfg(target_os = "linux")]
+impl FakeNotifySocket {
+    fn bind(path: PathBuf) -> Self {
+        use std::os::fd::AsRawFd;
+
+        let socket = std::os::unix::net::UnixDatagram::bind(&path).unwrap();
+        let enable: libc::c_int = 1;
+        let rc = unsafe {
+            libc::setsockopt(
+                socket.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_PASSCRED,
+                (&enable as *const libc::c_int).cast(),
+                std::mem::size_of::<libc::c_int>() as libc::socklen_t,
+            )
+        };
+        assert_eq!(rc, 0, "SO_PASSCRED: {}", std::io::Error::last_os_error());
+        socket
+            .set_read_timeout(Some(Duration::from_millis(50)))
+            .unwrap();
+        let messages = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let reader = {
+            let messages = messages.clone();
+            let stop = stop.clone();
+            thread::spawn(move || {
+                while !stop.load(Ordering::Relaxed) {
+                    if let Some(message) = receive_with_credentials(&socket) {
+                        messages.lock().unwrap().push(message);
+                    }
+                }
+            })
+        };
+        Self {
+            path,
+            messages,
+            stop,
+            reader: Some(reader),
+        }
+    }
+
+    fn messages(&self) -> Vec<(i32, String)> {
+        self.messages.lock().unwrap().clone()
+    }
+
+    fn wait_for(&self, pid: u32, text: &str, timeout: Duration) {
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline {
+            if self
+                .messages()
+                .iter()
+                .any(|(sender, message)| *sender == pid as i32 && message == text)
+            {
+                return;
+            }
+            thread::sleep(Duration::from_millis(25));
+        }
+        panic!(
+            "notify socket never got {text:?} from pid {pid}; got {:?}",
+            self.messages()
+        );
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for FakeNotifySocket {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(reader) = self.reader.take() {
+            let _ = reader.join();
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn receive_with_credentials(socket: &std::os::unix::net::UnixDatagram) -> Option<(i32, String)> {
+    use std::os::fd::AsRawFd;
+
+    let mut payload = [0u8; 512];
+    let mut control = [0u8; 256];
+    let mut iov = libc::iovec {
+        iov_base: payload.as_mut_ptr().cast(),
+        iov_len: payload.len(),
+    };
+    let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
+    msg.msg_iov = &mut iov;
+    msg.msg_iovlen = 1;
+    msg.msg_control = control.as_mut_ptr().cast();
+    msg.msg_controllen = control.len() as _;
+    let len = unsafe { libc::recvmsg(socket.as_raw_fd(), &mut msg, libc::MSG_CMSG_CLOEXEC) };
+    if len < 0 {
+        return None;
+    }
+    let mut sender = 0;
+    unsafe {
+        let mut cmsg = libc::CMSG_FIRSTHDR(&msg);
+        while !cmsg.is_null() {
+            if (*cmsg).cmsg_level == libc::SOL_SOCKET {
+                let data = libc::CMSG_DATA(cmsg);
+                let data_len = (*cmsg).cmsg_len as usize - libc::CMSG_LEN(0) as usize;
+                if (*cmsg).cmsg_type == libc::SCM_CREDENTIALS {
+                    let credentials: libc::ucred = std::ptr::read_unaligned(data.cast());
+                    sender = credentials.pid;
+                } else if (*cmsg).cmsg_type == libc::SCM_RIGHTS {
+                    for index in 0..data_len / std::mem::size_of::<libc::c_int>() {
+                        let fd: libc::c_int =
+                            std::ptr::read_unaligned(data.cast::<libc::c_int>().add(index));
+                        libc::close(fd);
+                    }
+                }
+            }
+            cmsg = libc::CMSG_NXTHDR(&msg, cmsg);
+        }
+    }
+    Some((
+        sender,
+        String::from_utf8_lossy(&payload[..len as usize]).into_owned(),
+    ))
+}
+
+#[cfg(target_os = "linux")]
+fn process_env_var(pid: u32, key: &str) -> Option<String> {
+    let environ = fs::read(format!("/proc/{pid}/environ")).ok()?;
+    let prefix = format!("{key}=");
+    environ
+        .split(|byte| *byte == 0)
+        .filter_map(|entry| std::str::from_utf8(entry).ok())
+        .find_map(|entry| entry.strip_prefix(&prefix).map(str::to_string))
+}
+
+#[cfg(target_os = "linux")]
+fn test_server_log(config_home: &Path) -> String {
+    ["herdr-dev", "herdr"]
+        .iter()
+        .map(|dir| fs::read_to_string(config_home.join(dir).join("herdr-server.log")))
+        .filter_map(Result::ok)
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
+fn wait_for_child_exit(child: &mut (dyn Child + Send + Sync), timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if child.try_wait().ok().flatten().is_some() {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+    false
+}
+
+/// Starts a pane process that records its PID and whether it inherited
+/// `NOTIFY_SOCKET`, then returns its PID.
+#[cfg(target_os = "linux")]
+fn start_notify_probe_pane(api_socket: &Path, base: &Path) -> u32 {
+    let marker = base.join("child.pid");
+    let env_marker = base.join("child.env");
+    let created = request(
+        api_socket,
+        serde_json::json!({
+            "id": "test:workspace:create",
+            "method": "workspace.create",
+            "params": {"cwd": "/tmp", "focus": true}
+        }),
+    );
+    let pane_id = created["result"]["root_pane"]["pane_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let command = format!(
+        "sh -c 'echo NS=${{NOTIFY_SOCKET-unset}} > {}; echo READY $$ > {}; while read line; do :; done'",
+        env_marker.display(),
+        marker.display(),
+    );
+    assert_ok(request(
+        api_socket,
+        serde_json::json!({
+            "id": "test:pane:run",
+            "method": "pane.send_input",
+            "params": {"pane_id": pane_id, "text": command, "keys": ["Enter"]}
+        }),
+    ));
+    let pid = wait_for_pid_marker(&marker, Duration::from_secs(5));
+    assert_eq!(
+        fs::read_to_string(&env_marker).unwrap().trim(),
+        "NS=unset",
+        "panes must not inherit the service manager socket"
+    );
+    pid
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn live_handoff_reports_the_replacement_main_pid_to_the_service_manager() {
+    let _lock = test_lock();
+    let base = unique_test_dir();
+    let config_home = base.join("config");
+    let runtime_dir = base.join("runtime");
+    let api_socket = runtime_dir.join("herdr.sock");
+    fs::create_dir_all(&base).unwrap();
+    let notify = FakeNotifySocket::bind(base.join("notify.sock"));
+    let notify_path = notify.path.to_str().unwrap().to_string();
+
+    let spawned = spawn_server_with_env(
+        &config_home,
+        &runtime_dir,
+        &api_socket,
+        &[("NOTIFY_SOCKET", &notify_path)],
+    );
+    wait_for_socket(&api_socket, Duration::from_secs(10));
+    register_runtime_dir(&runtime_dir);
+    let server_pid = spawned.child.process_id().unwrap();
+    notify.wait_for(server_pid, "READY=1", Duration::from_secs(10));
+    let pane_pid = start_notify_probe_pane(&api_socket, &base);
+
+    assert_ok(request(
+        &api_socket,
+        serde_json::json!({"id":"test:handoff","method":"server.live_handoff","params":{}}),
+    ));
+    let replacement_pid =
+        wait_for_replacement_server_pid(&runtime_dir, server_pid, Duration::from_secs(10));
+    // Sent by the old server itself, so `NotifyAccess=main` accepts it.
+    notify.wait_for(
+        server_pid,
+        &format!("MAINPID={replacement_pid}\nREADY=1"),
+        Duration::from_secs(10),
+    );
+    notify.wait_for(server_pid, "BARRIER=1", Duration::from_secs(10));
+    wait_for_api(&api_socket, Duration::from_secs(10));
+    assert_eq!(
+        process_env_var(replacement_pid, "NOTIFY_SOCKET").as_deref(),
+        Some(notify_path.as_str()),
+        "the replacement server needs the socket for its own handoff"
+    );
+
+    // The replacement reports its own handoff the same way.
+    assert_ok(request(
+        &api_socket,
+        serde_json::json!({"id":"test:handoff-2","method":"server.live_handoff","params":{}}),
+    ));
+    let second_replacement_pid =
+        wait_for_replacement_server_pid(&runtime_dir, replacement_pid, Duration::from_secs(10));
+    notify.wait_for(
+        replacement_pid,
+        &format!("MAINPID={second_replacement_pid}\nREADY=1"),
+        Duration::from_secs(10),
+    );
+    wait_for_api(&api_socket, Duration::from_secs(10));
+    assert_eq!(unsafe { libc::kill(pane_pid as libc::pid_t, 0) }, 0);
+    // Replacement servers never claim readiness on their own.
+    assert!(
+        !notify
+            .messages()
+            .iter()
+            .any(|(sender, message)| *sender != server_pid as i32 && message == "READY=1"),
+        "{:?}",
+        notify.messages()
+    );
+
+    let _ = request(
+        &api_socket,
+        serde_json::json!({"id":"test:stop","method":"server.stop","params":{}}),
+    );
+    drop(spawned);
+    cleanup_test_base(&base);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn live_handoff_without_a_notify_socket_does_not_notify() {
+    let _lock = test_lock();
+    let base = unique_test_dir();
+    let config_home = base.join("config");
+    let runtime_dir = base.join("runtime");
+    let api_socket = runtime_dir.join("herdr.sock");
+
+    let spawned = spawn_server(&config_home, &runtime_dir, &api_socket);
+    wait_for_socket(&api_socket, Duration::from_secs(10));
+    register_runtime_dir(&runtime_dir);
+    let server_pid = spawned.child.process_id().unwrap();
+    let pane_pid = start_notify_probe_pane(&api_socket, &base);
+
+    assert_ok(request(
+        &api_socket,
+        serde_json::json!({"id":"test:handoff","method":"server.live_handoff","params":{}}),
+    ));
+    let replacement_pid =
+        wait_for_replacement_server_pid(&runtime_dir, server_pid, Duration::from_secs(10));
+    wait_for_api(&api_socket, Duration::from_secs(10));
+    assert_eq!(unsafe { libc::kill(pane_pid as libc::pid_t, 0) }, 0);
+    assert_eq!(process_env_var(replacement_pid, "NOTIFY_SOCKET"), None);
+    let log = test_server_log(&config_home);
+    assert!(log.contains("live handoff completed"), "{log}");
+    assert!(!log.contains("service manager"), "{log}");
+
+    let _ = request(
+        &api_socket,
+        serde_json::json!({"id":"test:stop","method":"server.stop","params":{}}),
+    );
+    drop(spawned);
+    cleanup_test_base(&base);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn live_handoff_rollback_does_not_change_the_main_pid() {
+    let _lock = test_lock();
+    let base = unique_test_dir();
+    let config_home = base.join("config");
+    let runtime_dir = base.join("runtime");
+    let api_socket = runtime_dir.join("herdr.sock");
+    fs::create_dir_all(&base).unwrap();
+    let notify = FakeNotifySocket::bind(base.join("notify.sock"));
+    let notify_path = notify.path.to_str().unwrap().to_string();
+
+    let spawned = spawn_server_with_env(
+        &config_home,
+        &runtime_dir,
+        &api_socket,
+        &[
+            ("NOTIFY_SOCKET", &notify_path),
+            ("HERDR_TEST_HANDOFF_IMPORT_FAIL", "after_restored"),
+        ],
+    );
+    wait_for_socket(&api_socket, Duration::from_secs(10));
+    register_runtime_dir(&runtime_dir);
+    let server_pid = spawned.child.process_id().unwrap();
+    notify.wait_for(server_pid, "READY=1", Duration::from_secs(10));
+    let pane_pid = start_notify_probe_pane(&api_socket, &base);
+
+    let failed = request(
+        &api_socket,
+        serde_json::json!({"id":"test:handoff-fail","method":"server.live_handoff","params":{}}),
+    );
+    assert!(
+        failed.get("error").is_some(),
+        "handoff should fail: {failed}"
+    );
+    wait_for_api(&api_socket, Duration::from_secs(10));
+    thread::sleep(Duration::from_millis(500));
+    assert_eq!(unsafe { libc::kill(pane_pid as libc::pid_t, 0) }, 0);
+    assert_eq!(
+        notify.messages(),
+        vec![(server_pid as i32, "READY=1".to_string())]
+    );
+
+    let _ = request(
+        &api_socket,
+        serde_json::json!({"id":"test:stop","method":"server.stop","params":{}}),
+    );
+    drop(spawned);
+    cleanup_test_base(&base);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn live_handoff_completes_when_the_service_manager_queue_is_full() {
+    use std::os::linux::net::SocketAddrExt;
+    use std::os::unix::net::{SocketAddr, UnixDatagram};
+
+    let _lock = test_lock();
+    let base = unique_test_dir();
+    let config_home = base.join("config");
+    let runtime_dir = base.join("runtime");
+    let api_socket = runtime_dir.join("herdr.sock");
+    let name = format!("herdr-test-full-notify-{}", base.display());
+    let address = SocketAddr::from_abstract_name(name.as_bytes()).unwrap();
+    let receiver = UnixDatagram::bind_addr(&address).unwrap();
+    receiver
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+
+    let mut spawned = spawn_server_with_env(
+        &config_home,
+        &runtime_dir,
+        &api_socket,
+        &[("NOTIFY_SOCKET", &format!("@{name}"))],
+    );
+    wait_for_socket(&api_socket, Duration::from_secs(10));
+    register_runtime_dir(&runtime_dir);
+    let server_pid = spawned.child.process_id().unwrap();
+    let mut buffer = [0u8; 64];
+    let len = receiver.recv(&mut buffer).unwrap();
+    assert_eq!(&buffer[..len], b"READY=1");
+    let pane_pid = start_notify_probe_pane(&api_socket, &base);
+
+    // A manager that stopped reading: its queue stays full.
+    let mut fillers = Vec::new();
+    loop {
+        let filler = UnixDatagram::unbound().unwrap();
+        filler.set_nonblocking(true).unwrap();
+        filler.connect_addr(&address).unwrap();
+        if filler.send(b"x").is_err() {
+            break;
+        }
+        while filler.send(b"x").is_ok() {}
+        fillers.push(filler);
+        assert!(fillers.len() < 4096, "notify queue never filled");
+    }
+
+    assert_ok(request(
+        &api_socket,
+        serde_json::json!({"id":"test:handoff","method":"server.live_handoff","params":{}}),
+    ));
+    wait_for_replacement_server_pid(&runtime_dir, server_pid, Duration::from_secs(10));
+    assert!(
+        wait_for_child_exit(&mut *spawned.child, Duration::from_secs(10)),
+        "the old server must finish shutting down despite the full notify queue"
+    );
+    wait_for_api(&api_socket, Duration::from_secs(10));
+    assert_eq!(unsafe { libc::kill(pane_pid as libc::pid_t, 0) }, 0);
+    let log = test_server_log(&config_home);
+    assert!(
+        log.contains("failed to notify service manager of the new main pid"),
+        "{log}"
+    );
+
+    let _ = request(
+        &api_socket,
+        serde_json::json!({"id":"test:stop","method":"server.stop","params":{}}),
+    );
+    drop(fillers);
+    drop(spawned);
+    cleanup_test_base(&base);
+}

@@ -29,6 +29,9 @@ const CLIENT_MESSAGE_ENDPOINT_CONTROL: u32 = 20;
 pub fn isolate_herdr_test_process(command: &mut CommandBuilder) {
     command.env_remove("HERDR_STARTUP_CWD");
     command.env_remove("HERDR_SESSION");
+    // A test runner started by a service manager must not let test servers
+    // report readiness or main PID changes to it.
+    command.env_remove("NOTIFY_SOCKET");
 }
 
 pub fn register_spawned_herdr_pid(pid: Option<u32>) {
