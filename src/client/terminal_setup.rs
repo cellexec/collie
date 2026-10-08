@@ -1054,6 +1054,43 @@ mod tests {
     }
 
     #[cfg(not(windows))]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn host_keyboard_protocol_refresh_keeps_the_outer_mode_across_report_all_toggles() {
+        use crate::input::KeyboardProtocol;
+
+        let guard = refresh_test_guard(true, true, None);
+        let (host, _rx) = crate::terminal::TerminalRuntime::test_with_channel_and_scrollback_bytes(
+            80, 24, 0, b"", 4096,
+        );
+        // Something outside Herdr (a shell or wrapper) already set its own mode.
+        host.test_process_pty_bytes(b"\x1b[>1u");
+        // Herdr's setup push.
+        host.test_process_pty_bytes(b"\x1b[>7u");
+        for round in 0..6 {
+            let report_all = round % 2 == 0;
+            let mut toggle = Vec::new();
+            crate::terminal_modes::set_host_kitty_keyboard_report_all(&mut toggle, report_all)
+                .unwrap();
+            host.test_process_pty_bytes(&toggle);
+            for focus in [false, true, false] {
+                host.test_process_pty_bytes(&refresh_bytes(&guard, report_all, focus));
+            }
+            let flags = if report_all { 31 } else { 7 };
+            assert_eq!(
+                host.keyboard_protocol(),
+                KeyboardProtocol::Kitty { flags },
+                "round {round}"
+            );
+        }
+        // Herdr's one exit pop restores exactly the outer mode.
+        host.test_process_pty_bytes(b"\x1b[<1u");
+        assert_eq!(
+            host.keyboard_protocol(),
+            KeyboardProtocol::Kitty { flags: 1 }
+        );
+    }
+
+    #[cfg(not(windows))]
     #[test]
     fn host_keyboard_probe_consumes_fragmented_responses_and_preserves_input() {
         let stream = b"before\x1b[?7u-middle-\x1b[?1;2cafter";
