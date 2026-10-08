@@ -28,7 +28,7 @@ impl Drop for HostShutdownMonitor {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn monitor_host_shutdown(
     _requested: std::sync::Arc<std::sync::atomic::AtomicBool>,
     _wake: impl Fn() + Send + Sync + 'static,
