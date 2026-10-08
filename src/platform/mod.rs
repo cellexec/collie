@@ -32,8 +32,12 @@ impl Drop for HostShutdownMonitor {
 /// A restart or shutdown the host announced but has not committed to yet.
 ///
 /// Live handoff carries it so a replacement server still recognizes the
-/// commit point. Only macOS reports one; the timestamp is in its boot-wide
-/// monotonic clock, which is shared by the old and new server processes.
+/// commit point. The value is captured when the old server builds its handoff
+/// manifest; announcements or cancellations that arrive after that and before
+/// the replacement starts its monitor reach only the old server. Each handoff
+/// phase may take up to 30 seconds, so that window can last tens of seconds.
+/// Only macOS reports an intent; the timestamp is in its boot-wide monotonic
+/// clock, which is shared by the old and new server processes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct HostShutdownIntent {
     announced_at_ns: u64,

@@ -186,31 +186,51 @@ static HANDLER_BLOCK_DESCRIPTOR: HandlerBlockDescriptor = HandlerBlockDescriptor
     dispose: dispose_handler,
 };
 
+// The Blocks runtime updates a block's `flags` (its reference count) while other
+// threads may hold it, so these helpers never form a reference to the whole
+// block. They read only the immutable captured fields through raw pointers.
+
 unsafe extern "C" fn invoke_handler(block: *mut HandlerBlock, _token: c_int) {
-    // SAFETY: libnotify invokes a live copy of our block, which owns a Watcher reference.
-    let block = unsafe { &*block };
-    let watcher = unsafe { &*block.watcher };
+    // SAFETY: libnotify invokes a live copy of our block. Its captured fields are
+    // written once before registration and never change; the copy owns a
+    // Watcher reference, so the Watcher outlives this call.
+    let (watcher, event) = unsafe {
+        (
+            std::ptr::addr_of!((*block).watcher).read(),
+            std::ptr::addr_of!((*block).event).read(),
+        )
+    };
+    let watcher = unsafe { &*watcher };
     // A panic must not unwind into libdispatch.
-    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| watcher.handle(block.event)));
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| watcher.handle(event)));
 }
 
 unsafe extern "C" fn copy_handler(_dst: *mut HandlerBlock, src: *const HandlerBlock) {
     // SAFETY: the Blocks runtime already copied the bytes; the copy takes its own reference.
-    unsafe { Arc::increment_strong_count((*src).watcher) };
+    unsafe {
+        let watcher = std::ptr::addr_of!((*src).watcher).read();
+        Arc::increment_strong_count(watcher);
+    }
 }
 
 unsafe extern "C" fn dispose_handler(block: *const HandlerBlock) {
     // SAFETY: releases the reference taken in `copy_handler`.
-    unsafe { Arc::decrement_strong_count((*block).watcher) };
+    unsafe {
+        let watcher = std::ptr::addr_of!((*block).watcher).read();
+        Arc::decrement_strong_count(watcher);
+    }
 }
 
-/// notify(3) registrations delivered in posting order on one serial queue.
+/// notify(3) registrations handled one at a time on a shared serial queue.
 ///
-/// Every key shares the queue: libnotify reads its notification port from a
+/// Ordering is best effort. libnotify reads its notification port from a
 /// single dispatch source and forwards each token with `dispatch_async` to the
-/// registration's queue, so a serial queue preserves the order notifyd sent
-/// them. File-descriptor registrations do not: libnotify writes those from a
-/// global concurrent queue.
+/// registration's queue, so the serial queue keeps the order in which this
+/// process received notifyd's Mach messages. notifyd itself may defer or
+/// coalesce deliveries under backpressure, so that order is not guaranteed to
+/// match posting order. loginwindow's announcement and point of no return are
+/// normally seconds to minutes apart. File-descriptor registrations give
+/// weaker ordering still: libnotify writes those from a global concurrent queue.
 struct Registration {
     queue: DispatchQueue,
     tokens: Vec<c_int>,

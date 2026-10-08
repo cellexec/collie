@@ -590,6 +590,44 @@ mod tests {
     }
 
     #[test]
+    fn an_older_server_imports_a_manifest_with_an_announced_host_shutdown() {
+        /// The manifest as servers before `host_shutdown_intent` decode it,
+        /// frozen here so the new field stays ignorable by them.
+        #[derive(Deserialize)]
+        #[allow(dead_code)] // Only decoding is under test.
+        struct PreHostShutdownManifest {
+            version: u32,
+            source_version: String,
+            source_protocol: u32,
+            expected_version: Option<String>,
+            expected_protocol: Option<u32>,
+            snapshot: crate::persist::SessionSnapshot,
+            panes: Vec<crate::handoff_runtime::HandoffRuntimeState>,
+            #[serde(default)]
+            api_window_title: Option<String>,
+        }
+
+        let intent: crate::platform::HostShutdownIntent =
+            serde_json::from_value(serde_json::json!({ "announced_at_ns": 42 }))
+                .expect("intent should deserialize");
+        let manifest = manifest_for(
+            empty_snapshot(),
+            Vec::new(),
+            None,
+            None,
+            Some("deploying".to_string()),
+            Some(intent),
+        );
+        let encoded = serde_json::to_vec(&manifest).expect("manifest should serialize");
+
+        let older: PreHostShutdownManifest =
+            serde_json::from_slice(&encoded).expect("an older server should still load it");
+
+        assert_eq!(older.version, HANDOFF_VERSION);
+        assert_eq!(older.api_window_title.as_deref(), Some("deploying"));
+    }
+
+    #[test]
     fn a_manifest_written_before_the_title_field_still_loads() {
         let manifest = manifest_for(
             empty_snapshot(),
