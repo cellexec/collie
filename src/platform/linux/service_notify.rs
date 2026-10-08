@@ -151,6 +151,7 @@ fn send_until(
     retry_send_until(
         payload.len(),
         deadline,
+        Instant::now,
         || match fd {
             Some(fd) => send_with_fd(datagram, payload, fd),
             None => datagram.send(payload),
@@ -159,24 +160,28 @@ fn send_until(
     )
 }
 
+/// The first send always runs; every retry, whatever made it necessary, first
+/// checks `deadline`, so readiness that keeps being lost cannot extend it.
 fn retry_send_until(
     expected: usize,
     deadline: Instant,
+    now: impl Fn() -> Instant,
     mut send_once: impl FnMut() -> io::Result<usize>,
     mut wait_writable: impl FnMut() -> io::Result<()>,
 ) -> io::Result<()> {
+    let mut first_attempt = true;
     loop {
+        if !first_attempt && now() >= deadline {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "service manager notification did not fit before the deadline",
+            ));
+        }
+        first_attempt = false;
         match send_once() {
             Ok(sent) if sent == expected => return Ok(()),
             Ok(_) => return Err(io::Error::other("short service notification write")),
-            Err(err) if err.kind() == io::ErrorKind::Interrupted => {
-                if Instant::now() >= deadline {
-                    return Err(io::Error::new(
-                        io::ErrorKind::TimedOut,
-                        "service manager notification kept being interrupted",
-                    ));
-                }
-            }
+            Err(err) if err.kind() == io::ErrorKind::Interrupted => {}
             Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
                 wait_writable().map_err(|err| {
                     if err.kind() == io::ErrorKind::TimedOut {
@@ -195,7 +200,7 @@ fn retry_send_until(
 }
 
 fn wait_for_fd(fd: libc::c_int, events: libc::c_short, deadline: Instant) -> io::Result<()> {
-    wait_until(deadline, |timeout_ms| {
+    wait_until(deadline, Instant::now, |timeout_ms| {
         let mut poll_fd = libc::pollfd {
             fd,
             events,
@@ -213,10 +218,11 @@ fn wait_for_fd(fd: libc::c_int, events: libc::c_short, deadline: Instant) -> io:
 /// attempt gets only the time left, so interruptions never extend the wait.
 fn wait_until(
     deadline: Instant,
+    now: impl Fn() -> Instant,
     mut poll_once: impl FnMut(libc::c_int) -> io::Result<bool>,
 ) -> io::Result<()> {
     loop {
-        let remaining = deadline.saturating_duration_since(Instant::now());
+        let remaining = deadline.saturating_duration_since(now());
         let timeout_ms = remaining_poll_timeout_ms(remaining);
         match poll_once(timeout_ms) {
             Ok(true) => return Ok(()),
@@ -224,7 +230,7 @@ fn wait_until(
             Err(err) if err.kind() == io::ErrorKind::Interrupted => {}
             Err(err) => return Err(err),
         }
-        if timeout_ms == 0 || Instant::now() >= deadline {
+        if timeout_ms == 0 || now() >= deadline {
             return Err(io::Error::new(
                 io::ErrorKind::TimedOut,
                 "timed out waiting for the service manager",
@@ -445,39 +451,65 @@ mod tests {
         assert!(started.elapsed() < Duration::from_secs(1));
     }
 
+    /// A fake monotonic clock, so deadline tests don't depend on the scheduler.
+    struct FakeClock {
+        start: Instant,
+        elapsed: std::cell::Cell<Duration>,
+    }
+
+    impl FakeClock {
+        fn new() -> Self {
+            Self {
+                start: Instant::now(),
+                elapsed: std::cell::Cell::new(Duration::ZERO),
+            }
+        }
+
+        fn now(&self) -> Instant {
+            self.start + self.elapsed.get()
+        }
+
+        fn advance(&self, by: Duration) {
+            self.elapsed.set(self.elapsed.get() + by);
+        }
+
+        fn after(&self, by: Duration) -> Instant {
+            self.start + by
+        }
+    }
+
     #[test]
     fn interruptions_do_not_extend_the_deadline() {
-        let deadline = Instant::now() + Duration::from_millis(100);
+        let clock = FakeClock::new();
         let mut timeouts = Vec::new();
 
-        let err = wait_until(deadline, |timeout_ms| {
-            timeouts.push(timeout_ms);
-            std::thread::sleep(Duration::from_millis(15));
-            Err(io::Error::from(io::ErrorKind::Interrupted))
-        })
+        let err = wait_until(
+            clock.after(Duration::from_millis(100)),
+            || clock.now(),
+            |timeout_ms| {
+                timeouts.push(timeout_ms);
+                clock.advance(Duration::from_millis(15));
+                Err(io::Error::from(io::ErrorKind::Interrupted))
+            },
+        )
         .unwrap_err();
 
         assert_eq!(err.kind(), io::ErrorKind::TimedOut);
-        assert!(Instant::now() < deadline + Duration::from_millis(500));
-        assert!(timeouts.len() >= 3, "{timeouts:?}");
-        assert!(timeouts[0] <= 100, "{timeouts:?}");
-        assert!(
-            timeouts.windows(2).all(|pair| pair[1] < pair[0]),
-            "every retry must get less time: {timeouts:?}"
-        );
+        assert_eq!(timeouts, [100, 85, 70, 55, 40, 25, 10]);
     }
 
     #[test]
     fn interrupted_sends_stop_at_the_deadline() {
-        let deadline = Instant::now() + Duration::from_millis(50);
+        let clock = FakeClock::new();
         let mut attempts = 0;
 
         let err = retry_send_until(
             7,
-            deadline,
+            clock.after(Duration::from_millis(50)),
+            || clock.now(),
             || {
                 attempts += 1;
-                std::thread::sleep(Duration::from_millis(5));
+                clock.advance(Duration::from_millis(10));
                 Err(io::Error::from(io::ErrorKind::Interrupted))
             },
             || panic!("an interrupted send must not wait for queue space"),
@@ -485,8 +517,55 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(err.kind(), io::ErrorKind::TimedOut);
-        assert!(Instant::now() < deadline + Duration::from_millis(500));
-        assert!(attempts >= 2, "{attempts}");
+        assert_eq!(attempts, 5);
+    }
+
+    #[test]
+    fn lost_readiness_does_not_extend_the_deadline() {
+        // poll keeps reporting room, but the queue fills again before each send.
+        let clock = FakeClock::new();
+        let mut sends = 0;
+        let mut waits = 0;
+
+        let err = retry_send_until(
+            7,
+            clock.after(Duration::from_millis(50)),
+            || clock.now(),
+            || {
+                sends += 1;
+                Err(io::Error::from(io::ErrorKind::WouldBlock))
+            },
+            || {
+                waits += 1;
+                clock.advance(Duration::from_millis(10));
+                Ok(())
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(err.kind(), io::ErrorKind::TimedOut);
+        assert_eq!(sends, 5);
+        assert_eq!(waits, 5);
+    }
+
+    #[test]
+    fn the_first_send_runs_even_at_the_deadline() {
+        let clock = FakeClock::new();
+        let mut sends = 0;
+
+        retry_send_until(
+            7,
+            clock.now(),
+            || clock.now(),
+            || {
+                sends += 1;
+                Ok(7)
+            },
+            || panic!("a successful send must not wait"),
+        )
+        .unwrap();
+
+        assert_eq!(sends, 1);
     }
 
     #[test]
@@ -496,6 +575,7 @@ mod tests {
         retry_send_until(
             7,
             Instant::now() + Duration::from_secs(5),
+            Instant::now,
             || {
                 attempts += 1;
                 if attempts < 3 {
@@ -515,14 +595,18 @@ mod tests {
     fn readiness_after_interruptions_succeeds() {
         let mut attempts = 0;
 
-        wait_until(Instant::now() + Duration::from_secs(5), |_| {
-            attempts += 1;
-            if attempts < 4 {
-                Err(io::Error::from(io::ErrorKind::Interrupted))
-            } else {
-                Ok(true)
-            }
-        })
+        wait_until(
+            Instant::now() + Duration::from_secs(5),
+            Instant::now,
+            |_| {
+                attempts += 1;
+                if attempts < 4 {
+                    Err(io::Error::from(io::ErrorKind::Interrupted))
+                } else {
+                    Ok(true)
+                }
+            },
+        )
         .unwrap();
 
         assert_eq!(attempts, 4);
