@@ -196,11 +196,12 @@ fn apply_pane_launch_env(cmd: &mut CommandBuilder, launch_env: &PaneLaunchEnv) {
     ] {
         cmd.env_remove(key);
     }
-    // Only the server reports to its service manager.
-    cmd.env_remove(crate::platform::SERVICE_NOTIFY_SOCKET_ENV_VAR);
     for (key, value) in &launch_env.extra {
         cmd.env(key, value);
     }
+    // Only the server reports to its service manager, even when a caller asks
+    // for the variable explicitly.
+    cmd.env_remove(crate::platform::SERVICE_NOTIFY_SOCKET_ENV_VAR);
     cmd.env(crate::HERDR_ENV_VAR, crate::HERDR_ENV_VALUE);
     crate::integration::apply_pane_base_env(cmd);
     crate::platform::apply_pane_runtime_marker(cmd);
@@ -4169,6 +4170,21 @@ mod tests {
             Some(OsStr::new("fake-api-key"))
         );
         assert_eq!(cmd.get_env("DISPLAY"), Some(OsStr::new(":42")));
+    }
+
+    #[test]
+    fn pane_launch_env_drops_an_explicit_service_notify_socket() {
+        let mut cmd = CommandBuilder::new("shell");
+
+        apply_pane_launch_env(
+            &mut cmd,
+            &PaneLaunchEnv::from_extra(vec![(
+                "NOTIFY_SOCKET".to_string(),
+                "/run/user/1000/systemd/notify".to_string(),
+            )]),
+        );
+
+        assert!(cmd.get_env("NOTIFY_SOCKET").is_none());
     }
 
     #[test]

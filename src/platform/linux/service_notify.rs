@@ -148,17 +148,37 @@ fn send_until(
     fd: Option<libc::c_int>,
     deadline: Instant,
 ) -> io::Result<()> {
-    loop {
-        let result = match fd {
+    retry_send_until(
+        payload.len(),
+        deadline,
+        || match fd {
             Some(fd) => send_with_fd(datagram, payload, fd),
             None => datagram.send(payload),
-        };
-        match result {
-            Ok(sent) if sent == payload.len() => return Ok(()),
+        },
+        || wait_for_fd(datagram.as_raw_fd(), libc::POLLOUT, deadline),
+    )
+}
+
+fn retry_send_until(
+    expected: usize,
+    deadline: Instant,
+    mut send_once: impl FnMut() -> io::Result<usize>,
+    mut wait_writable: impl FnMut() -> io::Result<()>,
+) -> io::Result<()> {
+    loop {
+        match send_once() {
+            Ok(sent) if sent == expected => return Ok(()),
             Ok(_) => return Err(io::Error::other("short service notification write")),
-            Err(err) if err.kind() == io::ErrorKind::Interrupted => {}
+            Err(err) if err.kind() == io::ErrorKind::Interrupted => {
+                if Instant::now() >= deadline {
+                    return Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        "service manager notification kept being interrupted",
+                    ));
+                }
+            }
             Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
-                wait_for_fd(datagram.as_raw_fd(), libc::POLLOUT, deadline).map_err(|err| {
+                wait_writable().map_err(|err| {
                     if err.kind() == io::ErrorKind::TimedOut {
                         io::Error::new(
                             io::ErrorKind::TimedOut,
@@ -445,6 +465,50 @@ mod tests {
             timeouts.windows(2).all(|pair| pair[1] < pair[0]),
             "every retry must get less time: {timeouts:?}"
         );
+    }
+
+    #[test]
+    fn interrupted_sends_stop_at_the_deadline() {
+        let deadline = Instant::now() + Duration::from_millis(50);
+        let mut attempts = 0;
+
+        let err = retry_send_until(
+            7,
+            deadline,
+            || {
+                attempts += 1;
+                std::thread::sleep(Duration::from_millis(5));
+                Err(io::Error::from(io::ErrorKind::Interrupted))
+            },
+            || panic!("an interrupted send must not wait for queue space"),
+        )
+        .unwrap_err();
+
+        assert_eq!(err.kind(), io::ErrorKind::TimedOut);
+        assert!(Instant::now() < deadline + Duration::from_millis(500));
+        assert!(attempts >= 2, "{attempts}");
+    }
+
+    #[test]
+    fn an_interrupted_send_is_retried_before_the_deadline() {
+        let mut attempts = 0;
+
+        retry_send_until(
+            7,
+            Instant::now() + Duration::from_secs(5),
+            || {
+                attempts += 1;
+                if attempts < 3 {
+                    Err(io::Error::from(io::ErrorKind::Interrupted))
+                } else {
+                    Ok(7)
+                }
+            },
+            || panic!("an interrupted send must not wait for queue space"),
+        )
+        .unwrap();
+
+        assert_eq!(attempts, 3);
     }
 
     #[test]
