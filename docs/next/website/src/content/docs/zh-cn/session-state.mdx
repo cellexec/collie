@@ -135,3 +135,33 @@ herdr --remote workbox --handoff
 普通的 `herdr update` 会安装新客户端,并让端点第 1 代服务器继续运行。普通的 `herdr --remote workbox` 也会在版本不同时保留兼容的远程服务器。只有从早于第 1 代的服务器做一次性升级时才需要停止;如果要在不结束窗格进程的情况下明确替换受支持的运行中服务器,请使用 `--handoff`。
 
 `herdr update --handoff` 只适用于由 Herdr 自带更新器管理的安装。Homebrew、mise 和 Nix 安装通过各自的包管理器更新,因此那些安装中 `herdr update` 被禁用,无法执行实时交接。
+
+### 以 systemd 用户服务运行服务器
+
+在 Linux 上,`herdr server` 支持 systemd 的 notify 协议。服务器开始接受连接后会报告就绪。实时交接之后,旧服务器会在退出前把替换服务器的 PID 告诉 systemd。这样 systemd 会继续监管新服务器,而不会把旧服务器的退出当作服务结束,从而停止所有窗格。
+
+一个最小的用户单元,例如 `~/.config/systemd/user/herdr.service`:
+
+```ini
+[Unit]
+Description=herdr server
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=%h/.local/bin/herdr server
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+用 `systemctl --user enable --now herdr.service` 启用。请把 `ExecStart` 改成你的 `herdr` 可执行文件所在位置。
+
+- `Type=notify` 会等待服务器报告就绪。如果保留 `Type=simple`,仍需设置 `NotifyAccess=main`,以便接受交接后的主 PID 更新。
+- `NotifyAccess=main` 只接受当前主进程发出的通知,而发送主 PID 更新的正是这个进程。不要使用 `NotifyAccess=all`:它会让服务中的任何进程(包括窗格里的程序)都能修改主 PID。
+- 保留默认的 `KillMode=control-group`,这样停止服务时也会停止它的窗格。
+- 有了 `Restart=on-failure`,如果替换服务器在交接后崩溃,systemd 会重启它。
+- 正在运行的服务器本身必须已经包含此支持。由旧版本启动的服务器不会报告新的 PID,因此它在 systemd 下的第一次实时交接仍会结束服务。
+
+Herdr 会从窗格、插件和它启动的其他进程的环境中移除 `NOTIFY_SOCKET`,因此它们不会继承服务的通知套接字。

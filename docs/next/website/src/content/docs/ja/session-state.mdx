@@ -135,3 +135,33 @@ herdr --remote workbox --handoff
 素の `herdr update` は新しいクライアントをインストールし、エンドポイント世代 1 のサーバーを動かしたままにします。素の `herdr --remote workbox` も、バージョンが違っていても互換性のあるリモートサーバーを動かしたままにします。停止が必要なのは世代 1 より前のサーバーを一度だけ更新するときです。対応する実行中サーバーをペインプロセスを失わず明示的に置き換えたい場合は `--handoff` を使います。
 
 `herdr update --handoff` は Herdr 自身のアップデーターが管理するインストールにのみ適用されます。Homebrew、mise、Nix のインストールはそれぞれのパッケージマネージャーで更新されるため、そこでは `herdr update` は無効化されており、ライブハンドオフは実行できません。
+
+### サーバーを systemd ユーザーサービスとして実行する
+
+Linux では、`herdr server` は systemd の notify プロトコルに対応しています。接続を受け付けられるようになると準備完了を通知します。ライブハンドオフの後は、古いサーバーが終了する前に置き換え先サーバーの PID を systemd に伝えます。これにより systemd は新しいサーバーの監視を続け、古いサーバーの終了をサービスの終了とみなしてすべてのペインを停止することはありません。
+
+最小限のユーザーユニットの例(`~/.config/systemd/user/herdr.service`):
+
+```ini
+[Unit]
+Description=herdr server
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=%h/.local/bin/herdr server
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+`systemctl --user enable --now herdr.service` で有効にします。`ExecStart` は `herdr` バイナリの場所に合わせて変更してください。
+
+- `Type=notify` はサーバーの準備完了通知を待ちます。`Type=simple` のままにする場合も、ハンドオフ後のメイン PID 更新が受け付けられるよう `NotifyAccess=main` を設定してください。
+- `NotifyAccess=main` は現在のメインプロセスからの通知だけを受け付けます。メイン PID の更新を送るのはこのプロセスです。`NotifyAccess=all` は避けてください。サービス内の任意のプロセス(ペイン内のプログラムを含む)がメイン PID を変更できてしまいます。
+- 既定の `KillMode=control-group` のままにして、サービス停止時にペインも停止されるようにしてください。
+- `Restart=on-failure` により、ハンドオフ後に置き換え先サーバーがクラッシュした場合も systemd が再起動します。
+- 実行中のサーバー自体がこの機能を備えている必要があります。古いリリースから起動したサーバーは新しい PID を通知しないため、systemd 下での最初のライブハンドオフではサービスが終了します。
+
+Herdr はペイン、プラグイン、その他起動するプロセスの環境から `NOTIFY_SOCKET` を取り除くため、それらがサービスの通知ソケットを引き継ぐことはありません。
