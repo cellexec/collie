@@ -404,59 +404,91 @@ mod tests {
             }
         }
 
-        /// Posts back to back, without waiting between keys.
+        /// Posts each key and waits for it to be handled before the next one.
+        /// notifyd may reorder deliveries under load, so ordering semantics are
+        /// tested on `Watcher::handle` directly.
         fn post(&mut self, keys: &[&str]) {
             for key in keys {
-                let name = CString::new(format!("{}{key}", self.prefix)).unwrap();
-                assert_eq!(unsafe { notify_post(name.as_ptr()) }, NOTIFY_STATUS_OK);
+                self.post_unregistered(key);
+                self.posted += 1;
+                let deadline = Instant::now() + Duration::from_secs(5);
+                while self.watcher.seen.load(Ordering::Acquire) < self.posted {
+                    assert!(Instant::now() < deadline, "{key} was not delivered");
+                    std::thread::sleep(Duration::from_millis(2));
+                }
             }
-            self.posted += keys.len();
         }
 
-        /// Waits until every posted key was handled, then reports the result.
+        fn post_unregistered(&self, key: &str) {
+            let name = CString::new(format!("{}{key}", self.prefix)).unwrap();
+            assert_eq!(unsafe { notify_post(name.as_ptr()) }, NOTIFY_STATUS_OK);
+        }
+
         fn requested(&self) -> bool {
-            let deadline = Instant::now() + Duration::from_secs(5);
-            while self.watcher.seen.load(Ordering::Acquire) < self.posted {
-                assert!(
-                    Instant::now() < deadline,
-                    "notifications were not delivered"
-                );
-                std::thread::sleep(Duration::from_millis(2));
-            }
             self.watcher.requested.swap(false, Ordering::AcqRel)
         }
     }
 
     #[test]
-    fn rapid_posts_are_handled_in_posting_order() {
-        let mut harness = Harness::new("order", HostShutdownIntentCell::default());
-        for round in 0..25 {
-            harness.post(&["restartinitiated", "logoutcancelled", "logoutNoReturn"]);
+    fn watcher_applies_events_in_handling_order() {
+        let woken = Arc::new(AtomicUsize::new(0));
+        let watcher = Watcher {
+            intent: HostShutdownIntentCell::default(),
+            requested: Arc::new(AtomicBool::new(false)),
+            wake: Box::new({
+                let woken = woken.clone();
+                move || {
+                    woken.fetch_add(1, Ordering::AcqRel);
+                }
+            }),
+            seen: AtomicUsize::new(0),
+        };
+        let requested = || watcher.requested.swap(false, Ordering::AcqRel);
+        for round in 0..3 {
+            for event in [Intent, Cancelled, NoReturn] {
+                watcher.handle(event);
+            }
             assert!(
-                !harness.requested(),
+                !requested(),
                 "round {round}: cancel came last before no-return"
             );
 
-            harness.post(&["shutdownInitiated", "shutdownNoReturn"]);
-            assert!(
-                harness.requested(),
-                "round {round}: intent preceded no-return"
-            );
+            for event in [Intent, NoReturn] {
+                watcher.handle(event);
+            }
+            assert!(requested(), "round {round}: intent preceded no-return");
 
-            harness.post(&["logoutNoReturn"]);
-            assert!(
-                !harness.requested(),
-                "round {round}: no-return consumed the intent"
-            );
+            watcher.handle(NoReturn);
+            assert!(!requested(), "round {round}: no-return consumed the intent");
         }
+        assert_eq!(woken.load(Ordering::Acquire), 3);
+    }
+
+    #[test]
+    fn live_notifications_drive_the_watcher() {
+        let mut harness = Harness::new("live", HostShutdownIntentCell::default());
+        harness.post(&["restartinitiated", "logoutcancelled", "logoutNoReturn"]);
+        assert!(!harness.requested(), "cancelled restart keeps the server");
+
+        harness.post(&["shutdownInitiated", "shutdownNoReturn"]);
+        assert!(
+            harness.requested(),
+            "shutdown reached its point of no return"
+        );
+
+        harness.post(&["likelyShutdown", "logoutNoReturn"]);
+        assert!(
+            harness.requested(),
+            "every intent key arms and every no-return key fires"
+        );
     }
 
     #[test]
     fn plain_logout_keeps_server() {
         let mut harness = Harness::new("logout", HostShutdownIntentCell::default());
-        harness.post(&["logoutInitiated", "logoutNoReturn", "shutdownNoReturn"]);
-        // `logoutInitiated` is not registered, so it is never counted.
-        harness.posted -= 1;
+        // `logoutInitiated` is not registered, so it is never delivered.
+        harness.post_unregistered("logoutInitiated");
+        harness.post(&["logoutNoReturn", "shutdownNoReturn"]);
         assert!(!harness.requested());
     }
 
