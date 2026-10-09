@@ -244,6 +244,12 @@ pub(super) fn render_expanded(
 ) {
     let palette = &config.palette;
     super::render::render_sidebar_background(buffer, area, palette);
+    super::render::sidebar::render_sidebar_focus_divider(
+        buffer,
+        area,
+        state.sidebar.focused,
+        palette,
+    );
     hits.sidebar_divider = if area.is_empty() {
         Rect::default()
     } else {
@@ -560,6 +566,7 @@ pub(super) fn render_expanded(
         state.endpoints,
         state.active_endpoint_id,
         config,
+        state.sidebar,
         state.agent_scroll,
         hits,
     );

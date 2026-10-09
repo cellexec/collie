@@ -39,7 +39,8 @@ impl ClientShellState {
             && self
                 .navigate_workspace_id
                 .as_ref()
-                .is_some_and(|target| self.navigation_target_valid(target));
+                .is_some_and(|target| self.navigation_target_valid(target))
+            && self.sidebar_focus.section == super::sidebar_focus::SidebarSection::Spaces;
         let pending_workspace_highlight =
             self.pending_workspace_highlight.as_ref().filter(|pending| {
                 self.mode != ClientShellMode::Navigate
@@ -77,6 +78,9 @@ impl ClientShellState {
             reveal_navigation_workspace: &mut self.reveal_navigation_workspace,
             dragged_workspace_id: None,
             workspace_drop_indicator_row: None,
+            sidebar: self
+                .sidebar_focus
+                .render_view(self.mode, self.prefix_return_navigate),
         };
         if let Some(snapshot) = local_snapshot {
             render::render_sidebar(
@@ -129,6 +133,7 @@ impl ClientShellState {
             &mut buffer,
             Rect::new(0, 0, cols, rows),
             self.mode,
+            self.mode_bar_context(),
             None,
             self.endpoint_error.as_deref(),
             false,
@@ -163,7 +168,8 @@ impl ClientShellState {
             && self
                 .navigate_workspace_id
                 .as_ref()
-                .is_some_and(|target| self.navigation_target_valid(target));
+                .is_some_and(|target| self.navigation_target_valid(target))
+            && self.sidebar_focus.section == super::sidebar_focus::SidebarSection::Spaces;
         let pending_workspace_highlight =
             self.pending_workspace_highlight.as_ref().filter(|pending| {
                 self.mode != ClientShellMode::Navigate
@@ -233,6 +239,9 @@ impl ClientShellState {
                 reveal_navigation_workspace: &mut self.reveal_navigation_workspace,
                 dragged_workspace_id,
                 workspace_drop_indicator_row,
+                sidebar: self
+                    .sidebar_focus
+                    .render_view(self.mode, self.prefix_return_navigate),
             },
         );
         self.hits.panes = surface
@@ -325,6 +334,7 @@ impl ClientShellState {
                 &mut buffer,
                 mode_bar_area,
                 self.mode,
+                self.mode_bar_context(),
                 self.copy_mode.as_ref(),
                 self.endpoint_error.as_deref(),
                 snapshot.update_available.is_some(),
@@ -699,6 +709,23 @@ impl ClientShellState {
                 self.hits.release_notes_max_scroll = rendered.release_notes_max_scroll;
                 rendered.cursor
             };
+            frame.replace_from_ratatui_buffer_preserving_effects(&composed, cursor);
+        }
+        if self.overlay.is_none()
+            && self.mode == ClientShellMode::Prefix
+            && self.prefix_sequence == Some(ClientPrefixSequence::Search)
+        {
+            let cursor = frame.cursor.clone();
+            let mut composed = frame.to_ratatui_buffer()?;
+            if let Some(area) = render::render_which_key(
+                &mut composed,
+                layout.pane_surface,
+                " search ",
+                &[("a", "agents"), ("s", "spaces"), ("esc", "cancel")],
+                &self.config.palette,
+            ) {
+                occlusion.cover(area);
+            }
             frame.replace_from_ratatui_buffer_preserving_effects(&composed, cursor);
         }
         if let Some(ClientShellOverlay::Help(help)) = self.overlay.as_mut() {

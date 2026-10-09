@@ -145,7 +145,8 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 
 # Prefix-mode actions
 # help = "prefix+?"
-# settings = "prefix+s"
+# settings = "prefix+comma"
+# search = "prefix+s"   # then a: agent picker, s: space picker
 # detach = "prefix+q"
 # reload_config = "prefix+shift+r"
 # open_notification_target = "prefix+o"
@@ -193,14 +194,34 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # resize_pane_right = ""  # optional, e.g. "ctrl+shift+alt+right"
 # toggle_sidebar = "prefix+b"
 
-# Navigate-mode movement. These local shortcuts win while navigate mode is open.
-# They are independent from focus_pane_*. Do not include prefix+, esc, enter, tab, or 1..9 here.
-# navigate_workspace_up = "up"
-# navigate_workspace_down = "down"
-# navigate_pane_left = "h"      # left arrow always focuses the pane to the left
-# navigate_pane_down = "j"
-# navigate_pane_up = "k"
-# navigate_pane_right = "l"     # right arrow always focuses the pane to the right
+# Sidebar focus (workspace_picker). These local shortcuts win while the sidebar has focus.
+# They are independent from focus_pane_*. Do not include prefix+, esc, enter, tab, g, z,
+# ctrl+d, or ctrl+u here; gg, za, and ctrl+d/ctrl+u are fixed sidebar keys.
+# navigate_workspace_up = ["k", "up"]
+# navigate_workspace_down = ["j", "down"]
+# navigate_pane_left = ""       # optional, unset by default
+# navigate_pane_down = ""
+# navigate_pane_up = ""
+# navigate_pane_right = ""
+# sidebar_spaces = "1"
+# sidebar_agents = "2"
+# sidebar_bottom = "shift+g"
+# sidebar_filter = "/"
+# sidebar_new = "n"
+# sidebar_rename = "r"
+# sidebar_close = "d"           # agents: press twice
+# sidebar_sort = "s"
+# sidebar_state_filter = "f"
+# sidebar_move_down = "shift+j"
+# sidebar_move_up = "shift+k"
+# sidebar_narrower = "<"
+# sidebar_wider = ">"
+# sidebar_grow_spaces = "plus"
+# sidebar_grow_agents = "minus"
+# sidebar_menu = "m"
+# sidebar_help = "?"
+# sidebar_leader = "space"      # acts as the prefix
+# sidebar_leave = "i"
 
 # Custom commands use the same binding syntax.
 # type = "shell" runs detached in the background.

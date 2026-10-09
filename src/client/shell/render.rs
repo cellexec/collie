@@ -9,7 +9,9 @@ mod tabs;
 
 pub(super) use super::agent_sidebar::{ordered_agent_pane_ids, render_agent_panel};
 pub(super) use super::aggregate_navigation::navigator_rows as client_navigator_rows;
-pub(super) use overlays::{render_client_overlay, render_context_menu, render_global_menu};
+pub(super) use overlays::{
+    render_client_overlay, render_context_menu, render_global_menu, render_which_key,
+};
 pub(super) use sidebar::{render_collapsed_sidebar, render_sidebar, workspace_entries};
 pub(super) use tabs::{render_tab_bar, tab_bar_status_width};
 
@@ -28,10 +30,20 @@ pub(in crate::client::shell) fn render_sidebar_background(
     }
 }
 
+/// Sidebar and prefix-sequence details the mode bar hints depend on.
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct ModeBarContext {
+    pub(super) sidebar_section: super::sidebar_focus::SidebarSection,
+    pub(super) sidebar_editing: bool,
+    pub(super) sidebar_pending_close: bool,
+    pub(super) prefix_sequence: Option<ClientPrefixSequence>,
+}
+
 pub(super) fn render_mode_bar(
     buffer: &mut Buffer,
     pane_area: Rect,
     mode: ClientShellMode,
+    context: ModeBarContext,
     copy_mode: Option<&ClientCopyModeState>,
     endpoint_error: Option<&str>,
     update_available: bool,
@@ -83,6 +95,20 @@ pub(super) fn render_mode_bar(
         ]);
     } else {
         match mode {
+            ClientShellMode::Prefix
+                if context.prefix_sequence == Some(ClientPrefixSequence::Search) =>
+            {
+                segments.extend([
+                    (" SEARCH ".to_owned(), mode_style),
+                    (" ".to_owned(), base),
+                    ("a".to_owned(), key),
+                    (" agents  ".to_owned(), base),
+                    ("s".to_owned(), key),
+                    (" spaces  ".to_owned(), base),
+                    ("esc".to_owned(), key),
+                    (" cancel".to_owned(), base),
+                ]);
+            }
             ClientShellMode::Prefix => {
                 segments.extend([
                     (" PREFIX ".to_owned(), mode_style),
@@ -98,16 +124,62 @@ pub(super) fn render_mode_bar(
                 ]);
             }
             ClientShellMode::Navigate => {
-                segments.extend([
-                    (" NAVIGATE ".to_owned(), mode_style),
-                    (" esc back  ".to_owned(), base),
-                    ("↑/↓".to_owned(), key),
-                    (" workspace  ".to_owned(), base),
-                    ("tab".to_owned(), key),
-                    (" pane  ".to_owned(), base),
-                    (prefix_rhs(&keybinds.keybinds.help), key),
-                    (" keybinds".to_owned(), base),
-                ]);
+                let navigate = &keybinds.keybinds.navigate;
+                let label = |bindings: &crate::config::ActionKeybinds| {
+                    bindings
+                        .labels()
+                        .into_iter()
+                        .next()
+                        .unwrap_or_else(|| "unset".to_owned())
+                };
+                let section = match context.sidebar_section {
+                    super::sidebar_focus::SidebarSection::Spaces => " SPACES ",
+                    super::sidebar_focus::SidebarSection::Agents => " AGENTS ",
+                };
+                segments.push((section.to_owned(), mode_style));
+                if context.sidebar_editing {
+                    segments.extend([
+                        (" type to filter  ".to_owned(), base),
+                        ("enter".to_owned(), key),
+                        (" keep  ".to_owned(), base),
+                        ("esc".to_owned(), key),
+                        (" clear".to_owned(), base),
+                    ]);
+                } else if context.sidebar_pending_close {
+                    segments.extend([
+                        (" ".to_owned(), base),
+                        (label(&navigate.close), key),
+                        (" again closes the agent pane  ".to_owned(), base),
+                        ("any key".to_owned(), key),
+                        (" cancel".to_owned(), base),
+                    ]);
+                } else {
+                    segments.extend([
+                        (" ".to_owned(), base),
+                        (
+                            format!(
+                                "{}/{}",
+                                label(&navigate.workspace_down),
+                                label(&navigate.workspace_up)
+                            ),
+                            key,
+                        ),
+                        (" move  ".to_owned(), base),
+                        (
+                            format!("{}/{}", label(&navigate.spaces), label(&navigate.agents)),
+                            key,
+                        ),
+                        (" section  ".to_owned(), base),
+                        ("enter".to_owned(), key),
+                        (" open  ".to_owned(), base),
+                        (label(&navigate.filter), key),
+                        (" filter  ".to_owned(), base),
+                        ("esc".to_owned(), key),
+                        (" back  ".to_owned(), base),
+                        (label(&navigate.help), key),
+                        (" keys".to_owned(), base),
+                    ]);
+                }
             }
             ClientShellMode::Resize => {
                 segments.extend([
@@ -248,6 +320,7 @@ pub(super) struct ShellRenderState<'a> {
     pub(super) reveal_navigation_workspace: &'a mut bool,
     pub(super) dragged_workspace_id: Option<&'a str>,
     pub(super) workspace_drop_indicator_row: Option<u16>,
+    pub(super) sidebar: super::sidebar_focus::SidebarRenderView<'a>,
 }
 
 pub(super) fn render_shell(

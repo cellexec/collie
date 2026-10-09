@@ -92,39 +92,94 @@ pub(crate) fn keybind_help_groups(
             ],
         ),
         (
-            "navigation",
+            "sidebar",
             vec![
-                entry("esc", "back"),
+                entry(binding_label(&keybinds.workspace_picker), "focus sidebar"),
+                entry("esc", "clear filter, then back"),
+                entry("enter", "open and focus panes"),
+                entry(binding_label(&keybinds.navigate.leave), "back to panes"),
                 entry(
                     format!(
                         "{} / {}",
-                        binding_label(&keybinds.navigate.workspace_up),
-                        binding_label(&keybinds.navigate.workspace_down)
+                        binding_label(&keybinds.navigate.spaces),
+                        binding_label(&keybinds.navigate.agents)
                     ),
-                    "workspace list",
+                    "spaces / agents section",
                 ),
                 entry(
                     format!(
-                        "{} / {} / {} / {} / left / right",
-                        binding_label(&keybinds.navigate.pane_left),
-                        binding_label(&keybinds.navigate.pane_down),
-                        binding_label(&keybinds.navigate.pane_up),
-                        binding_label(&keybinds.navigate.pane_right)
+                        "{} / {}",
+                        binding_label(&keybinds.navigate.workspace_down),
+                        binding_label(&keybinds.navigate.workspace_up)
                     ),
-                    "move focus",
+                    "move with preview",
                 ),
-                entry("tab / shift+tab", "cycle pane"),
-                entry("enter", "open workspace"),
-                entry("1..9", "switch workspace"),
+                entry(
+                    format!("gg / {}", binding_label(&keybinds.navigate.bottom)),
+                    "first / last",
+                ),
+                entry("ctrl+d / ctrl+u", "half page"),
+                entry(binding_label(&keybinds.navigate.filter), "filter section"),
+                entry(
+                    binding_label(&keybinds.navigate.new),
+                    "new space / start agent",
+                ),
+                entry(binding_label(&keybinds.navigate.rename), "rename"),
+                entry(
+                    binding_label(&keybinds.navigate.close),
+                    "close space / twice closes agent",
+                ),
+                entry(binding_label(&keybinds.navigate.sort), "agent sort"),
+                entry(
+                    binding_label(&keybinds.navigate.state_filter),
+                    "agent state filter",
+                ),
+                entry("za", "fold worktree group"),
+                entry(
+                    format!(
+                        "{} / {}",
+                        binding_label(&keybinds.navigate.move_down),
+                        binding_label(&keybinds.navigate.move_up)
+                    ),
+                    "move space",
+                ),
+                entry(
+                    format!(
+                        "{} / {}",
+                        binding_label(&keybinds.navigate.narrower),
+                        binding_label(&keybinds.navigate.wider)
+                    ),
+                    "sidebar width",
+                ),
+                entry(
+                    format!(
+                        "{} / {}",
+                        binding_label(&keybinds.navigate.grow_spaces),
+                        binding_label(&keybinds.navigate.grow_agents)
+                    ),
+                    "section divider",
+                ),
+                entry(binding_label(&keybinds.navigate.menu), "menu"),
+                entry(binding_label(&keybinds.navigate.leader), "prefix"),
+            ],
+        ),
+        (
+            "search",
+            vec![
+                entry(
+                    format!("{} a", binding_label(&keybinds.search)),
+                    "pick agent",
+                ),
+                entry(
+                    format!("{} s", binding_label(&keybinds.search)),
+                    "pick space",
+                ),
+                entry("ctrl+j / ctrl+k", "move in picker"),
             ],
         ),
         (
             "workspaces / tabs",
             vec![
-                entry(
-                    binding_label(&keybinds.workspace_picker),
-                    "workspace navigation",
-                ),
                 entry(binding_label(&keybinds.goto), "session navigator"),
                 entry(binding_label(&keybinds.new_workspace), "new workspace"),
                 entry(binding_label(&keybinds.new_worktree), "new worktree"),

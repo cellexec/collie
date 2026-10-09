@@ -70,6 +70,7 @@ pub(crate) enum KeybindAction {
     OpenNotificationTarget,
     Detach,
     OpenNavigator,
+    Search,
 }
 
 pub(crate) fn resolve_direct_binding(
@@ -98,6 +99,7 @@ pub(crate) fn resolve_non_indexed_action(
     for (bindings, action) in [
         (&keybinds.help, KeybindAction::Help),
         (&keybinds.settings, KeybindAction::Settings),
+        (&keybinds.search, KeybindAction::Search),
         (&keybinds.workspace_picker, KeybindAction::WorkspacePicker),
         (&keybinds.new_workspace, KeybindAction::NewWorkspace),
         (&keybinds.new_worktree, KeybindAction::NewWorktree),

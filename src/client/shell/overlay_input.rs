@@ -192,6 +192,7 @@ impl ClientShellState {
 
     pub(super) fn open_navigator_overlay(&mut self) {
         let mut navigator = ClientNavigatorOverlay {
+            scope: ClientNavigatorScope::All,
             query: TextEditor::default(),
             search_focused: false,
             selected: None,
@@ -423,10 +424,13 @@ impl ClientShellState {
     }
 
     pub(super) fn open_rename_pane_overlay(&mut self) {
+        if let Some(pane_id) = self.focused_pane_id() {
+            self.open_rename_pane_overlay_for(&pane_id);
+        }
+    }
+
+    pub(super) fn open_rename_pane_overlay_for(&mut self, pane_id: &str) {
         let Some(snapshot) = self.snapshot.as_deref() else {
-            return;
-        };
-        let Some(pane_id) = snapshot.focused_pane_id.as_deref() else {
             return;
         };
         let Some(pane) = snapshot.panes.iter().find(|pane| pane.pane_id == pane_id) else {
@@ -445,6 +449,9 @@ impl ClientShellState {
     }
 
     pub(super) fn insert_overlay_text(&mut self, text: &str) -> bool {
+        if self.insert_sidebar_filter_text(text) {
+            return true;
+        }
         if self.insert_worktree_overlay_text(text) {
             return true;
         }
@@ -477,6 +484,9 @@ impl ClientShellState {
     ) {
         use crossterm::event::KeyModifiers;
 
+        if self.route_agent_commands_key(key, outcome) {
+            return;
+        }
         if matches!(self.overlay, Some(ClientShellOverlay::Onboarding)) {
             if matches!(
                 key.code,
@@ -637,8 +647,15 @@ impl ClientShellState {
                     ..
                 }))
             );
+            let picker = matches!(
+                self.overlay,
+                Some(ClientShellOverlay::Navigator(ClientNavigatorOverlay {
+                    scope: ClientNavigatorScope::Agents | ClientNavigatorScope::Spaces,
+                    ..
+                }))
+            );
             if code == KeyCode::Esc {
-                if search_focused {
+                if search_focused && !picker {
                     if let Some(ClientShellOverlay::Navigator(navigator)) = self.overlay.as_mut() {
                         navigator.search_focused = false;
                     }
@@ -650,7 +667,22 @@ impl ClientShellState {
             }
             if code == KeyCode::Enter {
                 self.accept_navigator_selection(outcome);
+                if self.overlay.is_none() && self.mode == ClientShellMode::Navigate {
+                    self.leave_sidebar_after_jump(outcome);
+                }
                 return;
+            }
+            if search_focused && modifiers == KeyModifiers::CONTROL {
+                let delta = match code {
+                    KeyCode::Char('j') => Some(1),
+                    KeyCode::Char('k') => Some(-1),
+                    _ => None,
+                };
+                if let Some(delta) = delta {
+                    self.move_navigator_selection(delta);
+                    outcome.repaint = true;
+                    return;
+                }
             }
             if search_focused {
                 if let Some(ClientShellOverlay::Navigator(navigator)) = self.overlay.as_mut() {

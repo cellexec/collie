@@ -54,6 +54,8 @@ pub(super) fn render_agent_panel(
     area: Rect,
     snapshot: &ClientShellSnapshot,
     config: &ClientShellConfig,
+    view: super::sidebar_focus::SidebarRenderView<'_>,
+    endpoint_id: &ClientEndpointId,
     agent_scroll: &mut usize,
     hits: &mut ShellHitMap,
 ) {
@@ -61,13 +63,21 @@ pub(super) fn render_agent_panel(
         buffer,
         area,
         snapshot.agent_view_label.as_deref(),
+        view,
         config,
         hits,
     ) {
         return;
     }
 
-    let rows = agent_rows(snapshot, config, None);
+    let mut rows = agent_rows(snapshot, config, None);
+    rows.retain(|row| {
+        snapshot
+            .agents
+            .iter()
+            .find(|agent| agent.pane_id == row.pane_id)
+            .is_some_and(|agent| view.agent_visible(snapshot, agent))
+    });
     render_agent_list(
         buffer,
         area,
@@ -83,6 +93,9 @@ pub(super) fn render_agent_panel(
         |buffer, rect, row, hits| {
             hits.agents.push((rect, row.pane_id.clone()));
             render_agent_row(buffer, rect, row, config);
+            if view.agent_selected(endpoint_id, &row.pane_id) {
+                buffer.set_style(rect, Style::default().bg(config.palette.selection_bg));
+            }
         },
     );
 }
@@ -91,6 +104,7 @@ pub(super) fn render_agent_panel_header(
     buffer: &mut Buffer,
     area: Rect,
     agent_view_label: Option<&str>,
+    view: super::sidebar_focus::SidebarRenderView<'_>,
     config: &ClientShellConfig,
     hits: &mut ShellHitMap,
 ) -> bool {
@@ -108,6 +122,7 @@ pub(super) fn render_agent_panel_header(
     if area.height < 2 {
         return false;
     }
+    let active = view.section_active(super::sidebar_focus::SidebarSection::Agents);
     put_text(
         buffer,
         area.x,
@@ -115,7 +130,11 @@ pub(super) fn render_agent_panel_header(
         area.width,
         " agents",
         Style::default()
-            .fg(config.palette.overlay0)
+            .fg(if active {
+                config.palette.accent
+            } else {
+                config.palette.overlay0
+            })
             .add_modifier(Modifier::BOLD),
     );
     let sort_label = agent_view_label.unwrap_or(match config.agent_panel_sort {
@@ -148,6 +167,21 @@ pub(super) fn render_agent_panel_header(
             })
             .add_modifier(Modifier::BOLD),
     );
+    if let Some(filter) = view.filter_label(super::sidebar_focus::SidebarSection::Agents) {
+        let title_width = display_width(" agents") as u16 + 1;
+        let available = sort_rect.x.saturating_sub(area.x + title_width + 1);
+        if available > 0 {
+            let width = (display_width(&filter) as u16).min(available);
+            put_text(
+                buffer,
+                sort_rect.x.saturating_sub(width + 1),
+                area.y + 1,
+                width,
+                &filter,
+                Style::default().fg(config.palette.accent),
+            );
+        }
+    }
     true
 }
 

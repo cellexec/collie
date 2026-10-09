@@ -49,6 +49,7 @@ pub(super) fn render_expanded(
     endpoints: &[ClientShellEndpoint],
     active_endpoint_id: &ClientEndpointId,
     config: &ClientShellConfig,
+    view: super::sidebar_focus::SidebarRenderView<'_>,
     agent_scroll: &mut usize,
     hits: &mut ShellHitMap,
 ) {
@@ -56,12 +57,26 @@ pub(super) fn render_expanded(
         buffer,
         area,
         agent_view_label,
+        view,
         config,
         hits,
     ) {
         return;
     }
-    let rows = agent_rows(endpoints, active_endpoint_id, config);
+    let mut rows = agent_rows(endpoints, active_endpoint_id, config);
+    rows.retain(|row| {
+        endpoints
+            .iter()
+            .find(|endpoint| endpoint.endpoint_id == row.endpoint_id)
+            .and_then(|endpoint| endpoint.snapshot.as_deref())
+            .is_some_and(|snapshot| {
+                snapshot
+                    .agents
+                    .iter()
+                    .find(|agent| agent.pane_id == row.agent.pane_id)
+                    .is_some_and(|agent| view.agent_visible(snapshot, agent))
+            })
+    });
     super::agent_sidebar::render_agent_list(
         buffer,
         area,
@@ -73,6 +88,9 @@ pub(super) fn render_expanded(
         |row| row.agent.rows.len(),
         |buffer, rect, row, hits| {
             super::agent_sidebar::render_agent_row(buffer, rect, &row.agent, config);
+            if view.agent_selected(&row.endpoint_id, &row.agent.pane_id) {
+                buffer.set_style(rect, Style::default().bg(config.palette.selection_bg));
+            }
             if row.stale {
                 buffer.set_style(
                     rect,

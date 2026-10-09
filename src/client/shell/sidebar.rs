@@ -206,6 +206,7 @@ pub(crate) fn render_sidebar(
 ) {
     let palette = &config.palette;
     render_sidebar_background(buffer, area, palette);
+    render_sidebar_focus_divider(buffer, area, state.sidebar.focused, palette);
     hits.sidebar_divider = if area.is_empty() {
         Rect::default()
     } else {
@@ -215,18 +216,34 @@ pub(crate) fn render_sidebar(
         crate::ui::expanded_sidebar_sections(area, state.sidebar_section_split);
     hits.sidebar_section_divider =
         crate::ui::sidebar_section_divider_rect(area, state.sidebar_section_split);
-    put_text(
+    render_section_header(
         buffer,
-        workspace_area.x,
-        workspace_area.y,
-        workspace_area.width,
+        workspace_area,
         " spaces",
-        Style::default()
-            .fg(palette.overlay0)
-            .add_modifier(Modifier::BOLD),
+        state
+            .sidebar
+            .section_active(super::super::sidebar_focus::SidebarSection::Spaces),
+        state
+            .sidebar
+            .filter_label(super::super::sidebar_focus::SidebarSection::Spaces)
+            .as_deref(),
+        palette,
     );
 
-    let entries = workspace_entries(snapshot, state.collapsed_groups);
+    let mut entries = workspace_entries(snapshot, state.collapsed_groups);
+    if !state.sidebar.workspace_query.is_empty() {
+        entries.retain(|entry| {
+            snapshot
+                .workspaces
+                .get(entry.index)
+                .is_some_and(|workspace| {
+                    super::super::sidebar_focus::workspace_matches_filter(
+                        workspace,
+                        state.sidebar.workspace_query,
+                    )
+                })
+        });
+    }
     let body = Rect::new(
         workspace_area.x,
         workspace_area.y.saturating_add(WORKSPACE_HEADER_ROWS),
@@ -435,6 +452,8 @@ pub(crate) fn render_sidebar(
         detail_area,
         snapshot,
         config,
+        state.sidebar,
+        state.active_endpoint_id,
         state.agent_scroll,
         hits,
     );
@@ -453,6 +472,62 @@ pub(crate) fn render_sidebar(
         "«",
         Style::default().fg(palette.overlay0),
     );
+}
+
+/// The accent separator marks the sidebar as the keyboard focus.
+pub(in crate::client::shell) fn render_sidebar_focus_divider(
+    buffer: &mut Buffer,
+    area: Rect,
+    focused: bool,
+    palette: &Palette,
+) {
+    if !focused || area.is_empty() {
+        return;
+    }
+    let separator_x = area.right().saturating_sub(1);
+    for y in area.y..area.bottom() {
+        if let Some(cell) = buffer.cell_mut((separator_x, y)) {
+            cell.set_symbol("┃");
+            cell.set_style(Style::default().fg(palette.accent));
+        }
+    }
+}
+
+/// Section title, accented while the section has keyboard focus, with the
+/// section's filter right-aligned.
+pub(in crate::client::shell) fn render_section_header(
+    buffer: &mut Buffer,
+    area: Rect,
+    title: &str,
+    active: bool,
+    filter: Option<&str>,
+    palette: &Palette,
+) {
+    let style = if active {
+        Style::default()
+            .fg(palette.accent)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(palette.overlay0)
+            .add_modifier(Modifier::BOLD)
+    };
+    put_text(buffer, area.x, area.y, area.width, title, style);
+    if let Some(filter) = filter {
+        let title_width = UnicodeWidthStr::width(title) as u16 + 1;
+        let available = area.width.saturating_sub(title_width + 1);
+        if available > 0 {
+            let width = (UnicodeWidthStr::width(filter) as u16).min(available);
+            put_text(
+                buffer,
+                area.right().saturating_sub(width + 1),
+                area.y,
+                width,
+                filter,
+                Style::default().fg(palette.accent),
+            );
+        }
+    }
 }
 
 pub(crate) fn workspace_entries(

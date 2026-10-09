@@ -480,6 +480,18 @@ impl Default for SpacesSidebarConfig {
 pub struct SidebarConfig {
     pub agents: AgentsSidebarConfig,
     pub spaces: SpacesSidebarConfig,
+    /// Commands offered by `n` in the focused agents section.
+    pub agent_commands: Vec<AgentCommandConfig>,
+}
+
+/// One entry of `[[ui.sidebar.agent_commands]]`.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(default)]
+pub struct AgentCommandConfig {
+    /// Label shown in the picker.
+    pub name: String,
+    /// Text typed into the new tab's shell, followed by Enter.
+    pub command: String,
 }
 
 #[cfg(test)]

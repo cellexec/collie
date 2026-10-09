@@ -79,6 +79,7 @@ pub(crate) fn render_client_overlay(
         ClientShellOverlay::WorktreeRemove(v) => {
             worktree_overlays::render_worktree_remove_overlay(b, v, p)
         }
+        ClientShellOverlay::AgentCommands(v) => render_agent_commands_overlay(b, v, p),
         ClientShellOverlay::ContextMenu(_) | ClientShellOverlay::GlobalMenu(_) => None,
     }
 }
@@ -727,7 +728,11 @@ fn render_navigator_overlay(
         q.x + 2,
         q.y,
         q.width.saturating_sub(4),
-        " Go to ",
+        match n.scope {
+            ClientNavigatorScope::All => " Go to ",
+            ClientNavigatorScope::Agents => " Agents ",
+            ClientNavigatorScope::Spaces => " Spaces ",
+        },
         Style::default().fg(p.accent).bg(p.panel_bg),
     );
     let rows = super::aggregate_navigation::navigator_rows(endpoints, active_endpoint_id, n);
@@ -748,18 +753,30 @@ fn render_navigator_overlay(
     } else {
         format!(" / {}", n.query)
     };
-    let terminal_count = rows
-        .iter()
-        .filter(|row| matches!(row.target, ClientNavigatorTarget::Pane { .. }))
-        .count();
-    let count = format!(
-        "{terminal_count} {}",
-        if terminal_count == 1 {
-            "terminal"
-        } else {
-            "terminals"
-        }
-    );
+    let (counted, singular, plural) = match n.scope {
+        ClientNavigatorScope::All => (
+            rows.iter()
+                .filter(|row| matches!(row.target, ClientNavigatorTarget::Pane { .. }))
+                .count(),
+            "terminal",
+            "terminals",
+        ),
+        ClientNavigatorScope::Agents => (
+            rows.iter()
+                .filter(|row| matches!(row.target, ClientNavigatorTarget::Pane { .. }))
+                .count(),
+            "agent",
+            "agents",
+        ),
+        ClientNavigatorScope::Spaces => (
+            rows.iter()
+                .filter(|row| matches!(row.target, ClientNavigatorTarget::Workspace { .. }))
+                .count(),
+            "space",
+            "spaces",
+        ),
+    };
+    let count = format!("{counted} {}", if counted == 1 { singular } else { plural });
     put_text(
         b,
         i.x,
@@ -1314,4 +1331,139 @@ fn render_confirm_close_overlay(
         cursor: None,
         ..OverlayRender::default()
     })
+}
+
+fn render_agent_commands_overlay(
+    buffer: &mut Buffer,
+    picker: &ClientAgentCommandsOverlay,
+    palette: &Palette,
+) -> Option<OverlayRender> {
+    let screen = buffer.area;
+    let title = " start agent ";
+    let labels = picker
+        .labels
+        .iter()
+        .enumerate()
+        .map(|(index, name)| {
+            if index < 9 {
+                format!(" {}  {name}", index + 1)
+            } else {
+                format!("    {name}")
+            }
+        })
+        .collect::<Vec<_>>();
+    let width = labels
+        .iter()
+        .map(|label| UnicodeWidthStr::width(label.as_str()) as u16)
+        .chain([UnicodeWidthStr::width(title) as u16])
+        .max()
+        .unwrap_or(10)
+        .saturating_add(4)
+        .min(screen.width);
+    let height = (labels.len() as u16).saturating_add(2).min(screen.height);
+    let rect = Rect::new(
+        screen.x + screen.width.saturating_sub(width) / 2,
+        screen.y + screen.height.saturating_sub(height) / 2,
+        width,
+        height,
+    );
+    let inner = panel(buffer, rect, palette.accent, palette.panel_bg)?;
+    put_text(
+        buffer,
+        rect.x.saturating_add(2),
+        rect.y,
+        rect.width.saturating_sub(4),
+        title,
+        Style::default()
+            .fg(palette.accent)
+            .bg(palette.panel_bg)
+            .add_modifier(Modifier::BOLD),
+    );
+    for (index, label) in labels.iter().enumerate() {
+        let y = inner.y.saturating_add(index as u16);
+        if y >= inner.bottom() {
+            break;
+        }
+        let row = Rect::new(inner.x, y, inner.width, 1);
+        let style = if index == picker.highlighted {
+            Style::default()
+                .fg(panel_contrast_fg(palette))
+                .bg(palette.accent)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(palette.text).bg(palette.panel_bg)
+        };
+        buffer.set_style(row, style);
+        put_text(buffer, row.x, row.y, row.width, label, style);
+    }
+    Some(OverlayRender {
+        area: rect,
+        ..OverlayRender::default()
+    })
+}
+
+/// The continuations of a pending prefix sequence, bottom-right of the panes.
+pub(crate) fn render_which_key(
+    buffer: &mut Buffer,
+    area: Rect,
+    title: &str,
+    entries: &[(&str, &str)],
+    palette: &Palette,
+) -> Option<Rect> {
+    let key_width = entries
+        .iter()
+        .map(|(key, _)| display_width(key))
+        .max()
+        .unwrap_or(1);
+    let width = entries
+        .iter()
+        .map(|(_, label)| key_width + 2 + display_width(label))
+        .chain([display_width(title)])
+        .max()
+        .unwrap_or(8)
+        .saturating_add(4)
+        .min(area.width);
+    let height = (entries.len() as u16).saturating_add(2).min(area.height);
+    let rect = Rect::new(
+        area.right().saturating_sub(width + 1),
+        area.bottom().saturating_sub(height + 1),
+        width,
+        height,
+    )
+    .intersection(area);
+    let inner = panel(buffer, rect, palette.accent, palette.panel_bg)?;
+    put_text(
+        buffer,
+        rect.x.saturating_add(2),
+        rect.y,
+        rect.width.saturating_sub(4),
+        title,
+        Style::default().fg(palette.accent).bg(palette.panel_bg),
+    );
+    for (index, (key, label)) in entries.iter().enumerate() {
+        let y = inner.y.saturating_add(index as u16);
+        if y >= inner.bottom() {
+            break;
+        }
+        put_text(
+            buffer,
+            inner.x.saturating_add(1),
+            y,
+            key_width,
+            key,
+            Style::default()
+                .fg(palette.accent)
+                .bg(palette.panel_bg)
+                .add_modifier(Modifier::BOLD),
+        );
+        put_text(
+            buffer,
+            inner.x.saturating_add(key_width + 3),
+            y,
+            inner.width.saturating_sub(key_width + 3),
+            label,
+            Style::default().fg(palette.text).bg(palette.panel_bg),
+        );
+    }
+    Some(rect)
 }

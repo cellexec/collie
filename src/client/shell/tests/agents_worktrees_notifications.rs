@@ -1030,10 +1030,7 @@ fn workspace_actions_preserve_selected_target_and_client_confirmation() {
     state.mode = ClientShellMode::Navigate;
     state.navigate_workspace_id = state.navigation_target(&ClientEndpointId::Local, "ws_2");
 
-    let rename = state.handle_raw_events(vec![RawInputEvent::Key(crate::input::TerminalKey::new(
-        KeyCode::Char('w'),
-        KeyModifiers::SHIFT,
-    ))]);
+    let rename = state.handle_input_bytes(b"r");
     assert!(rename.actions.is_empty());
     assert!(matches!(
         state.overlay.as_ref(),
@@ -1183,7 +1180,13 @@ fn navigate_mode_selects_workspace_locally_then_focuses_by_stable_id() {
     );
 
     let move_selection = state.handle_input_bytes(b"\x1b[B");
-    assert!(move_selection.actions.is_empty());
+    let [ClientShellAction::Endpoint { request, .. }] = &move_selection.actions[..] else {
+        panic!("moving the cursor should preview the workspace");
+    };
+    assert!(matches!(
+        &request.method,
+        crate::api::schema::Method::WorkspaceFocus(target) if target.workspace_id == "ws_2"
+    ));
     assert_eq!(
         state.navigate_workspace_id,
         state.navigation_target(&ClientEndpointId::Local, "ws_2")
@@ -1200,7 +1203,7 @@ fn navigate_mode_selects_workspace_locally_then_focuses_by_stable_id() {
         .collect::<Vec<_>>()
         .join("\n");
     assert!(text.contains("second"));
-    assert!(text.contains("NAVIGATE"));
+    assert!(text.contains("SPACES"));
 
     let focus = state.handle_input_bytes(b"\r");
     let [ClientShellAction::Endpoint { request, .. }] = &focus.actions[..] else {

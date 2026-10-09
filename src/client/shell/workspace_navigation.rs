@@ -96,10 +96,12 @@ impl ClientShellState {
         })
     }
 
-    pub(super) fn move_navigate_workspace(&mut self, delta: isize) {
+    /// Workspaces the navigate cursor can visit, in sidebar order, after the sidebar filter.
+    pub(super) fn navigate_workspace_targets(&self) -> Vec<WorkspaceNavigationTarget> {
         let mobile = self.mobile_layout_active();
         let surface_available = self.snapshot.is_some() && self.pane_surface.is_some();
         let empty_collapsed_groups = HashSet::new();
+        let query = self.sidebar_focus.workspace_query.as_str();
         let mut targets = Vec::new();
         for endpoint in &self.endpoints {
             if endpoint.status != ClientEndpointStatus::Online {
@@ -129,14 +131,24 @@ impl ClientShellState {
                 render::workspace_entries(snapshot, collapsed_groups)
             };
             for entry in entries {
+                let workspace = &snapshot.workspaces[entry.index];
+                if !super::sidebar_focus::workspace_matches_filter(workspace, query) {
+                    continue;
+                }
                 targets.push(WorkspaceNavigationTarget {
                     endpoint_id: endpoint.endpoint_id.clone(),
-                    workspace_id: snapshot.workspaces[entry.index].workspace_id.clone(),
+                    workspace_id: workspace.workspace_id.clone(),
                     boot_id: snapshot.boot_id.clone(),
                     generation: endpoint.snapshot_generation,
                 });
             }
         }
+        targets
+    }
+
+    pub(super) fn move_navigate_workspace(&mut self, delta: isize) {
+        let mobile = self.mobile_layout_active();
+        let targets = self.navigate_workspace_targets();
         if targets.is_empty() {
             return;
         }
@@ -152,6 +164,38 @@ impl ClientShellState {
             None if delta < 0 => targets.len() - 1,
             None => 0,
         };
+        self.select_navigate_workspace(targets, next);
+    }
+
+    pub(super) fn move_navigate_workspace_clamped(&mut self, delta: isize) {
+        let targets = self.navigate_workspace_targets();
+        if targets.is_empty() {
+            return;
+        }
+        let current = self
+            .navigate_workspace_id
+            .as_ref()
+            .and_then(|selected| targets.iter().position(|target| target == selected))
+            .unwrap_or(0);
+        let next = (current as isize + delta).clamp(0, targets.len() as isize - 1) as usize;
+        self.select_navigate_workspace(targets, next);
+    }
+
+    pub(super) fn jump_navigate_workspace(&mut self, last: bool) {
+        let targets = self.navigate_workspace_targets();
+        if targets.is_empty() {
+            return;
+        }
+        let next = if last { targets.len() - 1 } else { 0 };
+        self.select_navigate_workspace(targets, next);
+    }
+
+    fn select_navigate_workspace(
+        &mut self,
+        mut targets: Vec<WorkspaceNavigationTarget>,
+        next: usize,
+    ) {
+        let mobile = self.mobile_layout_active();
         let target = targets.swap_remove(next);
         self.collapsed_endpoints.remove(&target.endpoint_id);
         if self.endpoints.len() == 1 && !mobile {

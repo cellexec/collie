@@ -345,6 +345,25 @@ pub struct NavigateKeybinds {
     pub pane_down: ActionKeybinds,
     pub pane_up: ActionKeybinds,
     pub pane_right: ActionKeybinds,
+    pub spaces: ActionKeybinds,
+    pub agents: ActionKeybinds,
+    pub bottom: ActionKeybinds,
+    pub filter: ActionKeybinds,
+    pub new: ActionKeybinds,
+    pub rename: ActionKeybinds,
+    pub close: ActionKeybinds,
+    pub sort: ActionKeybinds,
+    pub state_filter: ActionKeybinds,
+    pub move_down: ActionKeybinds,
+    pub move_up: ActionKeybinds,
+    pub narrower: ActionKeybinds,
+    pub wider: ActionKeybinds,
+    pub grow_spaces: ActionKeybinds,
+    pub grow_agents: ActionKeybinds,
+    pub menu: ActionKeybinds,
+    pub help: ActionKeybinds,
+    pub leader: ActionKeybinds,
+    pub leave: ActionKeybinds,
 }
 
 /// Parsed keybinds for Herdr actions.
@@ -353,6 +372,7 @@ pub struct Keybinds {
     pub navigate: NavigateKeybinds,
     pub help: ActionKeybinds,
     pub settings: ActionKeybinds,
+    pub search: ActionKeybinds,
     pub new_workspace: ActionKeybinds,
     pub new_worktree: ActionKeybinds,
     pub open_worktree: ActionKeybinds,
@@ -533,9 +553,29 @@ impl Config {
                 pane_down: empty_action!(),
                 pane_up: empty_action!(),
                 pane_right: empty_action!(),
+                spaces: empty_action!(),
+                agents: empty_action!(),
+                bottom: empty_action!(),
+                filter: empty_action!(),
+                new: empty_action!(),
+                rename: empty_action!(),
+                close: empty_action!(),
+                sort: empty_action!(),
+                state_filter: empty_action!(),
+                move_down: empty_action!(),
+                move_up: empty_action!(),
+                narrower: empty_action!(),
+                wider: empty_action!(),
+                grow_spaces: empty_action!(),
+                grow_agents: empty_action!(),
+                menu: empty_action!(),
+                help: empty_action!(),
+                leader: empty_action!(),
+                leave: empty_action!(),
             },
             help: empty_action!(),
             settings: empty_action!(),
+            search: empty_action!(),
             new_workspace: empty_action!(),
             new_worktree: empty_action!(),
             open_worktree: empty_action!(),
@@ -663,8 +703,28 @@ impl Config {
             apply_navigate!(keybinds.navigate.pane_down, navigate_pane_down, source);
             apply_navigate!(keybinds.navigate.pane_up, navigate_pane_up, source);
             apply_navigate!(keybinds.navigate.pane_right, navigate_pane_right, source);
+            apply_navigate!(keybinds.navigate.spaces, sidebar_spaces, source);
+            apply_navigate!(keybinds.navigate.agents, sidebar_agents, source);
+            apply_navigate!(keybinds.navigate.bottom, sidebar_bottom, source);
+            apply_navigate!(keybinds.navigate.filter, sidebar_filter, source);
+            apply_navigate!(keybinds.navigate.new, sidebar_new, source);
+            apply_navigate!(keybinds.navigate.rename, sidebar_rename, source);
+            apply_navigate!(keybinds.navigate.close, sidebar_close, source);
+            apply_navigate!(keybinds.navigate.sort, sidebar_sort, source);
+            apply_navigate!(keybinds.navigate.state_filter, sidebar_state_filter, source);
+            apply_navigate!(keybinds.navigate.move_down, sidebar_move_down, source);
+            apply_navigate!(keybinds.navigate.move_up, sidebar_move_up, source);
+            apply_navigate!(keybinds.navigate.narrower, sidebar_narrower, source);
+            apply_navigate!(keybinds.navigate.wider, sidebar_wider, source);
+            apply_navigate!(keybinds.navigate.grow_spaces, sidebar_grow_spaces, source);
+            apply_navigate!(keybinds.navigate.grow_agents, sidebar_grow_agents, source);
+            apply_navigate!(keybinds.navigate.menu, sidebar_menu, source);
+            apply_navigate!(keybinds.navigate.help, sidebar_help, source);
+            apply_navigate!(keybinds.navigate.leader, sidebar_leader, source);
+            apply_navigate!(keybinds.navigate.leave, sidebar_leave, source);
             apply_action!(keybinds.help, help, source);
             apply_action!(keybinds.settings, settings, source);
+            apply_action!(keybinds.search, search, source);
             apply_action!(keybinds.new_workspace, new_workspace, source);
             apply_action!(keybinds.new_worktree, new_worktree, source);
             apply_action!(keybinds.open_worktree, open_worktree, source);
@@ -777,24 +837,20 @@ impl Config {
 }
 
 fn reserve_navigate_runtime_keys(registry: &mut BindingRegistry) {
+    // Sidebar focus owns these keys: esc/enter leave, `g`/`z` start the fixed
+    // `gg`/`za` sequences, and ctrl+d/ctrl+u page through the focused section.
     for combo in [
         (KeyCode::Esc, KeyModifiers::empty()),
         (KeyCode::Enter, KeyModifiers::empty()),
         (KeyCode::Tab, KeyModifiers::empty()),
         (KeyCode::BackTab, KeyModifiers::empty()),
         (KeyCode::Tab, KeyModifiers::SHIFT),
-        (KeyCode::Left, KeyModifiers::empty()),
-        (KeyCode::Right, KeyModifiers::empty()),
+        (KeyCode::Char('g'), KeyModifiers::empty()),
+        (KeyCode::Char('z'), KeyModifiers::empty()),
+        (KeyCode::Char('d'), KeyModifiers::CONTROL),
+        (KeyCode::Char('u'), KeyModifiers::CONTROL),
     ] {
         registry.reserve_direct(combo, "navigate reserved keys", BindingSource::Default);
-    }
-
-    for idx in '1'..='9' {
-        registry.reserve_direct(
-            (KeyCode::Char(idx), KeyModifiers::empty()),
-            "navigate reserved keys",
-            BindingSource::Default,
-        );
     }
 }
 
@@ -2119,7 +2175,7 @@ navigate_pane_down = "ctrl+j"
         let config: Config = toml::from_str(
             r#"
 [keys]
-navigate_workspace_up = ["esc", "alt+esc", "enter", "1", "tab", "shift+tab", "left", "right"]
+navigate_workspace_up = ["esc", "alt+esc", "enter", "tab", "shift+tab", "g", "z", "ctrl+d"]
 "#,
         )
         .unwrap();

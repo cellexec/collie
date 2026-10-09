@@ -34,9 +34,19 @@ fn navigation_state(mut projected: ClientShellSnapshot) -> (ClientShellState, Cl
     (state, remote)
 }
 
+/// Moving the sidebar cursor previews a workspace of the active machine by
+/// focusing it; nothing else may leave the client.
 fn preview_key(state: &mut ClientShellState, bytes: &[u8]) {
     let outcome = state.handle_input_bytes(bytes);
-    assert!(outcome.actions.is_empty(), "{bytes:?}");
+    assert!(
+        outcome.actions.iter().all(|action| matches!(
+            action,
+            ClientShellAction::Endpoint { request, .. }
+                if matches!(request.method, crate::api::schema::Method::WorkspaceFocus(_))
+        )),
+        "{bytes:?}: {:?}",
+        outcome.actions
+    );
     assert!(outcome.requests.is_empty(), "{bytes:?}");
     assert!(outcome.repaint, "{bytes:?}");
 }
@@ -75,7 +85,8 @@ fn workspace_rect(state: &ClientShellState, endpoint: &ClientEndpointId, workspa
 fn local_navigation_highlight_stays_visible_with_terminal_theme() {
     use ratatui::style::Color;
 
-    for compact in [false, true] {
+    // A collapsed sidebar opens as a drawer; see `collapsed_sidebar_opens_as_a_drawer`.
+    for compact in [false] {
         for selection_bg in [Color::Reset, Color::Rgb(70, 63, 93)] {
             let mut config = ClientShellConfig::from_config(&Config::default());
             config.palette = Palette::terminal();
@@ -148,7 +159,7 @@ fn local_navigation_highlight_stays_visible_with_terminal_theme() {
 
 #[test]
 fn navigation_highlights_only_the_preview_and_activates_on_enter() {
-    for (compact, cols) in [(true, 100), (false, 100), (false, 44)] {
+    for (compact, cols) in [(false, 100), (false, 44)] {
         for terminal_theme in [false, true] {
             let (mut state, remote) = navigation_state(workspaces(2));
             state.sidebar_collapsed = compact;
@@ -234,16 +245,7 @@ fn foreign_preview_blocks_keyboard_actions_but_keeps_active_action_context() {
     preview_key(&mut state, b"\x1b[B");
     for confirm in [false, true] {
         state.config.confirm_close = confirm;
-        for key in [
-            b"W".as_slice(),
-            b"D",
-            b"\x1b[D",
-            b"\x1b[C",
-            b"\t",
-            b"1",
-            b"c",
-            b"N",
-        ] {
+        for key in [b"r".as_slice(), b"d", b"n", b"J", b"K"] {
             preview_key(&mut state, key);
             assert!(state.overlay.is_none());
             assert_eq!(state.mode, ClientShellMode::Navigate);
@@ -271,7 +273,7 @@ fn foreign_preview_blocks_keyboard_actions_but_keeps_active_action_context() {
     assert_eq!(state.active_endpoint_id, ClientEndpointId::Local);
     assert!(state.activate_endpoint_projection(&remote));
     enter_navigation(&mut state);
-    preview_key(&mut state, b"W");
+    preview_key(&mut state, b"r");
     assert!(matches!(state.overlay, Some(ClientShellOverlay::Rename(_))));
 }
 
@@ -359,25 +361,28 @@ fn mouse_clicks_cancel_remote_workspace_navigation() {
 }
 
 #[test]
-fn single_machine_compact_navigation_includes_visible_collapsed_group_children() {
+fn collapsed_sidebar_opens_as_a_drawer() {
     let (mut state, _) = navigation_state(grouped_workspaces());
     state.set_endpoint_catalog(&[]);
     state.toggle_collapsed_group(&ClientEndpointId::Local, "repo".into());
     state.sidebar_collapsed = true;
     state.compose(100, 28).unwrap();
-    workspace_rect(&state, &ClientEndpointId::Local, "ws_3");
     enter_navigation(&mut state);
-    for id in ["ws_2", "ws_3"] {
+    assert!(!state.sidebar_collapsed);
+    // The drawer shows the expanded list, so the folded linked worktree is skipped.
+    for id in ["ws_2", "ws_1"] {
         preview_key(&mut state, b"\x1b[B");
         assert_selected(&state, &ClientEndpointId::Local, id);
     }
+    preview_key(&mut state, b"\x1b");
+    assert_eq!(state.mode, ClientShellMode::Terminal);
+    assert!(state.sidebar_collapsed);
 }
 
 #[test]
 fn workspace_navigation_respects_each_machines_visible_worktree_groups() {
     for (cols, compact, unavailable, show_child) in [
         (100, false, false, false),
-        (100, true, false, true),
         (44, false, false, true),
         (44, true, true, false),
     ] {
@@ -538,7 +543,7 @@ fn active_preview_is_not_retargeted_by_deletion_or_reboot() {
         assert!(state.visible_endpoint_notice.is_some());
         for confirm in [false, true] {
             state.config.confirm_close = confirm;
-            for key in [b"W", b"D"] {
+            for key in [b"r", b"d"] {
                 preview_key(&mut state, key);
             }
             assert!(state.overlay.is_none());

@@ -2688,30 +2688,6 @@ fn cached_offline_navigator_and_mobile_targets_are_dimmed_and_disabled() {
 }
 
 #[test]
-fn focus_agent_index_uses_online_aggregate_rows() {
-    use crate::api::schema::AgentStatus;
-
-    let (mut state, endpoint_id) = state_with_remote();
-    state
-        .endpoints
-        .iter_mut()
-        .find(|endpoint| endpoint.endpoint_id == endpoint_id)
-        .expect("remote endpoint")
-        .snapshot
-        .as_mut()
-        .expect("remote snapshot")
-        .agents = vec![agent("remote agent", AgentStatus::Working, 2)];
-    let focus_agent =
-        |index| crate::input::KeybindMatch::Action(crate::input::KeybindAction::FocusAgent(index));
-
-    assert!(state.indexed_navigation_target_exists(&focus_agent(0)));
-    assert!(!state.indexed_navigation_target_exists(&focus_agent(1)));
-
-    state.set_endpoint_status(&endpoint_id, ClientEndpointStatus::Reconnecting);
-    assert!(!state.indexed_navigation_target_exists(&focus_agent(0)));
-}
-
-#[test]
 fn workspace_drag_rejects_foreign_endpoint_slots() {
     let (mut state, endpoint_id) = state_with_remote();
     state.compose(100, 28).expect("aggregate sidebar");

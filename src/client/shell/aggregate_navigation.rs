@@ -461,6 +461,20 @@ pub(super) fn navigator_rows(
             rows.extend(endpoint_rows);
         }
     }
+    match navigator.scope {
+        ClientNavigatorScope::All => {}
+        ClientNavigatorScope::Agents => rows.retain_mut(|row| {
+            let keep =
+                row.agent.is_some() && matches!(row.target, ClientNavigatorTarget::Pane { .. });
+            row.depth = 0;
+            keep
+        }),
+        ClientNavigatorScope::Spaces => rows.retain_mut(|row| {
+            let keep = matches!(row.target, ClientNavigatorTarget::Workspace { .. });
+            row.depth = 0;
+            keep
+        }),
+    }
     rows
 }
 

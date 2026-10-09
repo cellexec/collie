@@ -145,6 +145,14 @@ impl ClientShellState {
                     self.mode = ClientShellMode::Navigate;
                     self.navigate_workspace_id = self.focused_navigation_target();
                     self.reveal_navigation_workspace = true;
+                    self.enter_sidebar_focus(outcome);
+                    outcome.repaint = true;
+                    return;
+                }
+                if action == crate::input::KeybindAction::Search {
+                    self.prefix_return_navigate = self.mode == ClientShellMode::Navigate;
+                    self.prefix_sequence = Some(ClientPrefixSequence::Search);
+                    self.mode = ClientShellMode::Prefix;
                     outcome.repaint = true;
                     return;
                 }
@@ -558,6 +566,9 @@ impl ClientShellState {
         }
         match pending.kind {
             PendingEndpointKind::Generic => {}
+            PendingEndpointKind::AgentCommandTab { command } => {
+                return self.complete_agent_command_tab(command, result);
+            }
             PendingEndpointKind::PaneLinkResolve { .. } => unreachable!("handled above"),
             PendingEndpointKind::ProductAnnouncementDismiss { version, id } => {
                 return match result {

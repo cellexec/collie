@@ -23,6 +23,7 @@ pub(crate) struct ClientShellConfig {
     pub(super) hide_tab_bar_when_single_tab: bool,
     pub(super) spaces: SpacesSidebarConfig,
     pub(super) agents: crate::config::AgentsSidebarConfig,
+    pub(super) agent_commands: Vec<crate::config::AgentCommandConfig>,
     pub(super) agent_panel_sort: crate::config::AgentPanelSortConfig,
     pub(super) status_indicators: crate::config::StatusIndicatorStyle,
     pub(super) sound_enabled: bool,
@@ -276,6 +277,12 @@ pub(super) enum ClientShellMode {
     Copy,
 }
 
+/// A multi-key prefix sequence waiting for its next key.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ClientPrefixSequence {
+    Search,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ClientShellOverlayKind {
     Onboarding,
@@ -291,6 +298,7 @@ pub(super) enum ClientShellOverlayKind {
     ContextMenu,
     GlobalMenu,
     Settings,
+    AgentCommands,
 }
 
 #[derive(Debug)]
@@ -360,8 +368,25 @@ pub(super) struct ClientNavigatorRow {
     pub(super) target: ClientNavigatorTarget,
 }
 
+/// Which rows the session navigator lists.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum ClientNavigatorScope {
+    #[default]
+    All,
+    Agents,
+    Spaces,
+}
+
+#[derive(Debug)]
+pub(super) struct ClientAgentCommandsOverlay {
+    pub(super) workspace_id: String,
+    pub(super) highlighted: usize,
+    pub(super) labels: Vec<String>,
+}
+
 #[derive(Debug)]
 pub(super) struct ClientNavigatorOverlay {
+    pub(super) scope: ClientNavigatorScope,
     pub(super) query: TextEditor,
     pub(super) search_focused: bool,
     pub(super) selected: Option<ClientNavigatorTarget>,
@@ -597,6 +622,7 @@ pub(super) enum ClientShellOverlay {
     ContextMenu(ClientContextMenuOverlay),
     GlobalMenu(ClientGlobalMenuOverlay),
     Settings(ClientSettingsOverlay),
+    AgentCommands(ClientAgentCommandsOverlay),
 }
 
 impl ClientShellOverlay {
@@ -615,6 +641,7 @@ impl ClientShellOverlay {
             Self::ContextMenu(_) => ClientShellOverlayKind::ContextMenu,
             Self::GlobalMenu(_) => ClientShellOverlayKind::GlobalMenu,
             Self::Settings(_) => ClientShellOverlayKind::Settings,
+            Self::AgentCommands(_) => ClientShellOverlayKind::AgentCommands,
         }
     }
 }
@@ -644,6 +671,9 @@ pub(super) enum PendingEndpointKind {
     WorktreeOpen,
     WorktreeRemove {
         forced: bool,
+    },
+    AgentCommandTab {
+        command: String,
     },
     SelectionCopy,
     PaneScroll {
@@ -904,6 +934,10 @@ pub(crate) struct ClientShellState {
     pub(super) collapsed_endpoints: HashSet<ClientEndpointId>,
     pub(super) mode: ClientShellMode,
     pub(super) navigate_workspace_id: Option<WorkspaceNavigationTarget>,
+    pub(super) sidebar_focus: super::sidebar_focus::SidebarFocusState,
+    /// Prefix mode was entered from sidebar focus and returns to it.
+    pub(super) prefix_return_navigate: bool,
+    pub(super) prefix_sequence: Option<ClientPrefixSequence>,
     pub(super) pending_workspace_highlight: Option<PendingWorkspaceHighlight>,
     pub(super) reveal_navigation_workspace: bool,
     pub(super) overlay: Option<ClientShellOverlay>,
@@ -1078,6 +1112,9 @@ impl ClientShellState {
             collapsed_endpoints: HashSet::new(),
             mode: ClientShellMode::Terminal,
             navigate_workspace_id: None,
+            sidebar_focus: Default::default(),
+            prefix_return_navigate: false,
+            prefix_sequence: None,
             pending_workspace_highlight: None,
             reveal_navigation_workspace: false,
             overlay,
@@ -1211,9 +1248,16 @@ impl ClientShellState {
         {
             return;
         }
+        let query = self.sidebar_focus.workspace_query.as_str();
         let target = self.snapshot.as_deref().and_then(|snapshot| {
             self.navigation_workspace_entries(snapshot)
                 .iter()
+                .filter(|entry| {
+                    super::sidebar_focus::workspace_matches_filter(
+                        &snapshot.workspaces[entry.index],
+                        query,
+                    )
+                })
                 .position(|entry| snapshot.workspaces[entry.index].workspace_id == workspace_id)
         });
         if let Some(target) = target {

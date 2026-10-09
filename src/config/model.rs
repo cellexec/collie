@@ -339,8 +339,10 @@ pub struct KeysConfig {
     pub prefix: BindingConfig,
     /// Open keybinding help. Default: "prefix+?"
     pub help: BindingConfig,
-    /// Open settings. Default: "prefix+s"
+    /// Open settings. Default: "prefix+comma"
     pub settings: BindingConfig,
+    /// Start a search sequence: `a` picks an agent, `s` picks a space. Default: "prefix+s"
+    pub search: BindingConfig,
     /// Create a new workspace. Default: "prefix+shift+n"
     pub new_workspace: BindingConfig,
     /// Create a Git worktree from the selected workspace. Default: "prefix+shift+g"
@@ -369,6 +371,44 @@ pub struct KeysConfig {
     pub navigate_pane_up: BindingConfig,
     /// Focus the pane to the right in navigate mode. Default: "l". Right arrow is always an alias.
     pub navigate_pane_right: BindingConfig,
+    /// Focus the spaces section while the sidebar is focused. Default: "1".
+    pub sidebar_spaces: BindingConfig,
+    /// Focus the agents section while the sidebar is focused. Default: "2".
+    pub sidebar_agents: BindingConfig,
+    /// Jump to the last row of the focused sidebar section. `gg` jumps to the first row. Default: "shift+g".
+    pub sidebar_bottom: BindingConfig,
+    /// Filter the focused sidebar section inline. Default: "/".
+    pub sidebar_filter: BindingConfig,
+    /// Spaces: create a workspace. Agents: start an agent command in a new tab. Default: "n".
+    pub sidebar_new: BindingConfig,
+    /// Rename the space or agent pane under the sidebar cursor. Default: "r".
+    pub sidebar_rename: BindingConfig,
+    /// Close the space under the sidebar cursor (confirmed), or the agent pane when pressed twice. Default: "d".
+    pub sidebar_close: BindingConfig,
+    /// Toggle the agent list order between grouped and priority. Default: "s".
+    pub sidebar_sort: BindingConfig,
+    /// Cycle the agent state filter: all, blocked, working, idle. Default: "f".
+    pub sidebar_state_filter: BindingConfig,
+    /// Move the space under the sidebar cursor down. Default: "shift+j".
+    pub sidebar_move_down: BindingConfig,
+    /// Move the space under the sidebar cursor up. Default: "shift+k".
+    pub sidebar_move_up: BindingConfig,
+    /// Shrink the sidebar width. Default: "<".
+    pub sidebar_narrower: BindingConfig,
+    /// Grow the sidebar width. Default: ">".
+    pub sidebar_wider: BindingConfig,
+    /// Move the divider between spaces and agents down. Default: "plus".
+    pub sidebar_grow_spaces: BindingConfig,
+    /// Move the divider between spaces and agents up. Default: "minus".
+    pub sidebar_grow_agents: BindingConfig,
+    /// Open the global menu. Default: "m".
+    pub sidebar_menu: BindingConfig,
+    /// Open keybinding help. Default: "?".
+    pub sidebar_help: BindingConfig,
+    /// Act as the prefix key while the sidebar is focused. Default: "space".
+    pub sidebar_leader: BindingConfig,
+    /// Return focus to the panes without changing the selection. Default: "i".
+    pub sidebar_leave: BindingConfig,
     /// Detach the current client from its Herdr server. Default: "prefix+q".
     pub detach: BindingConfig,
     /// Reload config.toml in the running app/server. Default: "prefix+shift+r".
@@ -479,6 +519,8 @@ pub(crate) struct KeysConfigOverlay {
     #[serde(skip_serializing_if = "Option::is_none")]
     settings: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    search: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     new_workspace: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     new_worktree: Option<BindingConfig>,
@@ -506,6 +548,44 @@ pub(crate) struct KeysConfigOverlay {
     navigate_pane_up: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     navigate_pane_right: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sidebar_spaces: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sidebar_agents: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sidebar_bottom: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sidebar_filter: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sidebar_new: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sidebar_rename: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sidebar_close: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sidebar_sort: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sidebar_state_filter: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sidebar_move_down: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sidebar_move_up: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sidebar_narrower: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sidebar_wider: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sidebar_grow_spaces: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sidebar_grow_agents: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sidebar_menu: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sidebar_help: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sidebar_leader: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sidebar_leave: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     detach: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -646,6 +726,7 @@ impl<'de> Deserialize<'de> for KeysConfig {
 
         apply_field!(help);
         apply_field!(settings);
+        apply_field!(search);
         apply_field!(new_workspace);
         apply_field!(new_worktree);
         apply_field!(open_worktree);
@@ -660,6 +741,25 @@ impl<'de> Deserialize<'de> for KeysConfig {
         apply_field!(navigate_pane_down);
         apply_field!(navigate_pane_up);
         apply_field!(navigate_pane_right);
+        apply_field!(sidebar_spaces);
+        apply_field!(sidebar_agents);
+        apply_field!(sidebar_bottom);
+        apply_field!(sidebar_filter);
+        apply_field!(sidebar_new);
+        apply_field!(sidebar_rename);
+        apply_field!(sidebar_close);
+        apply_field!(sidebar_sort);
+        apply_field!(sidebar_state_filter);
+        apply_field!(sidebar_move_down);
+        apply_field!(sidebar_move_up);
+        apply_field!(sidebar_narrower);
+        apply_field!(sidebar_wider);
+        apply_field!(sidebar_grow_spaces);
+        apply_field!(sidebar_grow_agents);
+        apply_field!(sidebar_menu);
+        apply_field!(sidebar_help);
+        apply_field!(sidebar_leader);
+        apply_field!(sidebar_leave);
         apply_field!(detach);
         apply_field!(reload_config);
         apply_field!(open_notification_target);
@@ -751,6 +851,7 @@ impl KeysConfig {
         profile.prefix = Some(self.prefix.clone());
         copy_effective_action_field!(help, keybinds.help);
         copy_effective_action_field!(settings, keybinds.settings);
+        copy_effective_action_field!(search, keybinds.search);
         copy_effective_action_field!(new_workspace, keybinds.new_workspace);
         copy_effective_action_field!(new_worktree, keybinds.new_worktree);
         copy_effective_action_field!(open_worktree, keybinds.open_worktree);
@@ -765,6 +866,25 @@ impl KeysConfig {
         copy_effective_action_field!(navigate_pane_down, keybinds.navigate.pane_down);
         copy_effective_action_field!(navigate_pane_up, keybinds.navigate.pane_up);
         copy_effective_action_field!(navigate_pane_right, keybinds.navigate.pane_right);
+        copy_effective_action_field!(sidebar_spaces, keybinds.navigate.spaces);
+        copy_effective_action_field!(sidebar_agents, keybinds.navigate.agents);
+        copy_effective_action_field!(sidebar_bottom, keybinds.navigate.bottom);
+        copy_effective_action_field!(sidebar_filter, keybinds.navigate.filter);
+        copy_effective_action_field!(sidebar_new, keybinds.navigate.new);
+        copy_effective_action_field!(sidebar_rename, keybinds.navigate.rename);
+        copy_effective_action_field!(sidebar_close, keybinds.navigate.close);
+        copy_effective_action_field!(sidebar_sort, keybinds.navigate.sort);
+        copy_effective_action_field!(sidebar_state_filter, keybinds.navigate.state_filter);
+        copy_effective_action_field!(sidebar_move_down, keybinds.navigate.move_down);
+        copy_effective_action_field!(sidebar_move_up, keybinds.navigate.move_up);
+        copy_effective_action_field!(sidebar_narrower, keybinds.navigate.narrower);
+        copy_effective_action_field!(sidebar_wider, keybinds.navigate.wider);
+        copy_effective_action_field!(sidebar_grow_spaces, keybinds.navigate.grow_spaces);
+        copy_effective_action_field!(sidebar_grow_agents, keybinds.navigate.grow_agents);
+        copy_effective_action_field!(sidebar_menu, keybinds.navigate.menu);
+        copy_effective_action_field!(sidebar_help, keybinds.navigate.help);
+        copy_effective_action_field!(sidebar_leader, keybinds.navigate.leader);
+        copy_effective_action_field!(sidebar_leave, keybinds.navigate.leave);
         copy_effective_action_field!(detach, keybinds.detach);
         copy_effective_action_field!(reload_config, keybinds.reload_config);
         copy_effective_action_field!(open_notification_target, keybinds.open_notification_target);
@@ -1122,7 +1242,8 @@ impl Default for KeysConfig {
         Self {
             prefix: BindingConfig::one("ctrl+b"),
             help: BindingConfig::one("prefix+?"),
-            settings: BindingConfig::one("prefix+s"),
+            settings: BindingConfig::one("prefix+comma"),
+            search: BindingConfig::one("prefix+s"),
             new_workspace: BindingConfig::one("prefix+shift+n"),
             new_worktree: BindingConfig::one("prefix+shift+g"),
             open_worktree: BindingConfig::empty(),
@@ -1131,12 +1252,31 @@ impl Default for KeysConfig {
             close_workspace: BindingConfig::one("prefix+shift+d"),
             workspace_picker: BindingConfig::one("prefix+w"),
             goto: BindingConfig::one("prefix+g"),
-            navigate_workspace_up: BindingConfig::one("up"),
-            navigate_workspace_down: BindingConfig::one("down"),
-            navigate_pane_left: BindingConfig::one("h"),
-            navigate_pane_down: BindingConfig::one("j"),
-            navigate_pane_up: BindingConfig::one("k"),
-            navigate_pane_right: BindingConfig::one("l"),
+            navigate_workspace_up: BindingConfig::Many(vec!["k".into(), "up".into()]),
+            navigate_workspace_down: BindingConfig::Many(vec!["j".into(), "down".into()]),
+            navigate_pane_left: BindingConfig::empty(),
+            navigate_pane_down: BindingConfig::empty(),
+            navigate_pane_up: BindingConfig::empty(),
+            navigate_pane_right: BindingConfig::empty(),
+            sidebar_spaces: BindingConfig::one("1"),
+            sidebar_agents: BindingConfig::one("2"),
+            sidebar_bottom: BindingConfig::one("shift+g"),
+            sidebar_filter: BindingConfig::one("/"),
+            sidebar_new: BindingConfig::one("n"),
+            sidebar_rename: BindingConfig::one("r"),
+            sidebar_close: BindingConfig::one("d"),
+            sidebar_sort: BindingConfig::one("s"),
+            sidebar_state_filter: BindingConfig::one("f"),
+            sidebar_move_down: BindingConfig::one("shift+j"),
+            sidebar_move_up: BindingConfig::one("shift+k"),
+            sidebar_narrower: BindingConfig::one("<"),
+            sidebar_wider: BindingConfig::one(">"),
+            sidebar_grow_spaces: BindingConfig::one("plus"),
+            sidebar_grow_agents: BindingConfig::one("minus"),
+            sidebar_menu: BindingConfig::one("m"),
+            sidebar_help: BindingConfig::one("?"),
+            sidebar_leader: BindingConfig::one("space"),
+            sidebar_leave: BindingConfig::one("i"),
             detach: BindingConfig::one("prefix+q"),
             reload_config: BindingConfig::one("prefix+shift+r"),
             open_notification_target: BindingConfig::one("prefix+o"),
