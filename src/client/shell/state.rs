@@ -414,6 +414,10 @@ impl ClientSettingsSection {
 pub(super) struct ClientSettingsOverlay {
     pub(super) section: ClientSettingsSection,
     pub(super) selected: usize,
+    /// Choice index persisted in config for the active section.
+    pub(super) current: usize,
+    /// Set after the active section's choice was written; cleared on navigation.
+    pub(super) saved: bool,
     pub(super) original_theme_name: String,
     pub(super) original_palette: Palette,
     pub(super) integrations: Vec<crate::api::schema::IntegrationInfo>,

@@ -33,9 +33,12 @@ pub(super) fn integration_needs_install(info: &crate::api::schema::IntegrationIn
 
 impl ClientShellState {
     pub(super) fn open_settings_overlay(&mut self) {
+        let current = theme_index(&self.config.theme_name);
         self.overlay = Some(ClientShellOverlay::Settings(ClientSettingsOverlay {
             section: ClientSettingsSection::Theme,
-            selected: theme_index(&self.config.theme_name),
+            selected: current,
+            current,
+            saved: false,
             original_theme_name: self.config.theme_name.clone(),
             original_palette: self.config.palette.clone(),
             integrations: Vec::new(),
@@ -73,6 +76,8 @@ impl ClientShellState {
         if let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() {
             settings.section = section;
             settings.selected = selected;
+            settings.current = selected;
+            settings.saved = false;
         }
         if request_integrations {
             self.queue_integration_list(outcome, true);
@@ -110,6 +115,7 @@ impl ClientShellState {
         let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() else {
             return;
         };
+        settings.saved = false;
         if count == 0 {
             settings.selected = 0;
             return;
@@ -124,6 +130,7 @@ impl ClientShellState {
     pub(super) fn select_settings_choice(&mut self, index: usize) {
         let count = self.settings_choice_count();
         if let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() {
+            settings.saved = false;
             if count > 0 {
                 settings.selected = index.min(count - 1);
             }
@@ -170,6 +177,10 @@ impl ClientShellState {
             return false;
         }
         self.reload_client_config();
+        if let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() {
+            settings.current = settings.selected;
+            settings.saved = true;
+        }
         self.push_endpoint_method_with_kind(
             crate::api::schema::Method::ServerReloadConfig(
                 crate::api::schema::EmptyParams::default(),
@@ -193,7 +204,11 @@ impl ClientShellState {
                     return;
                 };
                 if self.save_settings_edit(crate::config::ConfigEdit::Theme(name), outcome) {
-                    self.overlay = None;
+                    // The applied theme becomes the one esc restores.
+                    if let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() {
+                        settings.original_theme_name = self.config.theme_name.clone();
+                        settings.original_palette = self.config.palette.clone();
+                    }
                 }
             }
             ClientSettingsSection::Indicators => {

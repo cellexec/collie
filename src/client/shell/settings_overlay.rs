@@ -21,14 +21,13 @@ fn draw_choice(
 ) {
     let style = choice_style(selected, palette);
     buffer.set_style(rect, style);
-    let marker = if selected { "▸" } else { " " };
-    let current = if current { " ✓" } else { "" };
+    let marker = if current { "✓" } else { " " };
     put_text(
         buffer,
         rect.x,
         rect.y,
         rect.width,
-        &format!(" {marker} {label}{current}"),
+        &format!(" {marker} {label}"),
         style,
     );
 }
@@ -166,6 +165,7 @@ pub(super) fn render_settings_overlay(
                 "choose color dots or distinct symbols for each state",
                 &["color dots  ● ● ● ○ ·", "distinct symbols  × ◐ ✓ ○ ·"],
                 settings.selected,
+                settings.current,
                 palette,
                 &mut choice_hits,
             );
@@ -178,6 +178,7 @@ pub(super) fn render_settings_overlay(
                 "play sounds when agents change state in background",
                 &["on", "off"],
                 settings.selected,
+                settings.current,
                 palette,
                 &mut choice_hits,
             );
@@ -190,6 +191,7 @@ pub(super) fn render_settings_overlay(
                 "choose where background popup notifications should appear",
                 &["off", "inside herdr", "via terminal", "via system"],
                 settings.selected,
+                settings.current,
                 palette,
                 &mut choice_hits,
             );
@@ -234,14 +236,29 @@ pub(super) fn render_settings_overlay(
             .bg(palette.surface0)
             .add_modifier(Modifier::BOLD),
     );
+    let hint = " ↑↓ select  tab section";
     put_text(
         buffer,
         inner.x,
         inner.bottom().saturating_sub(2),
         inner.width,
-        " ↑↓ select  tab section",
+        hint,
         Style::default().fg(palette.overlay1).bg(palette.panel_bg),
     );
+    if settings.saved {
+        let x = inner.x.saturating_add(display_width(hint) + 2);
+        put_text(
+            buffer,
+            x,
+            inner.bottom().saturating_sub(2),
+            inner.right().saturating_sub(x),
+            "✓ saved",
+            Style::default()
+                .fg(palette.green)
+                .bg(palette.panel_bg)
+                .add_modifier(Modifier::BOLD),
+        );
+    }
 
     Some(OverlayRender {
         area: popup,
@@ -261,6 +278,7 @@ fn render_choice_section(
     description: &str,
     choices: &[&str],
     selected: usize,
+    current: usize,
     palette: &Palette,
     hits: &mut Vec<(Rect, usize)>,
 ) {
@@ -290,7 +308,14 @@ fn render_choice_section(
             break;
         }
         let rect = Rect::new(area.x, y, area.width, 1);
-        draw_choice(buffer, rect, choice, index == selected, false, palette);
+        draw_choice(
+            buffer,
+            rect,
+            choice,
+            index == selected,
+            index == current,
+            palette,
+        );
         hits.push((rect, index));
     }
 }

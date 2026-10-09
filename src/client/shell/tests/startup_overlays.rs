@@ -1314,3 +1314,94 @@ fn client_settings_preview_restore_and_endpoint_integrations_are_owned_by_overla
         })) if integration_messages == &["installed codex"]
     ));
 }
+
+#[test]
+fn settings_choice_sections_mark_the_persisted_choice_and_saved_state() {
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    state.config.toast_delivery = crate::config::ToastDelivery::Terminal;
+    state.open_settings_overlay();
+    state.select_settings_section(
+        ClientSettingsSection::Toast,
+        &mut ClientShellInput::default(),
+    );
+
+    let row_text = |state: &mut ClientShellState, index: usize| {
+        let frame = state.compose(106, 30).expect("settings frame");
+        let buffer = frame.to_ratatui_buffer().expect("settings buffer");
+        let (rect, _) = state.hits.settings_choices[index];
+        (rect.x..rect.right())
+            .map(|x| buffer[(x, rect.y)].symbol().to_owned())
+            .collect::<String>()
+    };
+    assert!(row_text(&mut state, 2).contains("✓ via terminal"));
+    assert!(!row_text(&mut state, 1).contains('✓'));
+
+    state.move_settings_selection(-1);
+    assert!(row_text(&mut state, 2).contains('✓'));
+    assert!(!row_text(&mut state, 1).contains('✓'));
+
+    if let Some(ClientShellOverlay::Settings(settings)) = state.overlay.as_mut() {
+        settings.current = settings.selected;
+        settings.saved = true;
+    }
+    let frame = state.compose(106, 30).expect("saved frame");
+    let text = frame
+        .cells
+        .iter()
+        .map(|cell| cell.symbol.as_str())
+        .collect::<String>();
+    assert!(text.contains("✓ saved"));
+    assert!(row_text(&mut state, 1).contains("✓ inside herdr"));
+
+    state.move_settings_selection(1);
+    let frame = state.compose(106, 30).expect("navigated frame");
+    let text = frame
+        .cells
+        .iter()
+        .map(|cell| cell.symbol.as_str())
+        .collect::<String>();
+    assert!(!text.contains("✓ saved"));
+}
+
+#[test]
+fn applying_a_theme_keeps_settings_open_and_esc_keeps_the_applied_theme() {
+    let _guard = crate::config::test_config_env_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let dir = std::env::temp_dir().join(format!(
+        "herdr-settings-theme-apply-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).expect("create config dir");
+    let path = dir.join("config.toml");
+    std::env::set_var(crate::config::CONFIG_PATH_ENV_VAR, &path);
+
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    state.open_settings_overlay();
+    state.move_settings_selection(1);
+    let applied = state.config.theme_name.clone();
+
+    state.handle_input_bytes(b"\r");
+    assert!(matches!(
+        &state.overlay,
+        Some(ClientShellOverlay::Settings(settings))
+            if settings.saved && settings.original_theme_name == applied
+    ));
+
+    state.move_settings_selection(1);
+    assert_ne!(state.config.theme_name, applied);
+    state.handle_input_bytes(b"\x1b");
+    assert!(state.overlay.is_none());
+    assert_eq!(state.config.theme_name, applied);
+
+    std::env::remove_var(crate::config::CONFIG_PATH_ENV_VAR);
+    let _ = std::fs::remove_dir_all(&dir);
+}
