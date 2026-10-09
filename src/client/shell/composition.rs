@@ -367,8 +367,10 @@ impl ClientShellState {
             .render_view(self.mode, self.prefix_return_navigate)
             .focused
         {
-            dim_unfocused_panes(&mut frame, layout.pane_surface);
-            dim_unfocused_panes(&mut frame, layout.tab_bar);
+            let backdrop = Backdrop::new(&self.config.palette, self.host_background);
+            backdrop.apply(&mut frame, layout.pane_surface);
+            backdrop.apply(&mut frame, layout.tab_bar);
+            frame.cursor = None;
         }
         restore_mode_bar(&mut frame, mode_bar, mode_bar_cells.as_deref());
         let mut occlusion = crate::kitty_graphics::surface::Occlusion::default();
@@ -780,20 +782,108 @@ fn client_copy_surface_coherent(copy_mode: Option<&ClientCopyModeState>, hit: &P
         })
 }
 
-/// While the sidebar has keyboard focus the panes do not receive keys: draw
-/// them dimmed and without a cursor.
-fn dim_unfocused_panes(frame: &mut FrameData, area: Rect) {
-    let dim = Modifier::DIM.bits();
-    let width = usize::from(frame.width);
-    for y in area.y..area.bottom().min(frame.height) {
-        let row = usize::from(y) * width;
-        for x in area.x..area.right().min(frame.width) {
-            if let Some(cell) = frame.cells.get_mut(row + usize::from(x)) {
-                cell.modifier |= dim;
+/// While the sidebar has keyboard focus the panes do not receive keys. They
+/// are drawn behind a dark backdrop, like the scrim behind a browser modal:
+/// every foreground and background color is blended toward black.
+struct Backdrop {
+    default_fg: (u8, u8, u8),
+    default_bg: (u8, u8, u8),
+}
+
+impl Backdrop {
+    /// Share of the original color that stays visible.
+    const KEEP: u16 = 45;
+
+    fn new(palette: &Palette, host_background: Option<crate::terminal_theme::RgbColor>) -> Self {
+        let rgb = |color: ratatui::style::Color| match color {
+            ratatui::style::Color::Rgb(r, g, b) => Some((r, g, b)),
+            _ => None,
+        };
+        let default_bg = host_background
+            .map(|color| (color.r, color.g, color.b))
+            .or_else(|| rgb(palette.panel_bg))
+            .unwrap_or((0, 0, 0));
+        let light = host_background.is_some_and(|color| {
+            color.inferred_appearance() == crate::terminal_theme::HostAppearance::Light
+        });
+        let default_fg =
+            rgb(palette.text).unwrap_or(if light { (40, 40, 40) } else { (208, 208, 208) });
+        Self {
+            default_fg,
+            default_bg,
+        }
+    }
+
+    fn apply(&self, frame: &mut FrameData, area: Rect) {
+        let width = usize::from(frame.width);
+        for y in area.y..area.bottom().min(frame.height) {
+            let row = usize::from(y) * width;
+            for x in area.x..area.right().min(frame.width) {
+                if let Some(cell) = frame.cells.get_mut(row + usize::from(x)) {
+                    cell.fg = self.blend(cell.fg, self.default_fg);
+                    cell.bg = self.blend(cell.bg, self.default_bg);
+                }
             }
         }
     }
-    frame.cursor = None;
+
+    fn blend(&self, packed: u32, default: (u8, u8, u8)) -> u32 {
+        let (r, g, b) = packed_rgb(packed).unwrap_or(default);
+        let scale = |channel: u8| (u16::from(channel) * Self::KEEP / 100) as u32;
+        0x02_00_00_00 | (scale(r) << 16) | (scale(g) << 8) | scale(b)
+    }
+}
+
+/// RGB for a wire-packed color. Reset has no known value; named and indexed
+/// colors use the xterm defaults.
+fn packed_rgb(packed: u32) -> Option<(u8, u8, u8)> {
+    const ANSI: [(u8, u8, u8); 16] = [
+        (0, 0, 0),
+        (205, 0, 0),
+        (0, 205, 0),
+        (205, 205, 0),
+        (0, 0, 238),
+        (205, 0, 205),
+        (0, 205, 205),
+        (229, 229, 229),
+        (127, 127, 127),
+        (255, 0, 0),
+        (0, 255, 0),
+        (255, 255, 0),
+        (92, 92, 255),
+        (255, 0, 255),
+        (0, 255, 255),
+        (255, 255, 255),
+    ];
+    let indexed = |index: u8| -> (u8, u8, u8) {
+        match index {
+            0..=15 => ANSI[usize::from(index)],
+            16..=231 => {
+                let level = |value: u8| if value == 0 { 0 } else { 55 + value * 40 };
+                let index = index - 16;
+                (level(index / 36), level(index / 6 % 6), level(index % 6))
+            }
+            _ => {
+                let gray = 8 + (index - 232) * 10;
+                (gray, gray, gray)
+            }
+        }
+    };
+    match packed >> 24 {
+        // Named colors: 1 = Black … 16 = White, in ANSI order.
+        0x00 => match (packed & 0xFF) as u8 {
+            0 => None,
+            named @ 1..=16 => Some(indexed(named - 1)),
+            _ => None,
+        },
+        0x01 => Some(indexed((packed & 0xFF) as u8)),
+        0x02 => Some((
+            ((packed >> 16) & 0xFF) as u8,
+            ((packed >> 8) & 0xFF) as u8,
+            (packed & 0xFF) as u8,
+        )),
+        _ => None,
+    }
 }
 
 fn render_client_copy_search_highlights(

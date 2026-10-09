@@ -400,16 +400,109 @@ fn new_space_returns_focus_to_the_panes() {
 }
 
 #[test]
-fn panes_dim_while_the_sidebar_has_focus() {
-    let dim = Modifier::DIM.bits();
+fn panes_sit_behind_a_backdrop_while_the_sidebar_has_focus() {
     let mut state = sidebar_state();
     let layout = state.layout(100, 28);
     let pane_cell = usize::from(layout.pane_surface.y) * 100 + usize::from(layout.pane_surface.x);
-    let frame = state.compose(100, 28).expect("frame");
-    assert_eq!(frame.cells[pane_cell].modifier & dim, 0);
+    let before = state.compose(100, 28).expect("frame").cells[pane_cell].clone();
 
     focus_sidebar(&mut state);
     let frame = state.compose(100, 28).expect("frame");
-    assert_ne!(frame.cells[pane_cell].modifier & dim, 0);
+    let after = &frame.cells[pane_cell];
+    assert_eq!(after.symbol, before.symbol);
+    assert_ne!(after.bg, before.bg);
+    assert_eq!(after.bg >> 24, 0x02, "backdrop colors are RGB");
+    let channels = |packed: u32| [(packed >> 16) & 0xFF, (packed >> 8) & 0xFF, packed & 0xFF];
+    assert!(channels(after.fg)
+        .iter()
+        .all(|channel| *channel <= 255 * 45 / 100));
     assert!(frame.cursor.is_none());
+}
+
+fn mouse(
+    state: &mut ClientShellState,
+    kind: crossterm::event::MouseEventKind,
+    (column, row): (u16, u16),
+) -> ClientShellInput {
+    state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+        kind,
+        column,
+        row,
+        modifiers: KeyModifiers::empty(),
+    })])
+}
+
+fn workspace_point(state: &ClientShellState, workspace_id: &str) -> (u16, u16) {
+    let hit = state
+        .hits
+        .workspaces
+        .iter()
+        .find(|hit| hit.workspace_id == workspace_id)
+        .expect("workspace row");
+    (hit.rect.x + 2, hit.rect.y)
+}
+
+fn agent_point(state: &ClientShellState, pane_id: &str) -> (u16, u16) {
+    let (rect, _) = state
+        .hits
+        .agents
+        .iter()
+        .find(|(_, id)| id == pane_id)
+        .expect("agent row");
+    (rect.x + 2, rect.y)
+}
+
+#[test]
+fn hovering_rows_moves_the_cursor_and_section_while_focused() {
+    use crossterm::event::MouseEventKind;
+    let mut state = sidebar_state();
+    let point = workspace_point(&state, "ws_2");
+    let unfocused = mouse(&mut state, MouseEventKind::Moved, point);
+    assert!(methods(&unfocused).is_empty());
+
+    focus_sidebar(&mut state);
+    state.compose(100, 28).expect("frame");
+    let hover = mouse(&mut state, MouseEventKind::Moved, point);
+    assert_eq!(
+        state.navigate_workspace_id,
+        state.navigation_target(&ClientEndpointId::Local, "ws_2")
+    );
+    assert!(matches!(
+        methods(&hover).as_slice(),
+        [Method::WorkspaceFocus(target)] if target.workspace_id == "ws_2"
+    ));
+
+    let point = agent_point(&state, "pane_2");
+    let hover = mouse(&mut state, MouseEventKind::Moved, point);
+    assert_eq!(
+        state.sidebar_focus.section,
+        crate::client::shell::sidebar_focus::SidebarSection::Agents
+    );
+    assert_eq!(agent_cursor(&state), Some("pane_2"));
+    assert!(matches!(
+        methods(&hover).as_slice(),
+        [Method::PaneFocus(target)] if target.pane_id == "pane_2"
+    ));
+    assert_eq!(state.mode, ClientShellMode::Navigate);
+}
+
+#[test]
+fn clicking_a_row_opens_it_and_returns_focus_to_the_panes() {
+    use crossterm::event::{MouseButton, MouseEventKind};
+    let mut state = sidebar_state();
+    focus_sidebar(&mut state);
+    press(&mut state, b"/");
+    press(&mut state, b"sec");
+    press(&mut state, b"\r");
+    state.compose(100, 28).expect("frame");
+    let point = workspace_point(&state, "ws_2");
+
+    mouse(&mut state, MouseEventKind::Down(MouseButton::Left), point);
+    assert_eq!(state.mode, ClientShellMode::Terminal);
+    assert!(state.sidebar_focus.workspace_query.is_empty());
+    let up = mouse(&mut state, MouseEventKind::Up(MouseButton::Left), point);
+    assert!(matches!(
+        methods(&up).as_slice(),
+        [Method::WorkspaceFocus(target)] if target.workspace_id == "ws_2"
+    ));
 }

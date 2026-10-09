@@ -1181,3 +1181,107 @@ impl ClientShellState {
         }
     }
 }
+
+impl ClientShellState {
+    /// The mouse overrides the keyboard cursor while the sidebar has focus:
+    /// hovering a row moves that section's cursor like `j`/`k`, hovering a
+    /// section focuses it, and clicking a row or the panes hands focus back to
+    /// the panes before the ordinary click handling runs.
+    pub(super) fn route_sidebar_mouse(
+        &mut self,
+        mouse: crossterm::event::MouseEvent,
+        outcome: &mut ClientShellInput,
+    ) {
+        use crossterm::event::{MouseButton, MouseEventKind};
+        if self.mode != ClientShellMode::Navigate
+            || self.overlay.is_some()
+            || self.mobile_layout_active()
+        {
+            return;
+        }
+        let point = (mouse.column, mouse.row);
+        let workspace = self
+            .hits
+            .workspaces
+            .iter()
+            .find(|hit| super::contains(hit.rect, point))
+            .map(|hit| (hit.endpoint_id.clone(), hit.workspace_id.clone()));
+        let agent = self
+            .hits
+            .agents
+            .iter()
+            .find(|(rect, _)| super::contains(*rect, point))
+            .map(|(_, pane_id)| SidebarAgentCursor {
+                endpoint_id: self.active_endpoint_id.clone(),
+                pane_id: pane_id.clone(),
+            })
+            .or_else(|| {
+                self.hits
+                    .endpoint_agents
+                    .iter()
+                    .find(|(rect, _, _)| super::contains(*rect, point))
+                    .map(|(_, endpoint_id, pane_id)| SidebarAgentCursor {
+                        endpoint_id: endpoint_id.clone(),
+                        pane_id: pane_id.clone(),
+                    })
+            });
+        match mouse.kind {
+            MouseEventKind::Moved if !self.sidebar_focus.editing => {
+                if let Some((endpoint_id, workspace_id)) = workspace {
+                    let target = self.navigation_target(&endpoint_id, &workspace_id);
+                    if self.sidebar_focus.section != SidebarSection::Spaces
+                        || target.is_some() && self.navigate_workspace_id != target
+                    {
+                        self.sidebar_focus.section = SidebarSection::Spaces;
+                        self.sidebar_focus.pending = None;
+                        if target.is_some() {
+                            self.navigate_workspace_id = target;
+                        }
+                        self.preview_navigate_workspace(outcome);
+                        outcome.repaint = true;
+                    }
+                } else if let Some(cursor) = agent {
+                    if self.sidebar_focus.section != SidebarSection::Agents
+                        || self.sidebar_focus.agent_cursor.as_ref() != Some(&cursor)
+                    {
+                        self.sidebar_focus.section = SidebarSection::Agents;
+                        self.sidebar_focus.pending = None;
+                        self.sidebar_focus.agent_cursor = Some(cursor);
+                        self.preview_sidebar_agent(outcome);
+                        outcome.repaint = true;
+                    }
+                } else {
+                    let section = if super::contains(self.hits.workspace_body, point) {
+                        Some(SidebarSection::Spaces)
+                    } else if super::contains(self.hits.agent_body, point) {
+                        Some(SidebarSection::Agents)
+                    } else {
+                        None
+                    };
+                    if let Some(section) =
+                        section.filter(|section| *section != self.sidebar_focus.section)
+                    {
+                        self.set_sidebar_section(section);
+                        outcome.repaint = true;
+                    }
+                }
+            }
+            MouseEventKind::Down(MouseButton::Left) => {
+                let divider = self.hits.sidebar_divider;
+                let on_panes = !divider.is_empty()
+                    && mouse.column > divider.x
+                    && !super::contains(self.hits.notification_toast, point);
+                if workspace.is_some()
+                    || agent.is_some()
+                    || on_panes
+                    || super::contains(self.hits.new_workspace, point)
+                {
+                    self.sidebar_focus.workspace_query.clear();
+                    self.sidebar_focus.agent_query.clear();
+                    self.leave_sidebar(false, outcome);
+                }
+            }
+            _ => {}
+        }
+    }
+}

@@ -27,7 +27,12 @@ mode becomes sidebar focus.
   - `i` leaves like `enter` without changing anything else.
 - Indicator: both sidebar sections are framed lazygit-style (`1 spaces`,
   `2 agents`). The focused section's frame is accented. While the sidebar has
-  focus the panes and tab bar are dimmed and the pane cursor is hidden.
+  focus the panes and tab bar sit behind a dark backdrop (colors blended
+  toward black) and the pane cursor is hidden.
+- Mouse overrides the keyboard: while the sidebar has focus, hovering a row
+  moves that section's cursor with the live preview, hovering a section
+  focuses it, and clicking a row, `new` or the panes leaves the sidebar before
+  the normal click runs. Hover does nothing while the panes have focus.
 - Navigate mode no longer runs prefix actions without the prefix and no longer
   binds `1`-`9` to workspaces. The prefix keeps working inside the sidebar.
 
