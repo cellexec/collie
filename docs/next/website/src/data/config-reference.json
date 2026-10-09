@@ -496,8 +496,14 @@
         {
           "key": "keys.settings",
           "type": "keybinding",
-          "default": "\"prefix+s\"",
+          "default": "\"prefix+comma\"",
           "description": "Open settings."
+        },
+        {
+          "key": "keys.search",
+          "type": "keybinding",
+          "default": "\"prefix+s\"",
+          "description": "Start a search sequence: `a` opens the agent picker, `s` the space picker."
         },
         {
           "key": "keys.new_workspace",
@@ -550,38 +556,152 @@
         {
           "key": "keys.navigate_workspace_up",
           "type": "keybinding",
-          "default": "\"up\"",
-          "description": "Move workspace selection up in navigate mode."
+          "default": "[\"k\", \"up\"]",
+          "description": "Move the cursor of the focused sidebar section up."
         },
         {
           "key": "keys.navigate_workspace_down",
           "type": "keybinding",
-          "default": "\"down\"",
-          "description": "Move workspace selection down in navigate mode."
+          "default": "[\"j\", \"down\"]",
+          "description": "Move the cursor of the focused sidebar section down."
         },
         {
           "key": "keys.navigate_pane_left",
           "type": "keybinding",
-          "default": "\"h\"",
-          "description": "Focus the pane to the left in navigate mode. Left arrow is always an alias."
+          "default": "\"\"",
+          "description": "Focus the pane to the left while the sidebar has focus. Unset by default."
         },
         {
           "key": "keys.navigate_pane_down",
           "type": "keybinding",
-          "default": "\"j\"",
-          "description": "Focus the pane below in navigate mode."
+          "default": "\"\"",
+          "description": "Focus the pane below while the sidebar has focus. Unset by default."
         },
         {
           "key": "keys.navigate_pane_up",
           "type": "keybinding",
-          "default": "\"k\"",
-          "description": "Focus the pane above in navigate mode."
+          "default": "\"\"",
+          "description": "Focus the pane above while the sidebar has focus. Unset by default."
         },
         {
           "key": "keys.navigate_pane_right",
           "type": "keybinding",
-          "default": "\"l\"",
-          "description": "Focus the pane to the right in navigate mode. Right arrow is always an alias."
+          "default": "\"\"",
+          "description": "Focus the pane to the right while the sidebar has focus. Unset by default."
+        },
+        {
+          "key": "keys.sidebar_spaces",
+          "type": "keybinding",
+          "default": "\"1\"",
+          "description": "Focus the spaces section while the sidebar has focus."
+        },
+        {
+          "key": "keys.sidebar_agents",
+          "type": "keybinding",
+          "default": "\"2\"",
+          "description": "Focus the agents section while the sidebar has focus."
+        },
+        {
+          "key": "keys.sidebar_bottom",
+          "type": "keybinding",
+          "default": "\"shift+g\"",
+          "description": "Jump to the last row of the focused section. `gg` jumps to the first row."
+        },
+        {
+          "key": "keys.sidebar_filter",
+          "type": "keybinding",
+          "default": "\"/\"",
+          "description": "Filter the focused section inline."
+        },
+        {
+          "key": "keys.sidebar_new",
+          "type": "keybinding",
+          "default": "\"n\"",
+          "description": "Spaces: create a workspace. Agents: start an agent command in a new tab."
+        },
+        {
+          "key": "keys.sidebar_rename",
+          "type": "keybinding",
+          "default": "\"r\"",
+          "description": "Rename the space or agent pane under the cursor."
+        },
+        {
+          "key": "keys.sidebar_close",
+          "type": "keybinding",
+          "default": "\"d\"",
+          "description": "Close the space under the cursor (confirmed), or the agent pane when pressed twice."
+        },
+        {
+          "key": "keys.sidebar_sort",
+          "type": "keybinding",
+          "default": "\"s\"",
+          "description": "Toggle the agent list order between grouped and priority."
+        },
+        {
+          "key": "keys.sidebar_state_filter",
+          "type": "keybinding",
+          "default": "\"f\"",
+          "description": "Cycle the agent state filter: all, blocked, working, idle."
+        },
+        {
+          "key": "keys.sidebar_move_down",
+          "type": "keybinding",
+          "default": "\"shift+j\"",
+          "description": "Move the space under the cursor down."
+        },
+        {
+          "key": "keys.sidebar_move_up",
+          "type": "keybinding",
+          "default": "\"shift+k\"",
+          "description": "Move the space under the cursor up."
+        },
+        {
+          "key": "keys.sidebar_narrower",
+          "type": "keybinding",
+          "default": "\"<\"",
+          "description": "Shrink the sidebar width."
+        },
+        {
+          "key": "keys.sidebar_wider",
+          "type": "keybinding",
+          "default": "\">\"",
+          "description": "Grow the sidebar width."
+        },
+        {
+          "key": "keys.sidebar_grow_spaces",
+          "type": "keybinding",
+          "default": "\"plus\"",
+          "description": "Move the divider between spaces and agents down."
+        },
+        {
+          "key": "keys.sidebar_grow_agents",
+          "type": "keybinding",
+          "default": "\"minus\"",
+          "description": "Move the divider between spaces and agents up."
+        },
+        {
+          "key": "keys.sidebar_menu",
+          "type": "keybinding",
+          "default": "\"m\"",
+          "description": "Open the global menu."
+        },
+        {
+          "key": "keys.sidebar_help",
+          "type": "keybinding",
+          "default": "\"?\"",
+          "description": "Open keybinding help."
+        },
+        {
+          "key": "keys.sidebar_leader",
+          "type": "keybinding",
+          "default": "\"space\"",
+          "description": "Act as the prefix key while the sidebar has focus."
+        },
+        {
+          "key": "keys.sidebar_leave",
+          "type": "keybinding",
+          "default": "\"i\"",
+          "description": "Return focus to the panes without changing the selection."
         },
         {
           "key": "keys.detach",
