@@ -1,3 +1,47 @@
+# collie
+
+collie is a personal, keyboard-first build of [herdr](https://github.com/herdrdev/herdr).
+It is not affiliated with or endorsed by the herdr project. The code, crate,
+config paths and environment variables keep the herdr names so upstream changes
+merge cleanly; only the installed commands are called `collie` and `collie-dev`.
+
+What collie adds on top of herdr:
+
+- the sidebar as a second keyboard focus zone: spaces and agents sections,
+  `j`/`k` with live preview, inline `/` filter, list actions, mouse hover and
+  click, a backdrop over the panes while the sidebar has focus
+  ([keyboard docs](docs/next/website/src/content/docs/keyboard.mdx#sidebar-focus))
+- `prefix+s a` / `prefix+s s` pickers for agents and spaces
+- agent commands started from the agents section (`[[ui.sidebar.agent_commands]]`)
+- no self-update: `collie update` refuses and no update checks run, so an
+  upstream release never replaces this build
+
+### build and install
+
+There are no collie releases. Build it yourself:
+
+```bash
+git clone git@github.com:cellexec/collie.git && cd collie
+cargo build --release
+ln -sf "$PWD/target/release/herdr" ~/.local/bin/collie
+```
+
+Agent integrations call `herdr` by name, so keep a `herdr` link to the same
+binary on your `PATH` as well.
+
+### follow upstream
+
+```bash
+git remote add upstream https://github.com/herdrdev/herdr.git
+git fetch upstream && git merge upstream/master
+cargo build --release
+```
+
+collie is distributed under the herdr project's Apache License 2.0; see
+[LICENSE](LICENSE). The herdr README follows unchanged.
+
+---
+
 # herdr
 
 

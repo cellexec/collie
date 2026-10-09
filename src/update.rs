@@ -22,6 +22,11 @@ use std::time::{Duration, Instant};
 use interprocess::local_socket::traits::Stream as _;
 use serde::{Deserialize, Deserializer};
 
+/// collie is a personal source build of herdr: it never downloads or installs
+/// upstream release binaries, which would silently replace the fork.
+const SELF_UPDATE_DISABLED_MESSAGE: &str =
+    "self-update is disabled for this source build; pull the fork and rebuild it with `cargo build --release`";
+
 const STABLE_UPDATE_MANIFEST_URL: &str = "https://herdr.dev/latest.json";
 const PREVIEW_UPDATE_MANIFEST_URL: &str = "https://herdr.dev/preview.json";
 const HOMEBREW_FORMULA_API_URL: &str = "https://formulae.brew.sh/api/formula/herdr.json";
@@ -2107,6 +2112,9 @@ fn homebrew_cellar_keg_root(path: &Path) -> Option<PathBuf> {
 
 /// Manual self-update command (`herdr update`).
 pub fn self_update(options: SelfUpdateOptions) -> Result<Version, String> {
+    if !cfg!(test) {
+        return Err(SELF_UPDATE_DISABLED_MESSAGE.into());
+    }
     let channel = UpdateChannel::configured();
 
     if is_homebrew_managed_install() {
@@ -2346,6 +2354,10 @@ fn print_outdated_integration_notice_with_updated_binary(updated_exe: &Path) {
 /// Background update check: only surface availability and release notes.
 /// Runs in a background thread at startup.
 pub fn auto_update(events: tokio::sync::mpsc::Sender<crate::events::AppEvent>) {
+    if !cfg!(test) && env::var_os(FAKE_UPDATE_VERSION_ENV).is_none() {
+        tracing::debug!("skipping update check: self-update is disabled for this source build");
+        return;
+    }
     crate::logging::update_check_started();
     if let Ok(version) = env::var(FAKE_UPDATE_VERSION_ENV) {
         let version = version.trim();
