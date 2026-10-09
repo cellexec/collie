@@ -108,43 +108,29 @@ pub(super) fn render_agent_panel_header(
     config: &ClientShellConfig,
     hits: &mut ShellHitMap,
 ) -> bool {
-    if area.height == 0 {
-        return false;
-    }
-    put_text(
-        buffer,
-        area.x,
-        area.y,
-        area.width,
-        &"─".repeat(area.width as usize),
-        Style::default().fg(config.palette.surface_dim),
-    );
-    if area.height < 2 {
+    if area.height < 3 {
         return false;
     }
     let active = view.section_active(super::sidebar_focus::SidebarSection::Agents);
-    put_text(
+    super::render::sidebar::render_section_box(
         buffer,
-        area.x,
-        area.y + 1,
-        area.width,
-        " agents",
-        Style::default()
-            .fg(if active {
-                config.palette.accent
-            } else {
-                config.palette.overlay0
-            })
-            .add_modifier(Modifier::BOLD),
+        area,
+        " 2 agents ",
+        active,
+        None,
+        &config.palette,
     );
-    let sort_label = agent_view_label.unwrap_or(match config.agent_panel_sort {
-        crate::config::AgentPanelSortConfig::Spaces => "grouped",
-        crate::config::AgentPanelSortConfig::Priority => "priority",
-    });
-    let sort_width = display_width(sort_label).min(area.width as usize) as u16;
+    let sort_label = format!(
+        " {} ",
+        agent_view_label.unwrap_or(match config.agent_panel_sort {
+            crate::config::AgentPanelSortConfig::Spaces => "grouped",
+            crate::config::AgentPanelSortConfig::Priority => "priority",
+        })
+    );
+    let sort_width = (display_width(&sort_label) as u16).min(area.width.saturating_sub(1));
     let sort_rect = Rect::new(
         area.right().saturating_sub(sort_width),
-        area.y + 1,
+        area.y,
         sort_width,
         1,
     );
@@ -158,7 +144,7 @@ pub(super) fn render_agent_panel_header(
         sort_rect.x,
         sort_rect.y,
         sort_rect.width,
-        sort_label,
+        &sort_label,
         Style::default()
             .fg(if agent_view_label.is_some() {
                 config.palette.accent
@@ -168,16 +154,17 @@ pub(super) fn render_agent_panel_header(
             .add_modifier(Modifier::BOLD),
     );
     if let Some(filter) = view.filter_label(super::sidebar_focus::SidebarSection::Agents) {
-        let title_width = display_width(" agents") as u16 + 1;
-        let available = sort_rect.x.saturating_sub(area.x + title_width + 1);
-        if available > 0 {
-            let width = (display_width(&filter) as u16).min(available);
+        let label = format!(" {filter} ");
+        let title_end = area.x + 1 + display_width(" 2 agents ") as u16;
+        let available = sort_rect.x.saturating_sub(title_end + 1);
+        if available > 2 {
+            let width = (display_width(&label) as u16).min(available);
             put_text(
                 buffer,
-                sort_rect.x.saturating_sub(width + 1),
-                area.y + 1,
+                sort_rect.x.saturating_sub(width),
+                area.y,
                 width,
-                &filter,
+                &label,
                 Style::default().fg(config.palette.accent),
             );
         }
@@ -196,12 +183,7 @@ pub(super) fn render_agent_list<T>(
     row_lines: impl Fn(&T) -> usize,
     mut render_row: impl FnMut(&mut Buffer, Rect, &T, &mut ShellHitMap),
 ) {
-    let body = Rect::new(
-        area.x,
-        area.y.saturating_add(3),
-        area.width,
-        area.height.saturating_sub(3),
-    );
+    let body = super::render::sidebar::section_box_body(area);
     hits.agent_body = body;
     if body.is_empty() || rows.is_empty() {
         *agent_scroll = 0;

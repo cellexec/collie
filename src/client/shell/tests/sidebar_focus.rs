@@ -373,3 +373,43 @@ fn reentering_through_the_leader_keeps_the_restore_point() {
         [Method::PaneFocus(target)] if target.pane_id == "pane_1"
     ));
 }
+
+#[test]
+fn opening_a_filtered_space_clears_the_filter() {
+    let mut state = sidebar_state();
+    focus_sidebar(&mut state);
+    press(&mut state, b"/");
+    press(&mut state, b"sec");
+    press(&mut state, b"\r");
+
+    press(&mut state, b"\r");
+    assert_eq!(state.mode, ClientShellMode::Terminal);
+    assert!(state.sidebar_focus.workspace_query.is_empty());
+}
+
+#[test]
+fn new_space_returns_focus_to_the_panes() {
+    let mut state = sidebar_state();
+    focus_sidebar(&mut state);
+    let outcome = press(&mut state, b"n");
+    assert!(matches!(
+        methods(&outcome).as_slice(),
+        [Method::WorkspaceCreate(params)] if params.focus
+    ));
+    assert_eq!(state.mode, ClientShellMode::Terminal);
+}
+
+#[test]
+fn panes_dim_while_the_sidebar_has_focus() {
+    let dim = Modifier::DIM.bits();
+    let mut state = sidebar_state();
+    let layout = state.layout(100, 28);
+    let pane_cell = usize::from(layout.pane_surface.y) * 100 + usize::from(layout.pane_surface.x);
+    let frame = state.compose(100, 28).expect("frame");
+    assert_eq!(frame.cells[pane_cell].modifier & dim, 0);
+
+    focus_sidebar(&mut state);
+    let frame = state.compose(100, 28).expect("frame");
+    assert_ne!(frame.cells[pane_cell].modifier & dim, 0);
+    assert!(frame.cursor.is_none());
+}

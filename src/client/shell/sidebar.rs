@@ -206,7 +206,6 @@ pub(crate) fn render_sidebar(
 ) {
     let palette = &config.palette;
     render_sidebar_background(buffer, area, palette);
-    render_sidebar_focus_divider(buffer, area, state.sidebar.focused, palette);
     hits.sidebar_divider = if area.is_empty() {
         Rect::default()
     } else {
@@ -216,13 +215,17 @@ pub(crate) fn render_sidebar(
         crate::ui::expanded_sidebar_sections(area, state.sidebar_section_split);
     hits.sidebar_section_divider =
         crate::ui::sidebar_section_divider_rect(area, state.sidebar_section_split);
-    render_section_header(
+    let spaces_active = state
+        .sidebar
+        .section_active(super::super::sidebar_focus::SidebarSection::Spaces);
+    let agents_active = state
+        .sidebar
+        .section_active(super::super::sidebar_focus::SidebarSection::Agents);
+    render_section_box(
         buffer,
         workspace_area,
-        " spaces",
-        state
-            .sidebar
-            .section_active(super::super::sidebar_focus::SidebarSection::Spaces),
+        " 1 spaces ",
+        spaces_active,
         state
             .sidebar
             .filter_label(super::super::sidebar_focus::SidebarSection::Spaces)
@@ -244,14 +247,7 @@ pub(crate) fn render_sidebar(
                 })
         });
     }
-    let body = Rect::new(
-        workspace_area.x,
-        workspace_area.y.saturating_add(WORKSPACE_HEADER_ROWS),
-        workspace_area.width,
-        workspace_area
-            .height
-            .saturating_sub(WORKSPACE_HEADER_ROWS + 1),
-    );
+    let body = section_box_body(workspace_area);
     hits.workspace_body = body;
     let row_heights = entries
         .iter()
@@ -395,21 +391,21 @@ pub(crate) fn render_sidebar(
     let footer_y = workspace_area.bottom().saturating_sub(1);
     if config.mouse_capture {
         hits.new_workspace = Rect::new(
-            workspace_area.x,
+            workspace_area.x.saturating_add(1),
             footer_y,
-            5.min(workspace_area.width),
+            5.min(workspace_area.width.saturating_sub(1)),
             u16::from(workspace_area.height > 0),
         );
         put_text(
             buffer,
-            workspace_area.x,
+            workspace_area.x.saturating_add(1),
             footer_y,
-            workspace_area.width,
-            " new",
+            workspace_area.width.saturating_sub(1),
+            " new ",
             Style::default().fg(palette.overlay0),
         );
         let attention = super::super::global_menu::global_menu_attention(snapshot);
-        let launcher_width = if attention { 8 } else { 6 }.min(workspace_area.width);
+        let launcher_width = if attention { 9 } else { 7 }.min(workspace_area.width);
         hits.global_launcher = Rect::new(
             workspace_area.right().saturating_sub(launcher_width),
             footer_y,
@@ -417,7 +413,7 @@ pub(crate) fn render_sidebar(
             1,
         );
         if attention {
-            let start_x = workspace_area.right().saturating_sub(6);
+            let start_x = workspace_area.right().saturating_sub(7);
             put_text(
                 buffer,
                 start_x,
@@ -432,8 +428,8 @@ pub(crate) fn render_sidebar(
                 buffer,
                 start_x.saturating_add(2),
                 footer_y,
-                4,
-                "menu",
+                5,
+                "menu ",
                 Style::default().fg(palette.overlay0),
             );
         } else {
@@ -441,12 +437,20 @@ pub(crate) fn render_sidebar(
                 buffer,
                 workspace_area,
                 footer_y,
-                "menu",
+                " menu ",
                 Style::default().fg(palette.overlay0),
             );
         }
     }
 
+    render_section_box(
+        buffer,
+        detail_area,
+        " 2 agents ",
+        agents_active,
+        None,
+        palette,
+    );
     super::render_agent_panel(
         buffer,
         detail_area,
@@ -474,28 +478,21 @@ pub(crate) fn render_sidebar(
     );
 }
 
-/// The accent separator marks the sidebar as the keyboard focus.
-pub(in crate::client::shell) fn render_sidebar_focus_divider(
-    buffer: &mut Buffer,
-    area: Rect,
-    focused: bool,
-    palette: &Palette,
-) {
-    if !focused || area.is_empty() {
-        return;
-    }
-    let separator_x = area.right().saturating_sub(1);
-    for y in area.y..area.bottom() {
-        if let Some(cell) = buffer.cell_mut((separator_x, y)) {
-            cell.set_symbol("┃");
-            cell.set_style(Style::default().fg(palette.accent));
-        }
-    }
+/// The rows and columns inside a section box. The box's right edge is the
+/// sidebar separator column just right of `area`.
+pub(in crate::client::shell) fn section_box_body(area: Rect) -> Rect {
+    Rect::new(
+        area.x.saturating_add(1),
+        area.y.saturating_add(1),
+        area.width.saturating_sub(1),
+        area.height.saturating_sub(2),
+    )
 }
 
-/// Section title, accented while the section has keyboard focus, with the
-/// section's filter right-aligned.
-pub(in crate::client::shell) fn render_section_header(
+/// A lazygit-style frame around one sidebar section. The frame and title use
+/// the accent color while the section has keyboard focus; the section's
+/// filter sits right-aligned in the top edge.
+pub(in crate::client::shell) fn render_section_box(
     buffer: &mut Buffer,
     area: Rect,
     title: &str,
@@ -503,7 +500,40 @@ pub(in crate::client::shell) fn render_section_header(
     filter: Option<&str>,
     palette: &Palette,
 ) {
-    let style = if active {
+    if area.width < 2 || area.height < 2 {
+        return;
+    }
+    let border = if active {
+        Style::default().fg(palette.accent)
+    } else {
+        Style::default().fg(palette.surface1)
+    };
+    let left = area.x;
+    let right = area.right();
+    let top = area.y;
+    let bottom = area.bottom().saturating_sub(1);
+    for x in left..=right {
+        let (top_symbol, bottom_symbol) = if x == left {
+            ("┌", "└")
+        } else if x == right {
+            ("┐", "┘")
+        } else {
+            ("─", "─")
+        };
+        for (y, symbol) in [(top, top_symbol), (bottom, bottom_symbol)] {
+            if let Some(cell) = buffer.cell_mut((x, y)) {
+                cell.set_symbol(symbol).set_style(border);
+            }
+        }
+    }
+    for y in top.saturating_add(1)..bottom {
+        for x in [left, right] {
+            if let Some(cell) = buffer.cell_mut((x, y)) {
+                cell.set_symbol("│").set_style(border);
+            }
+        }
+    }
+    let title_style = if active {
         Style::default()
             .fg(palette.accent)
             .add_modifier(Modifier::BOLD)
@@ -512,18 +542,27 @@ pub(in crate::client::shell) fn render_section_header(
             .fg(palette.overlay0)
             .add_modifier(Modifier::BOLD)
     };
-    put_text(buffer, area.x, area.y, area.width, title, style);
+    let inner_width = area.width.saturating_sub(1);
+    put_text(
+        buffer,
+        left.saturating_add(1),
+        top,
+        inner_width,
+        title,
+        title_style,
+    );
     if let Some(filter) = filter {
-        let title_width = UnicodeWidthStr::width(title) as u16 + 1;
-        let available = area.width.saturating_sub(title_width + 1);
-        if available > 0 {
-            let width = (UnicodeWidthStr::width(filter) as u16).min(available);
+        let title_width = UnicodeWidthStr::width(title) as u16;
+        let available = inner_width.saturating_sub(title_width + 1);
+        if available > 2 {
+            let label = format!(" {filter} ");
+            let width = (UnicodeWidthStr::width(label.as_str()) as u16).min(available);
             put_text(
                 buffer,
-                area.right().saturating_sub(width + 1),
-                area.y,
+                right.saturating_sub(width),
+                top,
                 width,
-                filter,
+                &label,
                 Style::default().fg(palette.accent),
             );
         }

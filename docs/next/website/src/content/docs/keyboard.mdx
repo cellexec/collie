@@ -68,7 +68,7 @@ The Goto picker (`prefix+g`) lists each agent or terminal on its own row, groupe
 
 ## Sidebar focus
 
-`prefix+w` moves keyboard focus from the panes to the sidebar. The sidebar separator and the focused section's title turn the accent color, and the mode bar names the section. Keys now drive the sidebar instead of the pane. A collapsed sidebar opens as a drawer while it has focus and collapses again when focus returns to the panes.
+`prefix+w` moves keyboard focus from the panes to the sidebar. Both sidebar sections are framed; the focused section's frame turns the accent color, the panes are dimmed, and the mode bar names the section. Keys now drive the sidebar instead of the pane. A collapsed sidebar opens as a drawer while it has focus and collapses again when focus returns to the panes.
 
 The sidebar has two sections. `1` focuses spaces and `2` focuses agents; each keeps its own cursor. Moving the cursor previews the target: the panes switch to that space, or to that agent's pane, while focus stays in the sidebar.
 
@@ -81,7 +81,7 @@ The sidebar has two sections. `1` focuses spaces and `2` focuses agents; each ke
 | Focus the panes, keep the selection | `i` |
 | Clear the filter, then go back to where you were | Esc |
 | Filter the section | `/` |
-| New space / start an agent | `n` |
+| New space / start an agent, then focus the panes | `n` |
 | Rename | `r` |
 | Close a space (confirmed) / an agent pane (`dd`) | `d` |
 | Toggle agent order (grouped, priority) | `s` |
@@ -94,7 +94,7 @@ The sidebar has two sections. `1` focuses spaces and `2` focuses agents; each ke
 | Keybind help | `?` |
 | Prefix | `space` |
 
-`/` filters the focused section as you type. Enter keeps the filter and returns to list keys; Esc clears it. While a filter is active, Esc clears it first and leaves the sidebar on the next press.
+`/` filters the focused section as you type. Enter keeps the filter and returns to list keys; Esc clears it. While a filter is active, Esc clears it first and leaves the sidebar on the next press. Opening a row with Enter also clears the filter.
 
 `space` works like the prefix, so every prefix binding is available from the sidebar: `space s a` opens the agent picker, `space c` creates a tab. The prefix itself also still works.
 

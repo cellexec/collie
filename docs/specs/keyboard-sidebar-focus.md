@@ -25,8 +25,9 @@ mode becomes sidebar focus.
   - `esc` first clears an active `/` filter; otherwise it leaves and restores
     the workspace and pane focus that were active before entering.
   - `i` leaves like `enter` without changing anything else.
-- Indicator: the active zone gets an accent border/header. While the panes are
-  active, the sidebar cursor row is drawn muted.
+- Indicator: both sidebar sections are framed lazygit-style (`1 spaces`,
+  `2 agents`). The focused section's frame is accented. While the sidebar has
+  focus the panes and tab bar are dimmed and the pane cursor is hidden.
 - Navigate mode no longer runs prefix actions without the prefix and no longer
   binds `1`-`9` to workspaces. The prefix keeps working inside the sidebar.
 
@@ -41,9 +42,9 @@ fixed, like the copy-mode keys.
 | --- | --- |
 | `1` / `2` | focus the spaces / agents section; each keeps its own cursor |
 | `j` / `k`, `gg` / `G`, `ctrl+d` / `ctrl+u` | move; the panes show a live preview |
-| `/` | filter the focused section inline; `enter` ends input and keeps the filter |
+| `/` | filter the focused section inline; `enter` ends input and keeps the filter; opening a row clears it |
 | `enter` | commit and move focus to the panes |
-| `n` | spaces: new space. agents: pick from `[[ui.sidebar.agent_commands]]`, start in a new tab; without config, open a new tab |
+| `n` | spaces: new space, then focus the panes. agents: pick from `[[ui.sidebar.agent_commands]]`, start in a new tab; without config, open a new tab |
 | `r` / `d` | rename / close: a space asks for confirmation, an agent pane closes on `dd` |
 | `s` | toggle agent sort: grouped / priority |
 | `f` | cycle agent state filter: all, blocked, working, idle |

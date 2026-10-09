@@ -244,12 +244,6 @@ pub(super) fn render_expanded(
 ) {
     let palette = &config.palette;
     super::render::render_sidebar_background(buffer, area, palette);
-    super::render::sidebar::render_sidebar_focus_divider(
-        buffer,
-        area,
-        state.sidebar.focused,
-        palette,
-    );
     hits.sidebar_divider = if area.is_empty() {
         Rect::default()
     } else {
@@ -259,15 +253,18 @@ pub(super) fn render_expanded(
         crate::ui::expanded_sidebar_sections(area, state.sidebar_section_split);
     hits.sidebar_section_divider =
         crate::ui::sidebar_section_divider_rect(area, state.sidebar_section_split);
-    put_text(
+    super::render::sidebar::render_section_box(
         buffer,
-        workspace_area.x,
-        workspace_area.y,
-        workspace_area.width,
-        " machines",
-        Style::default()
-            .fg(palette.overlay0)
-            .add_modifier(Modifier::BOLD),
+        workspace_area,
+        " 1 machines ",
+        state
+            .sidebar
+            .section_active(super::sidebar_focus::SidebarSection::Spaces),
+        state
+            .sidebar
+            .filter_label(super::sidebar_focus::SidebarSection::Spaces)
+            .as_deref(),
+        palette,
     );
 
     let empty_collapsed_groups = HashSet::new();
@@ -298,14 +295,7 @@ pub(super) fn render_expanded(
             );
         }
     }
-    let body = Rect::new(
-        workspace_area.x,
-        workspace_area.y.saturating_add(WORKSPACE_HEADER_ROWS),
-        workspace_area.width,
-        workspace_area
-            .height
-            .saturating_sub(WORKSPACE_HEADER_ROWS + 1),
-    );
+    let body = super::render::sidebar::section_box_body(workspace_area);
     hits.workspace_body = body;
     let row_heights = rows
         .iter()
@@ -524,23 +514,24 @@ pub(super) fn render_expanded(
 
     let footer_y = workspace_area.bottom().saturating_sub(1);
     if config.mouse_capture {
-        let label = format!(" new · {}", active_endpoint_label(state));
+        let label = format!(" new · {} ", active_endpoint_label(state));
+        let footer_width = workspace_area.width.saturating_sub(1);
         hits.new_workspace = Rect::new(
-            workspace_area.x,
+            workspace_area.x.saturating_add(1),
             footer_y,
-            display_width(&label).min(workspace_area.width),
+            display_width(&label).min(footer_width),
             u16::from(workspace_area.height > 0),
         );
         put_text(
             buffer,
-            workspace_area.x,
+            workspace_area.x.saturating_add(1),
             footer_y,
-            workspace_area.width,
+            footer_width,
             &label,
             Style::default().fg(palette.overlay0),
         );
         let attention = active_snapshot.is_some_and(super::global_menu::global_menu_attention);
-        let width = if attention { 8 } else { 6 }.min(workspace_area.width);
+        let width = if attention { 9 } else { 7 }.min(workspace_area.width);
         hits.global_launcher = Rect::new(
             workspace_area.right().saturating_sub(width),
             footer_y,
@@ -551,7 +542,7 @@ pub(super) fn render_expanded(
             buffer,
             workspace_area,
             footer_y,
-            if attention { "● menu" } else { "menu" },
+            if attention { " ● menu " } else { " menu " },
             Style::default().fg(if attention {
                 palette.accent
             } else {

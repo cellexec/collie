@@ -1969,7 +1969,10 @@ impl ClientShellState {
                     }
                     return;
                 }
-                if super::contains(self.hits.sidebar_section_divider, point) {
+                // The sort toggle sits in the agents frame, which doubles as the divider.
+                if super::contains(self.hits.sidebar_section_divider, point)
+                    && !super::contains(self.hits.agent_sort_toggle, point)
+                {
                     self.chrome_drag = Some(ClientChromeDrag::SidebarSection);
                     self.set_sidebar_section_from_row(mouse.row, outcome);
                     return;

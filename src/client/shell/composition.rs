@@ -82,7 +82,15 @@ impl ClientShellState {
                 .sidebar_focus
                 .render_view(self.mode, self.prefix_return_navigate),
         };
-        if let Some(snapshot) = local_snapshot {
+        if self.sidebar_collapsed && layout.sidebar.width > 0 {
+            super::endpoint_sidebar::render_collapsed(
+                &mut buffer,
+                sidebar,
+                &self.config,
+                &mut render_state,
+                &mut self.hits,
+            );
+        } else if let Some(snapshot) = local_snapshot {
             render::render_sidebar(
                 &mut buffer,
                 sidebar,
@@ -354,6 +362,14 @@ impl ClientShellState {
             frame.cells[start..start + usize::from(bar.width)].to_vec()
         });
         blit_pane_surface(&mut frame, &surface.frame, layout.pane_surface);
+        if self
+            .sidebar_focus
+            .render_view(self.mode, self.prefix_return_navigate)
+            .focused
+        {
+            dim_unfocused_panes(&mut frame, layout.pane_surface);
+            dim_unfocused_panes(&mut frame, layout.tab_bar);
+        }
         restore_mode_bar(&mut frame, mode_bar, mode_bar_cells.as_deref());
         let mut occlusion = crate::kitty_graphics::surface::Occlusion::default();
         let has_selection = self
@@ -762,6 +778,22 @@ fn client_copy_surface_coherent(copy_mode: Option<&ClientCopyModeState>, hit: &P
                         && scroll.max_offset_from_bottom == copy_mode.max_offset_from_bottom
                 })
         })
+}
+
+/// While the sidebar has keyboard focus the panes do not receive keys: draw
+/// them dimmed and without a cursor.
+fn dim_unfocused_panes(frame: &mut FrameData, area: Rect) {
+    let dim = Modifier::DIM.bits();
+    let width = usize::from(frame.width);
+    for y in area.y..area.bottom().min(frame.height) {
+        let row = usize::from(y) * width;
+        for x in area.x..area.right().min(frame.width) {
+            if let Some(cell) = frame.cells.get_mut(row + usize::from(x)) {
+                cell.modifier |= dim;
+            }
+        }
+    }
+    frame.cursor = None;
 }
 
 fn render_client_copy_search_highlights(

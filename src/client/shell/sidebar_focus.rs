@@ -373,6 +373,9 @@ impl ClientShellState {
     }
 
     fn commit_sidebar(&mut self, outcome: &mut ClientShellInput) {
+        // The jump consumed the filter; the next visit starts with the full lists.
+        self.sidebar_focus.workspace_query.clear();
+        self.sidebar_focus.agent_query.clear();
         match self.sidebar_focus.section {
             SidebarSection::Spaces => {
                 self.sidebar_focus.origin = None;
@@ -527,7 +530,9 @@ impl ClientShellState {
             Command::Filter => self.sidebar_focus.editing = true,
             Command::New => match section {
                 SidebarSection::Spaces => {
-                    self.record_binding(KeybindMatch::Action(KeybindAction::NewWorkspace), outcome)
+                    self.sidebar_focus.workspace_query.clear();
+                    self.record_binding(KeybindMatch::Action(KeybindAction::NewWorkspace), outcome);
+                    self.leave_sidebar(false, outcome);
                 }
                 SidebarSection::Agents => self.open_agent_commands(outcome),
             },
