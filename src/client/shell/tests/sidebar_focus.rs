@@ -347,3 +347,29 @@ fn agent_commands_start_in_a_new_tab_and_type_the_command() {
             if params.pane_id == "pane_9" && params.text == "claude --resume" && params.keys == ["Enter"]
     ));
 }
+
+#[test]
+fn reentering_through_the_leader_keeps_the_restore_point() {
+    let mut state = sidebar_state();
+    focus_sidebar(&mut state);
+    press(&mut state, b"j");
+    let mut moved = agents_snapshot();
+    moved.focused_workspace_id = Some("ws_2".into());
+    moved.focused_tab_id = Some("tab_2".into());
+    moved.focused_pane_id = Some("pane_2".into());
+    moved.revision = 2;
+    state.set_snapshot(Box::new(moved));
+
+    press(&mut state, b" ");
+    press(&mut state, b"w");
+    assert_eq!(state.mode, ClientShellMode::Navigate);
+    assert_eq!(
+        state.navigate_workspace_id,
+        state.navigation_target(&ClientEndpointId::Local, "ws_2")
+    );
+    let esc = press(&mut state, b"\x1b");
+    assert!(matches!(
+        methods(&esc).as_slice(),
+        [Method::PaneFocus(target)] if target.pane_id == "pane_1"
+    ));
+}

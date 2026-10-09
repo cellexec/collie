@@ -139,6 +139,11 @@ impl ClientShellState {
                     return;
                 }
                 if action == crate::input::KeybindAction::WorkspacePicker {
+                    if self.mode == ClientShellMode::Navigate {
+                        // `space w` inside the sidebar: keep the cursor and the focus Esc restores.
+                        outcome.repaint = true;
+                        return;
+                    }
                     self.pending_workspace_highlight = None;
                     self.mobile_switcher_scroll = 0;
                     self.reveal_mobile_workspace = false;
