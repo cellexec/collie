@@ -85,6 +85,21 @@ impl ClientShellState {
         let Some(entry) = self.config.agent_commands.get(index).cloned() else {
             return;
         };
+        let send_input =
+            crate::api::schema::Method::PaneSendInput(crate::api::schema::PaneSendInputParams {
+                pane_id: String::new(),
+                text: String::new(),
+                keys: Vec::new(),
+            });
+        if !self.supports_endpoint_method(&send_input) {
+            outcome.repaint |= self.push_endpoint_notice(
+                ClientEndpointNoticeKind::Unsupported,
+                "pane.send_input",
+                "Action unavailable",
+                "This server cannot start agent commands yet. Update and restart it to enable this action.",
+            );
+            return;
+        }
         let label = (!entry.name.trim().is_empty()).then(|| entry.name.trim().to_owned());
         let sent = self.push_endpoint_method_with_kind(
             crate::api::schema::Method::TabCreate(crate::api::schema::TabCreateParams {
