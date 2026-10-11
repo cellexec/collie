@@ -485,6 +485,9 @@ pub struct SidebarConfig {
     /// collie: Mit einem Server die Spaces ausblenden und nur die
     /// Agents-Liste zeigen. `n` öffnet neue Tabs dann in `$HOME`.
     pub agents_only: bool,
+    /// collie: Mit `agents_only` fährt die Chat-Liste als Overlay über die
+    /// Panes aus. Eingeklappt bleibt eine 1-Spalten-Linie.
+    pub overlay: bool,
 }
 
 /// One entry of `[[ui.sidebar.agent_commands]]`.

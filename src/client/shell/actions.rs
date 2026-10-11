@@ -139,6 +139,11 @@ impl ClientShellState {
                     return;
                 }
                 if action == crate::input::KeybindAction::WorkspacePicker {
+                    if self.mode == ClientShellMode::Navigate && self.chat_overlay_enabled() {
+                        // collie: `prefix+w` fährt das Chat-Overlay wieder ein.
+                        self.leave_sidebar(false, outcome);
+                        return;
+                    }
                     if self.mode == ClientShellMode::Navigate {
                         // `space w` inside the sidebar: keep the cursor and the focus Esc restores.
                         outcome.repaint = true;

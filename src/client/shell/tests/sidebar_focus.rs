@@ -1,5 +1,6 @@
 use super::*;
 use crate::api::schema::Method;
+use crossterm::event::{MouseButton, MouseEventKind};
 
 /// Two workspaces with one agent each: `claude` (blocked) in ws_1, `codex`
 /// (working) in ws_2. ws_1 / pane_1 is focused.
@@ -762,4 +763,173 @@ fn hidden_view_ends_with_sidebar_focus() {
     assert_eq!(hit_panes(&state), ["pane_1"]);
     focus_sidebar(&mut state);
     assert!(!state.sidebar_focus.show_hidden);
+}
+
+fn chat_overlay_state_with(snapshot: ClientShellSnapshot) -> ClientShellState {
+    let mut config = Config::default();
+    config.ui.sidebar.agents_only = true;
+    config.ui.sidebar.overlay = true;
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&config));
+    state.set_snapshot(Box::new(snapshot));
+    state.set_pane_surface(surface());
+    state.compose(100, 28).expect("frame");
+    state
+}
+
+fn chat_overlay_state() -> ClientShellState {
+    chat_overlay_state_with(agents_snapshot())
+}
+
+#[test]
+fn chat_overlay_collapses_to_a_line_and_opens_without_resize() {
+    let mut state = chat_overlay_state();
+    let collapsed = state.surface_size(100, 28);
+    assert_eq!(collapsed.cols, 99);
+    assert_eq!(state.hits.sidebar_line, Rect::new(0, 0, 1, 28));
+    assert!(state.hits.agents.is_empty());
+
+    let prefix = press(&mut state, &[0x02]);
+    let open = press(&mut state, b"w");
+    assert!(!prefix.resize && !open.resize);
+    assert_eq!(state.surface_size(100, 28), collapsed);
+    let rows = frame_rows(&state.compose(100, 28).expect("frame"));
+    assert_eq!(state.hits.chat_overlay, Rect::new(0, 0, 50, 28));
+    assert_eq!(hit_panes(&state), ["pane_1"]);
+    assert!(rows[0].starts_with("┌ chats "), "{}", rows[0]);
+
+    press(&mut state, &[0x02]);
+    let close = press(&mut state, b"w");
+    assert!(!close.resize);
+    assert_eq!(state.mode, ClientShellMode::Terminal);
+    state.compose(100, 28).expect("frame");
+    assert_eq!(state.hits.chat_overlay, Rect::default());
+}
+
+#[test]
+fn chat_overlay_moves_the_cursor_without_preview() {
+    let mut snapshot = agents_snapshot();
+    snapshot.agents[1].agent_status = AgentStatus::Done;
+    snapshot.workspaces[0].attention_since = Some(1_000);
+    snapshot.workspaces[1].attention_since = Some(2_000);
+    let mut state = chat_overlay_state_with(snapshot);
+    focus_sidebar(&mut state);
+    assert_eq!(agent_cursor(&state), Some("pane_1"));
+
+    let step = press(&mut state, b"j");
+    assert_eq!(agent_cursor(&state), Some("pane_2"));
+    assert!(methods(&step).is_empty());
+
+    let commit = press(&mut state, b"\r");
+    assert_eq!(state.mode, ClientShellMode::Terminal);
+    assert!(matches!(
+        methods(&commit).as_slice(),
+        [Method::PaneFocus(target)] if target.pane_id == "pane_2"
+    ));
+}
+
+#[test]
+fn chat_overlay_esc_leaves_without_focus_changes() {
+    let mut state = chat_overlay_state();
+    focus_sidebar(&mut state);
+    let leave = press(&mut state, b"\x1b");
+    assert_eq!(state.mode, ClientShellMode::Terminal);
+    assert!(methods(&leave).is_empty());
+}
+
+#[test]
+fn chat_overlay_opens_on_line_click_and_closes_on_pane_click() {
+    let mut state = chat_overlay_state();
+    mouse(&mut state, MouseEventKind::Down(MouseButton::Left), (0, 5));
+    assert_eq!(state.mode, ClientShellMode::Navigate);
+    state.compose(100, 28).expect("frame");
+
+    let card = state.hits.agents[0].0;
+    mouse(&mut state, MouseEventKind::Moved, (card.x + 2, card.y));
+    assert_eq!(agent_cursor(&state), Some("pane_1"));
+
+    mouse(
+        &mut state,
+        MouseEventKind::Down(MouseButton::Left),
+        (80, 10),
+    );
+    assert_eq!(state.mode, ClientShellMode::Terminal);
+}
+
+#[test]
+fn chat_overlay_click_on_a_card_opens_the_chat() {
+    let mut state = chat_overlay_state();
+    focus_sidebar(&mut state);
+    state.compose(100, 28).expect("frame");
+    let card = state.hits.agents[0].0;
+    mouse(
+        &mut state,
+        MouseEventKind::Down(MouseButton::Left),
+        (card.x + 2, card.y),
+    );
+    assert_eq!(state.mode, ClientShellMode::Terminal);
+}
+
+#[test]
+fn chat_overlay_opens_after_hover_and_closes_when_the_mouse_leaves() {
+    let mut state = chat_overlay_state();
+    mouse(&mut state, MouseEventKind::Moved, (0, 5));
+    assert_eq!(state.mode, ClientShellMode::Terminal);
+    let deadline = state.chat_line_hover_deadline.expect("hover deadline");
+
+    let mut outcome = ClientShellInput::default();
+    state.tick_chat_overlay(deadline, &mut outcome);
+    assert_eq!(state.mode, ClientShellMode::Navigate);
+    assert!(state.sidebar_focus.hover_opened);
+    state.compose(100, 28).expect("frame");
+
+    mouse(&mut state, MouseEventKind::Moved, (10, 5));
+    assert_eq!(state.mode, ClientShellMode::Navigate);
+    mouse(&mut state, MouseEventKind::Moved, (80, 5));
+    assert_eq!(state.mode, ClientShellMode::Terminal);
+}
+
+#[test]
+fn chat_overlay_stays_open_after_a_key_even_when_hover_opened_it() {
+    let mut state = chat_overlay_state();
+    mouse(&mut state, MouseEventKind::Moved, (0, 5));
+    let deadline = state.chat_line_hover_deadline.expect("hover deadline");
+    state.tick_chat_overlay(deadline, &mut ClientShellInput::default());
+    state.compose(100, 28).expect("frame");
+
+    press(&mut state, b"j");
+    mouse(&mut state, MouseEventKind::Moved, (80, 5));
+    assert_eq!(state.mode, ClientShellMode::Navigate);
+}
+
+#[test]
+fn chat_overlay_width_changes_in_percent_steps() {
+    let mut state = chat_overlay_state();
+    focus_sidebar(&mut state);
+    press(&mut state, b">");
+    press(&mut state, b">");
+    press(&mut state, b">");
+    state.compose(200, 28).expect("frame");
+    assert_eq!(state.chat_overlay_percent, 60);
+    assert_eq!(state.hits.chat_overlay.width, 100);
+    press(&mut state, b"<");
+    state.compose(200, 28).expect("frame");
+    assert_eq!(state.hits.chat_overlay.width, 100);
+    assert_eq!(state.chat_overlay_percent, 55);
+}
+
+#[test]
+fn chat_line_pulses_when_a_chat_newly_waits() {
+    let mut state = chat_overlay_state();
+    let now = std::time::Instant::now();
+    state.tick_chat_overlay(now, &mut ClientShellInput::default());
+    assert!(state.chat_pulse_started.is_none());
+
+    let mut snapshot = agents_snapshot();
+    snapshot.agents[1].agent_status = AgentStatus::Done;
+    snapshot.workspaces[1].attention_since = Some(crate::workspace::unix_millis_now());
+    state.set_snapshot(Box::new(snapshot));
+    let mut outcome = ClientShellInput::default();
+    state.tick_chat_overlay(now, &mut outcome);
+    assert!(state.chat_pulse_started.is_some());
+    assert!(outcome.repaint);
 }

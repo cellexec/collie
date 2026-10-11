@@ -55,6 +55,7 @@ impl ClientShellState {
                 && self.endpoint_status(&self.active_endpoint_id)
                     == Some(ClientEndpointStatus::Online)
         });
+        let chat_line = self.chat_overlay_enabled();
         let mut render_state = render::ShellRenderState {
             machine_diagnostics: &self.machine_diagnostics,
             endpoints: &self.endpoints,
@@ -81,8 +82,12 @@ impl ClientShellState {
             sidebar: self
                 .sidebar_focus
                 .render_view(self.mode, self.prefix_return_navigate),
+            chat_line: false,
+            chat_line_bright: false,
         };
-        if self.sidebar_collapsed && layout.sidebar.width > 0 {
+        if chat_line {
+            // collie: Ohne Snapshot bleibt die Chat-Linie leer.
+        } else if self.sidebar_collapsed && layout.sidebar.width > 0 {
             super::endpoint_sidebar::render_collapsed(
                 &mut buffer,
                 sidebar,
@@ -218,6 +223,13 @@ impl ClientShellState {
             ),
             _ => (None, None),
         };
+        let chat_line_enabled = self.chat_overlay_enabled() && layout.mobile_header.is_empty();
+        let chat_line_bright = super::chat_overlay::pulse_bright(
+            self.chat_pulse_started,
+            crate::workspace::unix_millis_now(),
+        );
+        let chat_overlay = (chat_line_enabled && self.chat_overlay_open())
+            .then(|| super::chat_overlay::overlay_rect(cols, rows, self.chat_overlay_percent));
         let mut buffer = Buffer::empty(Rect::new(0, 0, cols, rows));
         self.hits = render::render_shell(
             &mut buffer,
@@ -250,6 +262,8 @@ impl ClientShellState {
                 sidebar: self
                     .sidebar_focus
                     .render_view(self.mode, self.prefix_return_navigate),
+                chat_line: chat_line_enabled,
+                chat_line_bright,
             },
         );
         self.hits.panes = surface
@@ -332,6 +346,16 @@ impl ClientShellState {
         } else {
             layout.pane_surface
         };
+        // collie: Die Hinweise stehen rechts neben dem Chat-Overlay.
+        let mode_bar_area = match chat_overlay {
+            Some(overlay) if overlay.right() < mode_bar_area.right() => Rect::new(
+                overlay.right(),
+                mode_bar_area.y,
+                mode_bar_area.right() - overlay.right(),
+                mode_bar_area.height,
+            ),
+            _ => mode_bar_area,
+        };
         let mobile_navigate_panel = !layout.mobile_header.is_empty()
             && self.mode == ClientShellMode::Navigate
             && self.endpoint_error.is_none();
@@ -371,6 +395,19 @@ impl ClientShellState {
             backdrop.apply(&mut frame, layout.pane_surface);
             backdrop.apply(&mut frame, layout.tab_bar);
             frame.cursor = None;
+        }
+        if let Some(overlay) = chat_overlay {
+            render_chat_overlay(
+                &mut frame,
+                overlay,
+                snapshot,
+                &self.config,
+                self.sidebar_focus
+                    .render_view(self.mode, self.prefix_return_navigate),
+                &self.active_endpoint_id,
+                &mut self.agent_scroll,
+                &mut self.hits,
+            );
         }
         restore_mode_bar(&mut frame, mode_bar, mode_bar_cells.as_deref());
         let mut occlusion = crate::kitty_graphics::surface::Occlusion::default();
@@ -767,6 +804,42 @@ impl ClientShellState {
         }
         let graphics = self.compose_graphics(layout, &occlusion);
         Some(crate::client::frame_output::ComposedFrame { frame, graphics })
+    }
+}
+
+/// collie: Zeichnet das Chat-Overlay über die fertig komponierten Panes.
+#[allow(clippy::too_many_arguments)]
+fn render_chat_overlay(
+    frame: &mut FrameData,
+    area: Rect,
+    snapshot: &ClientShellSnapshot,
+    config: &ClientShellConfig,
+    view: super::sidebar_focus::SidebarRenderView<'_>,
+    endpoint_id: &ClientEndpointId,
+    agent_scroll: &mut usize,
+    hits: &mut ShellHitMap,
+) {
+    let area = area.intersection(Rect::new(0, 0, frame.width, frame.height));
+    if area.is_empty() {
+        return;
+    }
+    let mut buffer = Buffer::empty(Rect::new(0, 0, frame.width, frame.height));
+    render::sidebar::render_chat_overlay(
+        &mut buffer,
+        area,
+        snapshot,
+        config,
+        view,
+        endpoint_id,
+        agent_scroll,
+        hits,
+    );
+    let overlay = FrameData::from_ratatui_buffer_with_hyperlinks(&buffer, None, &[]);
+    let width = usize::from(frame.width);
+    for y in area.y..area.bottom() {
+        let start = usize::from(y) * width + usize::from(area.x);
+        let end = start + usize::from(area.width);
+        frame.cells[start..end].clone_from_slice(&overlay.cells[start..end]);
     }
 }
 

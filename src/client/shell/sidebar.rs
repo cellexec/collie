@@ -534,6 +534,39 @@ fn render_agents_only_sidebar(
     );
 }
 
+/// collie: Ausgefahrenes Chat-Overlay. Es liegt über den Panes; Breite und
+/// Lage bestimmt der Aufrufer, die Panes bleiben unverändert.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn render_chat_overlay(
+    buffer: &mut Buffer,
+    area: Rect,
+    snapshot: &ClientShellSnapshot,
+    config: &ClientShellConfig,
+    view: super::super::sidebar_focus::SidebarRenderView<'_>,
+    endpoint_id: &ClientEndpointId,
+    agent_scroll: &mut usize,
+    hits: &mut ShellHitMap,
+) {
+    let palette = &config.palette;
+    render_sidebar_background(buffer, area, palette);
+    hits.chat_overlay = area;
+    let agent_area = Rect::new(area.x, area.y, area.width.saturating_sub(1), area.height);
+    super::super::chats::render_chat_panel(
+        buffer,
+        agent_area,
+        snapshot,
+        config,
+        view,
+        endpoint_id,
+        config.chat_newest_first,
+        agent_scroll,
+        hits,
+    );
+    if config.mouse_capture && agent_area.height >= 3 {
+        render_agents_only_footer(buffer, agent_area, snapshot, palette, hits);
+    }
+}
+
 /// `new` links, `menu` rechts im unteren Rahmen. Rechts bleiben zwei Spalten
 /// für die Rahmenecke und den Sidebar-Toggle frei.
 fn render_agents_only_footer(

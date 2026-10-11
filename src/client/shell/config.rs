@@ -60,6 +60,9 @@ impl ClientShellState {
                 .agent_panel_sort_manual
                 .then_some(self.config.agent_panel_sort),
             chat_newest_first: self.config.chat_newest_first.then_some(true),
+            chat_overlay_percent: (self.chat_overlay_percent
+                != super::chat_overlay::DEFAULT_PERCENT)
+                .then_some(self.chat_overlay_percent),
             collapsed_groups,
             remote_collapsed_groups,
         };
@@ -125,6 +128,7 @@ impl ClientShellConfig {
             spaces: config.ui.sidebar.spaces.clone(),
             agent_commands: config.ui.sidebar.agent_commands.clone(),
             sidebar_agents_only: config.ui.sidebar.agents_only,
+            sidebar_overlay: config.ui.sidebar.overlay,
             chat_newest_first: false,
             agents: config.ui.sidebar.agents.clone(),
             agent_panel_sort: config.ui.agent_panel_sort,
@@ -356,6 +360,7 @@ impl ClientShellConfig {
                 self.spaces = ui.sidebar.spaces.clone();
                 self.agent_commands = ui.sidebar.agent_commands.clone();
                 self.sidebar_agents_only = ui.sidebar.agents_only;
+                self.sidebar_overlay = ui.sidebar.overlay;
                 self.agents = ui.sidebar.agents.clone();
                 self.agent_panel_sort = ui.agent_panel_sort;
                 self.status_indicators = ui.status_indicators;
@@ -397,6 +402,7 @@ impl ClientShellConfig {
         sidebar_collapsed: bool,
         tab_count: usize,
         sidebar_width: u16,
+        chat_line: bool,
     ) -> ClientShellLayout {
         if cols <= self.mobile_width_threshold {
             let header_height = rows.min(2);
@@ -408,7 +414,10 @@ impl ClientShellConfig {
             };
         }
 
-        let sidebar_width = if sidebar_collapsed {
+        // collie: Das Chat-Overlay belegt eingeklappt wie ausgefahren nur die Linie.
+        let sidebar_width = if chat_line {
+            1
+        } else if sidebar_collapsed {
             match self.sidebar_collapsed_mode {
                 SidebarCollapsedModeConfig::Compact => 4,
                 SidebarCollapsedModeConfig::Hidden => 0,
@@ -468,7 +477,14 @@ impl ClientShellConfig {
             .unwrap_or(self.sidebar_width)
             .clamp(min_width, max_width);
         let surface = self
-            .layout(cols, rows, sidebar_collapsed, 0, sidebar_width)
+            .layout(
+                cols,
+                rows,
+                sidebar_collapsed,
+                0,
+                sidebar_width,
+                self.sidebar_overlay && self.sidebar_agents_only,
+            )
             .pane_surface;
         ClientSurfaceSize {
             cols: surface.width.max(1),

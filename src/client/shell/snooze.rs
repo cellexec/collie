@@ -220,6 +220,9 @@ impl ClientShellState {
                 key = key.wrapping_mul(31).wrapping_add(now / 60_000);
             }
         }
+        if let Some(phase) = self.chat_pulse_phase(now) {
+            key = key.wrapping_mul(31).wrapping_add(phase + 1);
+        }
         let changed = self.chat_tick_key != Some(key);
         self.chat_tick_key = Some(key);
         changed

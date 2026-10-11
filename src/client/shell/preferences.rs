@@ -27,6 +27,9 @@ pub(super) struct ClientChromePreferences {
     /// collie: Sortierung der Chat-Liste, nur gespeichert, wenn umgeschaltet.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) chat_newest_first: Option<bool>,
+    /// collie: Breite des Chat-Overlays in Prozent, nur gespeichert, wenn geändert.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) chat_overlay_percent: Option<u16>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(super) collapsed_groups: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

@@ -352,6 +352,10 @@ pub(super) struct ShellRenderState<'a> {
     pub(super) dragged_workspace_id: Option<&'a str>,
     pub(super) workspace_drop_indicator_row: Option<u16>,
     pub(super) sidebar: super::sidebar_focus::SidebarRenderView<'a>,
+    /// collie: Die Sidebar ist die Chat-Linie des Overlay-Modus.
+    pub(super) chat_line: bool,
+    /// collie: Die Chat-Linie steht in der hellen Phase ihres Pulses.
+    pub(super) chat_line_bright: bool,
 }
 
 pub(super) fn render_shell(
@@ -372,7 +376,16 @@ pub(super) fn render_shell(
         );
     }
     if layout.sidebar.width > 0 {
-        if state.endpoints.len() > 1 {
+        if state.chat_line {
+            super::chat_overlay::render_chat_line(
+                buffer,
+                layout.sidebar,
+                snapshot,
+                config,
+                state.chat_line_bright,
+                &mut hits,
+            );
+        } else if state.endpoints.len() > 1 {
             if state.sidebar_collapsed {
                 super::endpoint_sidebar::render_collapsed(
                     buffer,

@@ -44,6 +44,9 @@ pub(super) struct SidebarFocusState {
     origin: Option<SidebarOrigin>,
     /// The sidebar was collapsed and is shown only while it has focus.
     drawer: bool,
+    /// collie: Die Maus hat das Chat-Overlay geöffnet, und seitdem kam keine
+    /// Taste. Verlässt die Maus das Overlay, fährt es wieder ein.
+    pub(super) hover_opened: bool,
     /// First key of a fixed two-key sequence (`gg`, `za`, `dd`).
     pending: Option<char>,
 }
@@ -295,7 +298,9 @@ impl ClientShellState {
         focus.pending = None;
         focus.editing = false;
         focus.origin = Some(origin);
-        if self.sidebar_collapsed && !self.mobile_layout_active() {
+        focus.hover_opened = false;
+        // collie: Das Chat-Overlay liegt über den Panes und braucht keinen Drawer.
+        if self.sidebar_collapsed && !self.mobile_layout_active() && !self.chat_overlay_enabled() {
             self.sidebar_focus.drawer = true;
             self.sidebar_collapsed = false;
             self.invalidate_pane_surface();
@@ -346,8 +351,9 @@ impl ClientShellState {
         self.leave_sidebar(false, outcome);
     }
 
-    fn leave_sidebar(&mut self, restore: bool, outcome: &mut ClientShellInput) {
+    pub(super) fn leave_sidebar(&mut self, restore: bool, outcome: &mut ClientShellInput) {
         let origin = self.sidebar_focus.origin.take();
+        self.sidebar_focus.hover_opened = false;
         self.sidebar_focus.pending = None;
         self.sidebar_focus.editing = false;
         if let Some(origin) = origin.filter(|origin| {
@@ -394,7 +400,7 @@ impl ClientShellState {
         outcome.repaint = true;
     }
 
-    fn commit_sidebar(&mut self, outcome: &mut ClientShellInput) {
+    pub(super) fn commit_sidebar(&mut self, outcome: &mut ClientShellInput) {
         // The jump consumed the filter; the next visit starts with the full lists.
         self.sidebar_focus.workspace_query.clear();
         self.sidebar_focus.agent_query.clear();
@@ -434,6 +440,7 @@ impl ClientShellState {
         outcome: &mut ClientShellInput,
     ) {
         self.pending_workspace_highlight = None;
+        self.sidebar_focus.hover_opened = false;
         if self.sidebar_focus.editing {
             self.route_sidebar_filter_key(key, outcome);
             return;
@@ -612,6 +619,12 @@ impl ClientShellState {
             }
             Command::MoveDown => self.move_sidebar_workspace(false, outcome),
             Command::MoveUp => self.move_sidebar_workspace(true, outcome),
+            Command::Narrower if self.chat_overlay_enabled() => {
+                self.adjust_chat_overlay_width(false, outcome)
+            }
+            Command::Wider if self.chat_overlay_enabled() => {
+                self.adjust_chat_overlay_width(true, outcome)
+            }
             Command::Narrower => self.adjust_sidebar_width(false, outcome),
             Command::Wider => self.adjust_sidebar_width(true, outcome),
             Command::GrowSpaces | Command::GrowAgents if self.spaces_hidden() => {}
@@ -843,7 +856,8 @@ impl ClientShellState {
 
     /// Show the agent under the cursor in the pane surface.
     fn preview_sidebar_agent(&mut self, outcome: &mut ClientShellInput) {
-        if self.multi_endpoint_active() {
+        // collie: Im Chat-Overlay wechselt erst `enter` den Chat.
+        if self.multi_endpoint_active() || self.chat_overlay_enabled() {
             return;
         }
         let Some(cursor) = self.local_sidebar_agent_cursor() else {

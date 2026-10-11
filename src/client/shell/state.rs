@@ -24,6 +24,8 @@ pub(crate) struct ClientShellConfig {
     pub(super) agents: crate::config::AgentsSidebarConfig,
     pub(super) agent_commands: Vec<crate::config::AgentCommandConfig>,
     pub(super) sidebar_agents_only: bool,
+    /// collie: Chat-Liste als Overlay mit 1-Spalten-Linie (`ui.sidebar.overlay`).
+    pub(super) sidebar_overlay: bool,
     /// collie: Chat-Liste mit den neuesten Wartenden oben.
     pub(super) chat_newest_first: bool,
     pub(super) agent_panel_sort: crate::config::AgentPanelSortConfig,
@@ -107,6 +109,10 @@ pub(super) struct ShellHitMap {
     pub(super) sidebar_divider: Rect,
     pub(super) sidebar_section_divider: Rect,
     pub(super) sidebar_toggle: Rect,
+    /// collie: Eingeklappte Chat-Linie.
+    pub(super) sidebar_line: Rect,
+    /// collie: Ausgefahrenes Chat-Overlay.
+    pub(super) chat_overlay: Rect,
     pub(super) new_workspace: Rect,
     pub(super) new_tab: Rect,
     pub(super) tab_scroll_left: Rect,
@@ -917,6 +923,15 @@ pub(crate) struct ClientShellState {
     pub(super) agent_panel_sort_manual: bool,
     /// collie: Letzter Zustand von Spinner, Restzeit und Snooze-Ablauf.
     pub(super) chat_tick_key: Option<u64>,
+    /// collie: Breite des Chat-Overlays in Prozent der Terminalbreite.
+    pub(super) chat_overlay_percent: u16,
+    /// collie: Die Maus steht auf der Chat-Linie; zu diesem Zeitpunkt fährt
+    /// das Overlay aus.
+    pub(super) chat_line_hover_deadline: Option<std::time::Instant>,
+    /// collie: Beginn des Pulses der Chat-Linie (Unix-Millisekunden).
+    pub(super) chat_pulse_started: Option<u64>,
+    /// collie: Jüngste `attention_since` der wartenden Chats beim letzten Tick.
+    pub(super) chat_attention_latest: Option<u64>,
     pub(super) last_sidebar_divider_click: Option<std::time::Instant>,
     pub(super) chrome_drag: Option<ClientChromeDrag>,
     pub(super) workspace_press: Option<ClientWorkspacePress>,
@@ -1097,6 +1112,13 @@ impl ClientShellState {
             sidebar_section_split_manual: preferences.sidebar_section_split.is_some(),
             agent_panel_sort_manual: preferences.agent_panel_sort.is_some(),
             chat_tick_key: None,
+            chat_overlay_percent: preferences.chat_overlay_percent.map_or(
+                super::chat_overlay::DEFAULT_PERCENT,
+                super::chat_overlay::clamp_percent,
+            ),
+            chat_line_hover_deadline: None,
+            chat_pulse_started: None,
+            chat_attention_latest: None,
             last_sidebar_divider_click: None,
             chrome_drag: None,
             workspace_press: None,
@@ -1282,6 +1304,7 @@ impl ClientShellState {
             self.sidebar_collapsed,
             self.focused_tab_count(),
             self.sidebar_width,
+            self.chat_overlay_enabled(),
         )
     }
 
