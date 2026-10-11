@@ -1435,6 +1435,48 @@ mod tests {
     }
 
     #[test]
+    fn pane_report_chat_updates_only_the_first_tab() {
+        let mut app = test_app();
+        app.state
+            .workspaces
+            .push(crate::workspace::Workspace::test_new("chat"));
+        app.state.active = Some(0);
+        let pane_id = app
+            .public_pane_id(0, *app.state.workspaces[0].panes.keys().next().unwrap())
+            .unwrap();
+        let report = |app: &mut App, last_message: Option<&str>, blocked_reason: Option<&str>| {
+            let response = app.handle_api_request(crate::api::schema::Request {
+                id: "req_chat".into(),
+                method: crate::api::schema::Method::PaneReportChat(
+                    crate::api::schema::PaneReportChatParams {
+                        pane_id: pane_id.clone(),
+                        last_message: last_message.map(str::to_owned),
+                        blocked_reason: blocked_reason.map(str::to_owned),
+                    },
+                ),
+            });
+            serde_json::from_str::<serde_json::Value>(&response).unwrap()
+        };
+
+        let response = report(&mut app, Some("  Soll ich\n committen?  "), Some("Bash"));
+        assert_eq!(
+            response["result"]["workspace"]["last_message"],
+            "Soll ich committen?"
+        );
+        assert_eq!(
+            app.state.workspaces[0].blocked_reason.as_deref(),
+            Some("Bash")
+        );
+
+        report(&mut app, None, Some(""));
+        assert_eq!(app.state.workspaces[0].blocked_reason, None);
+        assert_eq!(
+            app.state.workspaces[0].last_message.as_deref(),
+            Some("Soll ich committen?")
+        );
+    }
+
+    #[test]
     fn startup_uses_configured_agent_panel_sort() {
         let mut config = Config::default();
         config.ui.agent_panel_sort = crate::config::AgentPanelSortConfig::Priority;

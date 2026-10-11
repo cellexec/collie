@@ -1198,6 +1198,9 @@ impl App {
             Method::PaneReportMetadata(params) => {
                 return self.handle_pane_report_metadata(request.id, params);
             }
+            Method::PaneReportChat(params) => {
+                return self.handle_pane_report_chat(request.id, params);
+            }
             Method::PaneClearAgentAuthority(params) => {
                 return self.handle_pane_clear_agent_authority(request.id, params);
             }

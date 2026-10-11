@@ -1082,6 +1082,13 @@
             "agent_status": {
               "$ref": "#/schemas/event/$defs/AgentStatus"
             },
+            "attention_seen": {
+              "description": "Whether the user has opened the workspace since `attention_since`.",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
             "attention_since": {
               "description": "Since when the workspace waits for the user, in Unix milliseconds.",
               "format": "uint64",
@@ -1091,11 +1098,25 @@
                 "null"
               ]
             },
+            "blocked_reason": {
+              "description": "Short reason why the agent is blocked, as reported by a hook.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "focused": {
               "type": "boolean"
             },
             "label": {
               "type": "string"
+            },
+            "last_message": {
+              "description": "Last line of the agent's latest reply, as reported by a hook.",
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "number": {
               "format": "uint",
@@ -1130,6 +1151,15 @@
                 "pattern": "^[A-Za-z0-9_-]{1,32}$"
               },
               "type": "object"
+            },
+            "working_since": {
+              "description": "Since when the agent in the first tab is working, in Unix milliseconds.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
             },
             "workspace_id": {
               "type": "string"
@@ -3012,6 +3042,32 @@
             "pane_id",
             "source",
             "agent"
+          ],
+          "type": "object"
+        },
+        "PaneReportChatParams": {
+          "description": "collie: Chat facts a hook reports for the agent in a workspace's first tab.\nAn omitted field stays unchanged; an empty string clears it.",
+          "properties": {
+            "blocked_reason": {
+              "description": "Short reason why the agent waits for the user.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "last_message": {
+              "description": "Last line of the agent's latest reply.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "pane_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "pane_id"
           ],
           "type": "object"
         },
@@ -6024,6 +6080,22 @@
             },
             "params": {
               "$ref": "#/schemas/request/$defs/PaneReportMetadataParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "pane.report_chat",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/PaneReportChatParams"
             }
           },
           "required": [
@@ -10636,6 +10708,13 @@
             "agent_status": {
               "$ref": "#/schemas/success_response/$defs/AgentStatus"
             },
+            "attention_seen": {
+              "description": "Whether the user has opened the workspace since `attention_since`.",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
             "attention_since": {
               "description": "Since when the workspace waits for the user, in Unix milliseconds.",
               "format": "uint64",
@@ -10645,11 +10724,25 @@
                 "null"
               ]
             },
+            "blocked_reason": {
+              "description": "Short reason why the agent is blocked, as reported by a hook.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "focused": {
               "type": "boolean"
             },
             "label": {
               "type": "string"
+            },
+            "last_message": {
+              "description": "Last line of the agent's latest reply, as reported by a hook.",
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "number": {
               "format": "uint",
@@ -10684,6 +10777,15 @@
                 "pattern": "^[A-Za-z0-9_-]{1,32}$"
               },
               "type": "object"
+            },
+            "working_since": {
+              "description": "Since when the agent in the first tab is working, in Unix milliseconds.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
             },
             "workspace_id": {
               "type": "string"

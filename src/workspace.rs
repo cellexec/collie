@@ -205,6 +205,14 @@ pub struct Workspace {
     pub attention_since: Option<u64>,
     /// collie: Bis wann der Chat in der Sidebar versteckt ist (Unix-Millisekunden).
     pub snoozed_until: Option<u64>,
+    /// collie: Seit wann der Agent in Tab 1 arbeitet (Unix-Millisekunden).
+    pub working_since: Option<u64>,
+    /// collie: Der Nutzer hatte den Chat seit `attention_since` offen.
+    pub attention_seen: bool,
+    /// collie: Letzte Zeile der letzten Agent-Antwort, gemeldet per Hook.
+    pub last_message: Option<String>,
+    /// collie: Kurzer Grund, warum der Agent blockiert, gemeldet per Hook.
+    pub blocked_reason: Option<String>,
     pub tabs: Vec<Tab>,
     pub active_tab: usize,
     #[cfg(test)]
@@ -280,6 +288,10 @@ impl Workspace {
             next_public_tab_number: 2,
             attention_since: Some(unix_millis_now()),
             snoozed_until: None,
+            working_since: None,
+            attention_seen: true,
+            last_message: None,
+            blocked_reason: None,
             tabs: vec![tab],
             active_tab: 0,
             #[cfg(test)]
@@ -434,6 +446,10 @@ impl Workspace {
                 next_public_tab_number: 2,
                 attention_since: Some(unix_millis_now()),
                 snoozed_until: None,
+                working_since: None,
+                attention_seen: true,
+                last_message: None,
+                blocked_reason: None,
                 tabs: vec![tab],
                 active_tab: 0,
                 #[cfg(test)]
@@ -1225,6 +1241,10 @@ impl Workspace {
             next_public_tab_number: 2,
             attention_since: None,
             snoozed_until: None,
+            working_since: None,
+            attention_seen: true,
+            last_message: None,
+            blocked_reason: None,
             tabs: vec![tab],
             active_tab: 0,
             test_runtimes: HashMap::new(),

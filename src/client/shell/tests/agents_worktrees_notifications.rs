@@ -118,6 +118,10 @@ fn grouped_worktrees_render_parent_branch_and_indented_child() {
         agent_status: AgentStatus::Idle,
         attention_since: None,
         snoozed_until: None,
+        working_since: None,
+        attention_seen: None,
+        last_message: None,
+        blocked_reason: None,
     });
     state.set_snapshot(Box::new(snapshot));
     state.set_pane_surface(surface());

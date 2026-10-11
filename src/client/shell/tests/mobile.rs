@@ -374,6 +374,10 @@ fn mobile_background_workspace_uses_its_own_active_tab_status() {
         agent_status: AgentStatus::Idle,
         attention_since: None,
         snoozed_until: None,
+        working_since: None,
+        attention_seen: None,
+        last_message: None,
+        blocked_reason: None,
     });
     for (number, tab_id, label) in [(1, "tab_2", "one"), (7, "tab_3", "two")] {
         projected.tabs.push(ClientShellTab {
@@ -575,6 +579,10 @@ fn mobile_previous_workspace_action_wraps_across_expanded_entries() {
             agent_status: AgentStatus::Idle,
             attention_since: None,
             snoozed_until: None,
+            working_since: None,
+            attention_seen: None,
+            last_message: None,
+            blocked_reason: None,
         });
     }
     let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
@@ -617,6 +625,10 @@ fn mobile_switcher_scroll_close_and_width_transition_clear_mobile_hits() {
             agent_status: AgentStatus::Idle,
             attention_since: None,
             snoozed_until: None,
+            working_since: None,
+            attention_seen: None,
+            last_message: None,
+            blocked_reason: None,
         });
     }
     state.set_snapshot(Box::new(projected));

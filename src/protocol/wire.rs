@@ -1038,6 +1038,18 @@ pub struct ClientShellWorkspace {
     /// collie: Bis wann der Space gesnoozt ist (Unix-Millisekunden).
     #[serde(default)]
     pub snoozed_until: Option<u64>,
+    /// collie: Seit wann der Agent in Tab 1 arbeitet (Unix-Millisekunden).
+    #[serde(default)]
+    pub working_since: Option<u64>,
+    /// collie: Der Nutzer hatte den Chat seit `attention_since` offen.
+    #[serde(default)]
+    pub attention_seen: Option<bool>,
+    /// collie: Letzte Zeile der letzten Agent-Antwort.
+    #[serde(default)]
+    pub last_message: Option<String>,
+    /// collie: Grund, warum der Agent blockiert.
+    #[serde(default)]
+    pub blocked_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2838,6 +2850,10 @@ mod tests {
                 agent_status: crate::api::schema::AgentStatus::Idle,
                 attention_since: None,
                 snoozed_until: None,
+                working_since: None,
+                attention_seen: None,
+                last_message: None,
+                blocked_reason: None,
             }],
             tabs: vec![ClientShellTab {
                 tab_id: "w1:t1".into(),

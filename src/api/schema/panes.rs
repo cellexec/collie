@@ -397,6 +397,19 @@ pub struct PaneReportAgentSessionParams {
     pub resume_argv: Option<Vec<String>>,
 }
 
+/// collie: Chat facts a hook reports for the agent in a workspace's first tab.
+/// An omitted field stays unchanged; an empty string clears it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PaneReportChatParams {
+    pub pane_id: String,
+    /// Last line of the agent's latest reply.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_message: Option<String>,
+    /// Short reason why the agent waits for the user.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocked_reason: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PaneReportMetadataParams {
     pub pane_id: String,

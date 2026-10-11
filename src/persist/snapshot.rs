@@ -71,6 +71,18 @@ pub struct WorkspaceSnapshot {
     /// collie: Bis wann der Chat in der Sidebar versteckt ist (Unix-Millisekunden).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snoozed_until: Option<u64>,
+    /// collie: Seit wann der Agent in Tab 1 arbeitet (Unix-Millisekunden).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub working_since: Option<u64>,
+    /// collie: `Some(false)`, solange der wartende Chat ungelesen ist.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attention_seen: Option<bool>,
+    /// collie: Letzte Zeile der letzten Agent-Antwort.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_message: Option<String>,
+    /// collie: Grund, warum der Agent blockiert.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocked_reason: Option<String>,
     pub tabs: Vec<TabSnapshot>,
     #[serde(default)]
     pub active_tab: usize,
@@ -181,6 +193,10 @@ impl From<LegacyWorkspaceSnapshot> for WorkspaceSnapshot {
             next_public_tab_number: 0,
             attention_since: None,
             snoozed_until: None,
+            working_since: None,
+            attention_seen: None,
+            last_message: None,
+            blocked_reason: None,
             tabs: vec![tab],
             active_tab: 0,
         }
@@ -325,6 +341,10 @@ fn capture_workspace(
         next_public_tab_number: ws.next_public_tab_number,
         attention_since: ws.attention_since,
         snoozed_until: ws.snoozed_until,
+        working_since: ws.working_since,
+        attention_seen: (!ws.attention_seen).then_some(false),
+        last_message: ws.last_message.clone(),
+        blocked_reason: ws.blocked_reason.clone(),
         tabs,
         active_tab: ws.active_tab,
     }
@@ -744,6 +764,10 @@ mod tests {
                 next_public_tab_number: 2,
                 attention_since: Some(1_791_000_000_000),
                 snoozed_until: Some(1_791_003_600_000),
+                working_since: Some(1_791_000_100_000),
+                attention_seen: Some(false),
+                last_message: Some("Soll ich committen?".into()),
+                blocked_reason: Some("Bash".into()),
                 tabs: vec![TabSnapshot {
                     custom_name: Some("api".to_string()),
                     layout: LayoutSnapshot::Split {
@@ -795,6 +819,19 @@ mod tests {
         assert_eq!(
             restored.workspaces[0].snoozed_until,
             Some(1_791_003_600_000)
+        );
+        assert_eq!(
+            restored.workspaces[0].working_since,
+            Some(1_791_000_100_000)
+        );
+        assert_eq!(restored.workspaces[0].attention_seen, Some(false));
+        assert_eq!(
+            restored.workspaces[0].last_message.as_deref(),
+            Some("Soll ich committen?")
+        );
+        assert_eq!(
+            restored.workspaces[0].blocked_reason.as_deref(),
+            Some("Bash")
         );
     }
 
@@ -1455,6 +1492,10 @@ mod tests {
                 next_public_tab_number: 0,
                 attention_since: None,
                 snoozed_until: None,
+                working_since: None,
+                attention_seen: None,
+                last_message: None,
+                blocked_reason: None,
                 tabs: vec![TabSnapshot {
                     custom_name: None,
                     layout: LayoutSnapshot::Split {

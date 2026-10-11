@@ -434,6 +434,10 @@ fn restore_workspace(
                 .attention_since
                 .or_else(|| Some(crate::workspace::unix_millis_now())),
             snoozed_until: snap.snoozed_until,
+            working_since: snap.working_since,
+            attention_seen: snap.attention_seen.unwrap_or(true),
+            last_message: snap.last_message.clone(),
+            blocked_reason: snap.blocked_reason.clone(),
             active_tab: snap.active_tab.min(tabs.len().saturating_sub(1)),
             tabs,
             #[cfg(test)]
@@ -1542,6 +1546,10 @@ mod tests {
                 next_public_tab_number: 0,
                 attention_since: None,
                 snoozed_until: None,
+                working_since: None,
+                attention_seen: None,
+                last_message: None,
+                blocked_reason: None,
                 tabs: vec![TabSnapshot {
                     custom_name: None,
                     layout: LayoutSnapshot::Pane(0),
@@ -1625,6 +1633,10 @@ mod tests {
                 next_public_tab_number: 6,
                 attention_since: None,
                 snoozed_until: None,
+                working_since: None,
+                attention_seen: None,
+                last_message: None,
+                blocked_reason: None,
                 tabs: vec![TabSnapshot {
                     custom_name: None,
                     layout: LayoutSnapshot::Split {
@@ -1740,6 +1752,10 @@ mod tests {
                 next_public_tab_number: 6,
                 attention_since: None,
                 snoozed_until: None,
+                working_since: None,
+                attention_seen: None,
+                last_message: None,
+                blocked_reason: None,
                 tabs: vec![
                     TabSnapshot {
                         custom_name: None,
@@ -1825,6 +1841,10 @@ mod tests {
             next_public_tab_number: 0,
             attention_since: None,
             snoozed_until: None,
+            working_since: None,
+            attention_seen: None,
+            last_message: None,
+            blocked_reason: None,
             tabs: vec![TabSnapshot {
                 custom_name: None,
                 layout: LayoutSnapshot::Split {
@@ -1866,6 +1886,10 @@ mod tests {
                 next_public_tab_number: 0,
                 attention_since: None,
                 snoozed_until: None,
+                working_since: None,
+                attention_seen: None,
+                last_message: None,
+                blocked_reason: None,
                 tabs: vec![TabSnapshot {
                     custom_name: None,
                     layout: LayoutSnapshot::Pane(0),
@@ -2224,6 +2248,10 @@ mod tests {
                 next_public_tab_number: 0,
                 attention_since: None,
                 snoozed_until: None,
+                working_since: None,
+                attention_seen: None,
+                last_message: None,
+                blocked_reason: None,
                 tabs: vec![TabSnapshot {
                     custom_name: None,
                     layout: LayoutSnapshot::Pane(0),

@@ -411,6 +411,10 @@ impl App {
                 }),
             attention_since: ws.attention_since,
             snoozed_until: ws.snoozed_until,
+            working_since: ws.working_since,
+            attention_seen: Some(ws.attention_seen),
+            last_message: ws.last_message.clone(),
+            blocked_reason: ws.blocked_reason.clone(),
         }
     }
 }

@@ -97,6 +97,10 @@ pub(super) fn snapshot_with_completions(
                 agent_status: workspace.agent_status,
                 attention_since: workspace.attention_since,
                 snoozed_until: workspace.snoozed_until,
+                working_since: workspace.working_since,
+                attention_seen: workspace.attention_seen,
+                last_message: workspace.last_message.clone(),
+                blocked_reason: workspace.blocked_reason.clone(),
             }
         })
         .collect();

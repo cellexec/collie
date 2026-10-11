@@ -384,8 +384,39 @@ impl AppState {
             .is_some_and(|tab_idx| tab_idx == self.workspaces[ws_idx].active_tab)
     }
 
+    /// collie: Chat-Zustand eines Space, wenn der Agent in Tab 1 seinen
+    /// Zustand wechselt.
+    fn track_chat_state(&mut self, ws_idx: usize, previous: AgentState, state: AgentState) {
+        let now = crate::workspace::unix_millis_now();
+        let active = self.active == Some(ws_idx);
+        let Some(ws) = self.workspaces.get_mut(ws_idx) else {
+            return;
+        };
+        if state == AgentState::Working {
+            ws.working_since = Some(now);
+        } else if previous == AgentState::Working {
+            // Der Chat wartet ab jetzt auf den Nutzer. Ist er gerade offen,
+            // gilt er als gelesen.
+            ws.attention_since = Some(now);
+            ws.attention_seen = active;
+        }
+        if previous == AgentState::Blocked {
+            ws.blocked_reason = None;
+        }
+        self.mark_session_dirty();
+    }
+
+    /// collie: Der Nutzer hat den Space geöffnet.
+    fn mark_chat_seen(&mut self, idx: usize) {
+        if let Some(ws) = self.workspaces.get_mut(idx).filter(|ws| !ws.attention_seen) {
+            ws.attention_seen = true;
+            self.mark_session_dirty();
+        }
+    }
+
     pub fn switch_workspace(&mut self, idx: usize) {
         if idx < self.workspaces.len() {
+            self.mark_chat_seen(idx);
             let previous_focus = self.current_pane_focus_target();
             self.active = Some(idx);
             self.selected = idx;
@@ -417,6 +448,7 @@ impl AppState {
 
         let previous_focus = self.current_pane_focus_target();
         let workspace_changed = self.active != Some(ws_idx);
+        self.mark_chat_seen(ws_idx);
         self.active = Some(ws_idx);
         self.selected = ws_idx;
         let workspace_id = self.workspaces[ws_idx].id.clone();
@@ -1761,16 +1793,13 @@ impl AppState {
                 .then_some(self.next_agent_state_change_seq);
             }
         }
-        if change.previous_state == AgentState::Working
-            && change.state != AgentState::Working
+        if change.previous_state != change.state
             && self.workspaces[ws_idx]
                 .tabs
                 .first()
                 .is_some_and(|tab| tab.layout.pane_ids().contains(&pane_id))
         {
-            // collie: Der Chat wartet ab jetzt auf den Nutzer.
-            self.workspaces[ws_idx].attention_since = Some(crate::workspace::unix_millis_now());
-            self.mark_session_dirty();
+            self.track_chat_state(ws_idx, change.previous_state, change.state);
         }
         let seen = self.apply_pane_state_change(ws_idx, pane_id, &change, suppress_completion)?;
         let update = PaneStateUpdate {
@@ -3096,6 +3125,42 @@ mod tests {
         assert!(state.workspaces[0]
             .attention_since
             .is_some_and(|since| since >= before));
+    }
+
+    #[test]
+    fn first_tab_agent_tracks_working_since_seen_and_blocked_reason() {
+        let mut state = app_with_workspaces(&["open", "background"]);
+        let change = |state: &mut AppState, ws_idx: usize, agent_state| {
+            let pane_id = *state.workspaces[ws_idx].panes.keys().next().unwrap();
+            state.handle_app_event(AppEvent::StateChanged {
+                pane_id,
+                agent: Some(Agent::Pi),
+                state: agent_state,
+                visible_blocker: false,
+                visible_working: false,
+                process_exited: false,
+                observed_at: std::time::Instant::now(),
+            });
+        };
+
+        let before = crate::workspace::unix_millis_now();
+        change(&mut state, 0, AgentState::Working);
+        change(&mut state, 1, AgentState::Working);
+        assert!(state.workspaces[1]
+            .working_since
+            .is_some_and(|since| since >= before));
+
+        change(&mut state, 0, AgentState::Idle);
+        change(&mut state, 1, AgentState::Blocked);
+        assert!(state.workspaces[0].attention_seen);
+        assert!(!state.workspaces[1].attention_seen);
+
+        state.workspaces[1].blocked_reason = Some("Bash".into());
+        change(&mut state, 1, AgentState::Working);
+        assert_eq!(state.workspaces[1].blocked_reason, None);
+
+        state.switch_workspace(1);
+        assert!(state.workspaces[1].attention_seen);
     }
 
     #[test]

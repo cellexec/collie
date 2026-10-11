@@ -114,16 +114,31 @@ gespeichert und erscheinen optional in `ClientShellWorkspace` und
 
 | Feld | Bedeutung | Gesetzt |
 | --- | --- | --- |
-| `last_message` | letzte nicht-leere Zeile der letzten Assistant-Nachricht | Stop-Hook des Agents; Fallback Bildschirm |
-| `blocked_reason` | kurzer Grund für `Blocked` | Notification-Hook; gelöscht, sobald der Agent `Blocked` verlässt |
+| `last_message` | letzte nicht-leere Zeile der letzten Assistant-Nachricht | `pane.report_chat` aus dem Stop-Hook |
+| `blocked_reason` | kurzer Grund für `Blocked` | `pane.report_chat` aus dem Notification-Hook; gelöscht, sobald der Agent `Blocked` verlässt |
 | `working_since` | Unix-Millisekunden seit Beginn von `Working` | beim Wechsel des Agents in Tab 1 zu `Working` |
-| `attention_seen` | Nutzer hatte den Chat seit `attention_since` offen | `false` beim Setzen von `attention_since`, `true` beim Fokussieren des Space |
+| `attention_seen` | Nutzer hatte den Chat seit `attention_since` offen | beim Setzen von `attention_since` wahr, wenn der Space gerade aktiv ist, sonst `false`; `true` beim Fokussieren des Space |
 
-- Die Claude-Integration bekommt Stop- und Notification-Hooks, die
-  `last_message` und `blocked_reason` melden. Die Integrationsversion steigt
-  einmal gegenüber dem letzten Release.
-- Agents ohne diese Hooks fallen auf den Bildschirm zurück: `pane.read` der
-  Detection-Quelle, nur bei Änderung von `state_change_seq`, nie pro Render.
+- Neue Methode `pane.report_chat` mit `pane_id`, `last_message` und
+  `blocked_reason`. Ein fehlendes Feld bleibt unverändert, ein leeres löscht.
+  Meldungen aus anderen Tabs als Tab 1 ändern nichts. Der Text wird auf eine
+  Zeile mit höchstens 200 Zeichen gekürzt.
+- Die herdr-Integration für Claude bleibt unverändert. Ihr Installer richtet
+  nur `SessionStart` ein und entfernt fremde herdr-Hooks auf anderen Events.
+- Das Hook-Skript `scripts/collie/claude-chat-hook.sh` liegt im Repo und wird
+  von Hand in `~/.claude/settings.json` eingetragen:
+
+  ```json
+  "hooks": {
+    "Stop": [{"hooks": [{"type": "command", "command": "~/projects/collie/scripts/collie/claude-chat-hook.sh stop"}]}],
+    "Notification": [{"hooks": [{"type": "command", "command": "~/projects/collie/scripts/collie/claude-chat-hook.sh notification"}]}]
+  }
+  ```
+
+  `stop` nimmt `last_assistant_message` aus der Hook-Eingabe, sonst die letzte
+  Antwort aus dem Ende des Transcripts. `notification` meldet nur
+  Freigabe-Anfragen (`permission_prompt`), etwa `Freigabe: Bash`.
+- Agents ohne diese Hooks zeigen in Zeile 3 nichts.
 
 ## Performance
 
@@ -137,5 +152,5 @@ gespeichert und erscheinen optional in `ClientShellWorkspace` und
 1. Overlay, Linie mit Puls, Ein- und Ausfahren, Hover, keine Live-Vorschau.
 2. Karten mit vorhandenen Daten: Titel, Wartezeit mit Farbe, Repo, Branch,
    Neben-Tabs, unterer Abschnitt, leere Liste.
-3. Server-Felder mit Persistenz, Claude-Hooks, Integrationsversion.
+3. Server-Felder mit Persistenz, `pane.report_chat`, Hook-Skript für Claude.
 4. Zeile 3, Laufzeit und Ungelesen-Marker im Client.

@@ -87,6 +87,18 @@ pub struct WorkspaceInfo {
     /// Until when the workspace is snoozed, in Unix milliseconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snoozed_until: Option<u64>,
+    /// Since when the agent in the first tab is working, in Unix milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub working_since: Option<u64>,
+    /// Whether the user has opened the workspace since `attention_since`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attention_seen: Option<bool>,
+    /// Last line of the agent's latest reply, as reported by a hook.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_message: Option<String>,
+    /// Short reason why the agent is blocked, as reported by a hook.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocked_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]

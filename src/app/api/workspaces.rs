@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
 use crate::api::schema::{
-    EventData, EventEnvelope, EventKind, ResponseResult, WorkspaceCloseParams,
-    WorkspaceCreateParams, WorkspaceMoveBlockParams, WorkspaceMoveParams, WorkspaceRenameParams,
-    WorkspaceReportMetadataParams, WorkspaceSnoozeParams, WorkspaceTarget,
+    EventData, EventEnvelope, EventKind, PaneReportChatParams, ResponseResult,
+    WorkspaceCloseParams, WorkspaceCreateParams, WorkspaceMoveBlockParams, WorkspaceMoveParams,
+    WorkspaceRenameParams, WorkspaceReportMetadataParams, WorkspaceSnoozeParams, WorkspaceTarget,
 };
 use crate::app::App;
 
@@ -145,6 +145,44 @@ impl App {
         };
         ws.snoozed_until = params.until;
         self.schedule_session_save();
+        encode_success(
+            id,
+            ResponseResult::WorkspaceInfo {
+                workspace: self.workspace_info(index),
+            },
+        )
+    }
+
+    /// collie: Ein Hook meldet letzte Nachricht oder Blocked-Grund des Agents
+    /// in Tab 1. Meldungen aus anderen Tabs gehören nicht zum Chat.
+    pub(super) fn handle_pane_report_chat(
+        &mut self,
+        id: String,
+        params: PaneReportChatParams,
+    ) -> String {
+        let Some((index, pane_id)) = self.parse_pane_id(&params.pane_id) else {
+            return encode_error(
+                id,
+                "pane_not_found",
+                format!("pane {} not found", params.pane_id),
+            );
+        };
+        let Some(ws) = self.state.workspaces.get_mut(index) else {
+            return workspace_not_found(id, &params.pane_id);
+        };
+        if ws
+            .tabs
+            .first()
+            .is_some_and(|tab| tab.layout.pane_ids().contains(&pane_id))
+        {
+            if let Some(message) = params.last_message {
+                ws.last_message = chat_text(&message);
+            }
+            if let Some(reason) = params.blocked_reason {
+                ws.blocked_reason = chat_text(&reason);
+            }
+            self.schedule_session_save();
+        }
         encode_success(
             id,
             ResponseResult::WorkspaceInfo {
@@ -389,6 +427,13 @@ impl App {
             .map(|(idx, _)| self.workspace_info(idx))
             .collect()
     }
+}
+
+/// collie: Eine Zeile Chat-Text, höchstens 200 Zeichen; leer heißt löschen.
+fn chat_text(text: &str) -> Option<String> {
+    const MAX_CHARS: usize = 200;
+    let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!line.is_empty()).then(|| line.chars().take(MAX_CHARS).collect())
 }
 
 fn workspace_not_found(id: String, workspace_id: &str) -> String {
