@@ -33,6 +33,14 @@ pub struct WorkspaceRenameParams {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct WorkspaceSnoozeParams {
+    pub workspace_id: String,
+    /// Unix milliseconds until which the workspace stays snoozed; `null` clears it.
+    #[serde(default)]
+    pub until: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct WorkspaceMoveParams {
     pub workspace_id: String,
     pub insert_index: usize,
@@ -73,6 +81,12 @@ pub struct WorkspaceInfo {
     pub tokens: HashMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree: Option<WorkspaceWorktreeInfo>,
+    /// Since when the workspace waits for the user, in Unix milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attention_since: Option<u64>,
+    /// Until when the workspace is snoozed, in Unix milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snoozed_until: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]

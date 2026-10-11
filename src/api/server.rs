@@ -623,6 +623,7 @@ pub(crate) fn api_method_name(method: &Method) -> &'static str {
         Method::WorkspaceGet(_) => "workspace.get",
         Method::WorkspaceFocus(_) => "workspace.focus",
         Method::WorkspaceRename(_) => "workspace.rename",
+        Method::WorkspaceSnooze(_) => "workspace.snooze",
         Method::WorkspaceMove(_) => "workspace.move",
         Method::WorkspaceMoveBlock(_) => "workspace.move_block",
         Method::WorkspaceReportMetadata(_) => "workspace.report_metadata",

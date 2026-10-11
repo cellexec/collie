@@ -200,10 +200,23 @@ pub struct Workspace {
     pub public_pane_numbers: HashMap<PaneId, usize>,
     pub(crate) next_public_pane_number: usize,
     pub(crate) next_public_tab_number: usize,
+    /// collie: Seit wann der Chat auf den Nutzer wartet (Unix-Millisekunden).
+    /// Gesetzt beim Anlegen und wenn der Agent in Tab 1 aufhört zu arbeiten.
+    pub attention_since: Option<u64>,
+    /// collie: Bis wann der Chat in der Sidebar versteckt ist (Unix-Millisekunden).
+    pub snoozed_until: Option<u64>,
     pub tabs: Vec<Tab>,
     pub active_tab: usize,
     #[cfg(test)]
     pub(crate) test_runtimes: HashMap<PaneId, TerminalRuntime>,
+}
+
+/// Wanduhrzeit in Unix-Millisekunden für Session-Zeitstempel.
+pub(crate) fn unix_millis_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX))
+        .unwrap_or(0)
 }
 
 impl Deref for Workspace {
@@ -265,6 +278,8 @@ impl Workspace {
             public_pane_numbers,
             next_public_pane_number: 2,
             next_public_tab_number: 2,
+            attention_since: Some(unix_millis_now()),
+            snoozed_until: None,
             tabs: vec![tab],
             active_tab: 0,
             #[cfg(test)]
@@ -417,6 +432,8 @@ impl Workspace {
                 public_pane_numbers,
                 next_public_pane_number: 2,
                 next_public_tab_number: 2,
+                attention_since: Some(unix_millis_now()),
+                snoozed_until: None,
                 tabs: vec![tab],
                 active_tab: 0,
                 #[cfg(test)]
@@ -1206,6 +1223,8 @@ impl Workspace {
             public_pane_numbers,
             next_public_pane_number: 2,
             next_public_tab_number: 2,
+            attention_since: None,
+            snoozed_until: None,
             tabs: vec![tab],
             active_tab: 0,
             test_runtimes: HashMap::new(),

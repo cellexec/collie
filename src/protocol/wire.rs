@@ -1032,6 +1032,12 @@ pub struct ClientShellWorkspace {
     pub focused: bool,
     #[serde(deserialize_with = "deserialize_client_shell_agent_status")]
     pub agent_status: crate::api::schema::AgentStatus,
+    /// collie: Seit wann der Space auf den Nutzer wartet (Unix-Millisekunden).
+    #[serde(default)]
+    pub attention_since: Option<u64>,
+    /// collie: Bis wann der Space gesnoozt ist (Unix-Millisekunden).
+    #[serde(default)]
+    pub snoozed_until: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2830,6 +2836,8 @@ mod tests {
                 worktree: None,
                 focused: true,
                 agent_status: crate::api::schema::AgentStatus::Idle,
+                attention_since: None,
+                snoozed_until: None,
             }],
             tabs: vec![ClientShellTab {
                 tab_id: "w1:t1".into(),

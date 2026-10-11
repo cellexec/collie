@@ -1403,6 +1403,35 @@ mod tests {
     }
 
     #[test]
+    fn workspace_snooze_sets_and_clears_snoozed_until() {
+        let mut app = test_app();
+        app.state
+            .workspaces
+            .push(crate::workspace::Workspace::test_new("chat"));
+        app.state.active = Some(0);
+        let workspace_id = app.public_workspace_id(0);
+        let snooze = |app: &mut App, until| {
+            let response = app.handle_api_request(crate::api::schema::Request {
+                id: "req_snooze".into(),
+                method: crate::api::schema::Method::WorkspaceSnooze(
+                    crate::api::schema::WorkspaceSnoozeParams {
+                        workspace_id: workspace_id.clone(),
+                        until,
+                    },
+                ),
+            });
+            serde_json::from_str::<serde_json::Value>(&response).unwrap()
+        };
+
+        let response = snooze(&mut app, Some(42));
+        assert_eq!(response["result"]["workspace"]["snoozed_until"], 42);
+        assert_eq!(app.state.workspaces[0].snoozed_until, Some(42));
+
+        snooze(&mut app, None);
+        assert_eq!(app.state.workspaces[0].snoozed_until, None);
+    }
+
+    #[test]
     fn startup_uses_configured_agent_panel_sort() {
         let mut config = Config::default();
         config.ui.agent_panel_sort = crate::config::AgentPanelSortConfig::Priority;

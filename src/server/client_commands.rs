@@ -50,6 +50,7 @@ const CLIENT_SHELL_METHODS: &[&str] = &[
     "workspace.move",
     "workspace.move_block",
     "workspace.rename",
+    "workspace.snooze",
     "worktree.create",
     "worktree.list",
     "worktree.open",
@@ -301,6 +302,11 @@ mod tests {
         assert_eq!(
             actual.remove("pane.send_input").as_deref(),
             Some("b0984bc72d68f720d07555147e6a8f14d6f7cf75376e6a3da3a393ca8f2e29a7")
+        );
+        // collie: workspace.snooze ist eine additive Methode des Forks.
+        assert_eq!(
+            actual.remove("workspace.snooze").as_deref(),
+            Some("0ecd67dc9e318213471e529c70eb320b7559bde84b397e6ca46889b82e85ae54")
         );
 
         assert_eq!(

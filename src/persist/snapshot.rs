@@ -65,6 +65,12 @@ pub struct WorkspaceSnapshot {
     pub public_tab_numbers: Vec<usize>,
     #[serde(default)]
     pub next_public_tab_number: usize,
+    /// collie: Seit wann der Chat auf den Nutzer wartet (Unix-Millisekunden).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attention_since: Option<u64>,
+    /// collie: Bis wann der Chat in der Sidebar versteckt ist (Unix-Millisekunden).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snoozed_until: Option<u64>,
     pub tabs: Vec<TabSnapshot>,
     #[serde(default)]
     pub active_tab: usize,
@@ -173,6 +179,8 @@ impl From<LegacyWorkspaceSnapshot> for WorkspaceSnapshot {
             next_public_pane_number: 0,
             public_tab_numbers: Vec::new(),
             next_public_tab_number: 0,
+            attention_since: None,
+            snoozed_until: None,
             tabs: vec![tab],
             active_tab: 0,
         }
@@ -315,6 +323,8 @@ fn capture_workspace(
         next_public_pane_number: ws.next_public_pane_number,
         public_tab_numbers: ws.tabs.iter().map(|tab| tab.number).collect(),
         next_public_tab_number: ws.next_public_tab_number,
+        attention_since: ws.attention_since,
+        snoozed_until: ws.snoozed_until,
         tabs,
         active_tab: ws.active_tab,
     }
@@ -732,6 +742,8 @@ mod tests {
                 next_public_pane_number: 3,
                 public_tab_numbers: vec![1],
                 next_public_tab_number: 2,
+                attention_since: Some(1_791_000_000_000),
+                snoozed_until: Some(1_791_003_600_000),
                 tabs: vec![TabSnapshot {
                     custom_name: Some("api".to_string()),
                     layout: LayoutSnapshot::Split {
@@ -776,6 +788,14 @@ mod tests {
         );
         assert_eq!(restored.sidebar_width, Some(26));
         assert_eq!(restored.sidebar_section_split, Some(0.5));
+        assert_eq!(
+            restored.workspaces[0].attention_since,
+            Some(1_791_000_000_000)
+        );
+        assert_eq!(
+            restored.workspaces[0].snoozed_until,
+            Some(1_791_003_600_000)
+        );
     }
 
     #[test]
@@ -1433,6 +1453,8 @@ mod tests {
                 next_public_pane_number: 0,
                 public_tab_numbers: Vec::new(),
                 next_public_tab_number: 0,
+                attention_since: None,
+                snoozed_until: None,
                 tabs: vec![TabSnapshot {
                     custom_name: None,
                     layout: LayoutSnapshot::Split {

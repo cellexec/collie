@@ -1761,6 +1761,17 @@ impl AppState {
                 .then_some(self.next_agent_state_change_seq);
             }
         }
+        if change.previous_state == AgentState::Working
+            && change.state != AgentState::Working
+            && self.workspaces[ws_idx]
+                .tabs
+                .first()
+                .is_some_and(|tab| tab.layout.pane_ids().contains(&pane_id))
+        {
+            // collie: Der Chat wartet ab jetzt auf den Nutzer.
+            self.workspaces[ws_idx].attention_since = Some(crate::workspace::unix_millis_now());
+            self.mark_session_dirty();
+        }
         let seen = self.apply_pane_state_change(ws_idx, pane_id, &change, suppress_completion)?;
         let update = PaneStateUpdate {
             pane_id,
@@ -3058,6 +3069,33 @@ mod tests {
             state.toast.as_ref().map(|toast| toast.kind),
             Some(ToastKind::Finished)
         ));
+    }
+
+    #[test]
+    fn working_to_idle_in_first_tab_stamps_attention_since() {
+        let mut state = app_with_workspaces(&["chat"]);
+        state.workspaces[0].attention_since = Some(1);
+        let pane_id = *state.workspaces[0].panes.keys().next().unwrap();
+        let change = |state: &mut AppState, agent_state| {
+            state.handle_app_event(AppEvent::StateChanged {
+                pane_id,
+                agent: Some(Agent::Pi),
+                state: agent_state,
+                visible_blocker: false,
+                visible_working: false,
+                process_exited: false,
+                observed_at: std::time::Instant::now(),
+            });
+        };
+
+        change(&mut state, AgentState::Working);
+        assert_eq!(state.workspaces[0].attention_since, Some(1));
+
+        let before = crate::workspace::unix_millis_now();
+        change(&mut state, AgentState::Idle);
+        assert!(state.workspaces[0]
+            .attention_since
+            .is_some_and(|since| since >= before));
     }
 
     #[test]

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use crate::api::schema::{
     EventData, EventEnvelope, EventKind, ResponseResult, WorkspaceCloseParams,
     WorkspaceCreateParams, WorkspaceMoveBlockParams, WorkspaceMoveParams, WorkspaceRenameParams,
-    WorkspaceReportMetadataParams, WorkspaceTarget,
+    WorkspaceReportMetadataParams, WorkspaceSnoozeParams, WorkspaceTarget,
 };
 use crate::app::App;
 
@@ -123,6 +123,28 @@ impl App {
             },
         });
 
+        encode_success(
+            id,
+            ResponseResult::WorkspaceInfo {
+                workspace: self.workspace_info(index),
+            },
+        )
+    }
+
+    /// collie: Versteckt einen Space bis `until` oder hebt den Snooze auf.
+    pub(super) fn handle_workspace_snooze(
+        &mut self,
+        id: String,
+        params: WorkspaceSnoozeParams,
+    ) -> String {
+        let Some(index) = self.parse_workspace_id(&params.workspace_id) else {
+            return workspace_not_found(id, &params.workspace_id);
+        };
+        let Some(ws) = self.state.workspaces.get_mut(index) else {
+            return workspace_not_found(id, &params.workspace_id);
+        };
+        ws.snoozed_until = params.until;
+        self.schedule_session_save();
         encode_success(
             id,
             ResponseResult::WorkspaceInfo {

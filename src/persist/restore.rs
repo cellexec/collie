@@ -430,6 +430,10 @@ fn restore_workspace(
             public_pane_numbers,
             next_public_pane_number,
             next_public_tab_number,
+            attention_since: snap
+                .attention_since
+                .or_else(|| Some(crate::workspace::unix_millis_now())),
+            snoozed_until: snap.snoozed_until,
             active_tab: snap.active_tab.min(tabs.len().saturating_sub(1)),
             tabs,
             #[cfg(test)]
@@ -1536,6 +1540,8 @@ mod tests {
                 next_public_pane_number: 0,
                 public_tab_numbers: Vec::new(),
                 next_public_tab_number: 0,
+                attention_since: None,
+                snoozed_until: None,
                 tabs: vec![TabSnapshot {
                     custom_name: None,
                     layout: LayoutSnapshot::Pane(0),
@@ -1617,6 +1623,8 @@ mod tests {
                 next_public_pane_number: 4,
                 public_tab_numbers: vec![5],
                 next_public_tab_number: 6,
+                attention_since: None,
+                snoozed_until: None,
                 tabs: vec![TabSnapshot {
                     custom_name: None,
                     layout: LayoutSnapshot::Split {
@@ -1730,6 +1738,8 @@ mod tests {
                 next_public_pane_number: 5,
                 public_tab_numbers: vec![1, 3, 4, 5],
                 next_public_tab_number: 6,
+                attention_since: None,
+                snoozed_until: None,
                 tabs: vec![
                     TabSnapshot {
                         custom_name: None,
@@ -1813,6 +1823,8 @@ mod tests {
             next_public_pane_number: 0,
             public_tab_numbers: Vec::new(),
             next_public_tab_number: 0,
+            attention_since: None,
+            snoozed_until: None,
             tabs: vec![TabSnapshot {
                 custom_name: None,
                 layout: LayoutSnapshot::Split {
@@ -1852,6 +1864,8 @@ mod tests {
                 next_public_pane_number: 0,
                 public_tab_numbers: Vec::new(),
                 next_public_tab_number: 0,
+                attention_since: None,
+                snoozed_until: None,
                 tabs: vec![TabSnapshot {
                     custom_name: None,
                     layout: LayoutSnapshot::Pane(0),
@@ -2208,6 +2222,8 @@ mod tests {
                 next_public_pane_number: 0,
                 public_tab_numbers: Vec::new(),
                 next_public_tab_number: 0,
+                attention_since: None,
+                snoozed_until: None,
                 tabs: vec![TabSnapshot {
                     custom_name: None,
                     layout: LayoutSnapshot::Pane(0),

@@ -1082,6 +1082,15 @@
             "agent_status": {
               "$ref": "#/schemas/event/$defs/AgentStatus"
             },
+            "attention_since": {
+              "description": "Since when the workspace waits for the user, in Unix milliseconds.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
             "focused": {
               "type": "boolean"
             },
@@ -1097,6 +1106,15 @@
               "format": "uint",
               "minimum": 0,
               "type": "integer"
+            },
+            "snoozed_until": {
+              "description": "Until when the workspace is snoozed, in Unix milliseconds.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
             },
             "tab_count": {
               "format": "uint",
@@ -4512,6 +4530,27 @@
           ],
           "type": "object"
         },
+        "WorkspaceSnoozeParams": {
+          "properties": {
+            "until": {
+              "default": null,
+              "description": "Unix milliseconds until which the workspace stays snoozed; `null` clears it.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "workspace_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "workspace_id"
+          ],
+          "type": "object"
+        },
         "WorkspaceTarget": {
           "properties": {
             "workspace_id": {
@@ -4993,6 +5032,22 @@
             },
             "params": {
               "$ref": "#/schemas/request/$defs/WorkspaceRenameParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "workspace.snooze",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/WorkspaceSnoozeParams"
             }
           },
           "required": [
@@ -10581,6 +10636,15 @@
             "agent_status": {
               "$ref": "#/schemas/success_response/$defs/AgentStatus"
             },
+            "attention_since": {
+              "description": "Since when the workspace waits for the user, in Unix milliseconds.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
             "focused": {
               "type": "boolean"
             },
@@ -10596,6 +10660,15 @@
               "format": "uint",
               "minimum": 0,
               "type": "integer"
+            },
+            "snoozed_until": {
+              "description": "Until when the workspace is snoozed, in Unix milliseconds.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
             },
             "tab_count": {
               "format": "uint",
