@@ -286,6 +286,12 @@ fn render_card(
     );
     let mut x = inner_x;
     if let Some((symbol, style)) = chat_symbol(row, now, palette) {
+        // Gelesene Chats bekommen ein hohles Symbol.
+        let symbol = if row.unread || symbol != "●" {
+            symbol
+        } else {
+            "○"
+        };
         put_text(buffer, x, rect.y, 1, symbol, style.bg(background));
     }
     x = x.saturating_add(2);
@@ -300,7 +306,7 @@ fn render_card(
         .saturating_sub(age_width)
         .saturating_sub(1)
         .saturating_sub(x);
-    let title_style = if row.focused || selected {
+    let title_style = if row.unread || row.focused || selected {
         base.fg(palette.text).add_modifier(Modifier::BOLD)
     } else {
         base.fg(palette.subtext0)
@@ -373,16 +379,28 @@ fn render_card(
         put_part(buffer, x, context_y, right, &shells, muted);
     }
 
-    // Zeile 3: bei Blocked der Grund. Die Vorschau der letzten Nachricht
-    // folgt mit den Server-Feldern.
+    // Zeile 3: bei Blocked der Grund, sonst die letzte Nachricht.
+    let detail_x = inner_x.saturating_add(2);
+    let detail_width = right.saturating_sub(detail_x);
     if row.status == AgentStatus::Blocked {
         put_text(
             buffer,
-            inner_x.saturating_add(2),
+            detail_x,
             rect.y.saturating_add(2),
-            right.saturating_sub(inner_x.saturating_add(2)),
-            "wartet auf Eingabe",
+            detail_width,
+            row.blocked_reason
+                .as_deref()
+                .unwrap_or("wartet auf Eingabe"),
             base.fg(status_color(AgentStatus::Blocked, palette)),
+        );
+    } else if let Some(message) = row.last_message.as_deref() {
+        put_text(
+            buffer,
+            detail_x,
+            rect.y.saturating_add(2),
+            detail_width,
+            message,
+            base.fg(palette.overlay1).add_modifier(Modifier::ITALIC),
         );
     }
 }
@@ -514,11 +532,16 @@ fn render_hidden_row(
         symbol,
         symbol_style,
     );
-    let right_label = row
-        .snoozed_until
-        .filter(|_| snoozed)
-        .map(|until| snooze_remaining_label(until, now))
-        .unwrap_or_default();
+    // Rechts steht die Snooze-Restzeit oder die Laufzeit.
+    let right_label = if snoozed {
+        row.snoozed_until
+            .map(|until| snooze_remaining_label(until, now))
+            .unwrap_or_default()
+    } else {
+        row.working_since
+            .map(|since| age_label(since, now))
+            .unwrap_or_default()
+    };
     let right_width = display_width(&right_label);
     let right = rect.right().saturating_sub(1);
     put_text(

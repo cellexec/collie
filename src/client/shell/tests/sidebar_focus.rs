@@ -986,3 +986,58 @@ fn chat_overlay_shows_nothing_to_do_when_no_chat_waits() {
     assert!(rows.iter().any(|row| row.contains("Nichts zu tun")));
     assert!(rows.iter().any(|row| row.contains("läuft 2  snooze 0")));
 }
+
+#[test]
+fn chat_cards_show_reported_messages_unread_state_and_runtime() {
+    let now = crate::workspace::unix_millis_now();
+    let mut snapshot = agents_snapshot();
+    snapshot.workspaces[0].blocked_reason = Some("Freigabe: Bash".into());
+    snapshot.workspaces[0].attention_seen = Some(false);
+    snapshot.workspaces[1].working_since = Some(now - 3 * 60_000);
+    let mut third = snapshot.workspaces[0].clone();
+    third.workspace_id = "ws_3".into();
+    third.label = "third".into();
+    third.focused = false;
+    third.attention_seen = Some(true);
+    third.blocked_reason = None;
+    third.last_message = Some("Soll ich committen?".into());
+    snapshot.workspaces.push(third);
+    let mut tab = snapshot.tabs[0].clone();
+    tab.tab_id = "tab_3".into();
+    tab.workspace_id = "ws_3".into();
+    snapshot.tabs.push(tab);
+    let mut pane = snapshot.panes[0].clone();
+    pane.pane_id = "pane_3".into();
+    pane.workspace_id = "ws_3".into();
+    pane.tab_id = "tab_3".into();
+    snapshot.panes.push(pane);
+    let mut agent = snapshot.agents[0].clone();
+    agent.pane_id = "pane_3".into();
+    agent.workspace_id = "ws_3".into();
+    agent.tab_id = "tab_3".into();
+    agent.agent_status = AgentStatus::Done;
+    snapshot.agents.push(agent);
+
+    let mut state = chat_overlay_state_with(snapshot);
+    focus_sidebar(&mut state);
+    let rows = frame_rows(&state.compose(100, 28).expect("frame"));
+    let card = |pane_id: &str| {
+        let rect = state
+            .hits
+            .agents
+            .iter()
+            .find(|(_, id)| id == pane_id)
+            .map(|(rect, _)| *rect)
+            .expect("card");
+        rows[usize::from(rect.y)..usize::from(rect.y + rect.height)].to_vec()
+    };
+
+    let blocked = card("pane_1");
+    assert!(blocked[0].contains('●'), "{}", blocked[0]);
+    assert!(blocked[2].contains("Freigabe: Bash"), "{}", blocked[2]);
+    let done = card("pane_3");
+    assert!(done[0].contains('○'), "{}", done[0]);
+    assert!(done[2].contains("Soll ich committen?"), "{}", done[2]);
+    let running = card("pane_2");
+    assert!(running[0].contains(" 3m"), "{}", running[0]);
+}

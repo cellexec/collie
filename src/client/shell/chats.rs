@@ -37,6 +37,12 @@ pub(super) struct ChatRow {
     pub(super) linked_worktree: bool,
     /// Tabs ab Nummer 2, die Nebenarbeit.
     pub(super) extra_tabs: usize,
+    /// Seit wann der Agent arbeitet (Unix-Millisekunden).
+    pub(super) working_since: Option<u64>,
+    /// Der Chat wartet, und der Nutzer hat ihn seitdem nicht geöffnet.
+    pub(super) unread: bool,
+    pub(super) last_message: Option<String>,
+    pub(super) blocked_reason: Option<String>,
 }
 
 impl ChatRow {
@@ -134,6 +140,10 @@ fn chat_row(snapshot: &ClientShellSnapshot, workspace: &ClientShellWorkspace) ->
             .as_ref()
             .is_some_and(|worktree| worktree.is_linked_worktree),
         extra_tabs,
+        working_since: workspace.working_since,
+        unread: workspace.attention_seen == Some(false),
+        last_message: workspace.last_message.clone(),
+        blocked_reason: workspace.blocked_reason.clone(),
     })
 }
 
