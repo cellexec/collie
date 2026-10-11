@@ -182,7 +182,10 @@ impl App {
     }
 
     fn git_refresh_demand(&self) -> GitStatusRefreshDemand {
-        let mut demand = GitStatusRefreshDemand::default();
+        let mut demand = GitStatusRefreshDemand {
+            branch: self.state.chat_overlay_git,
+            ahead_behind: self.state.chat_overlay_git,
+        };
         for token in self.state.sidebar_spaces.rows.iter().flatten() {
             match token.parts().0 {
                 crate::config::SpaceSidebarToken::Branch => demand.branch = true,

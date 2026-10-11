@@ -206,7 +206,7 @@ impl ClientShellState {
         let view = self
             .sidebar_focus
             .render_view(self.mode, self.prefix_return_navigate);
-        if view.show_hidden && !self.sidebar_collapsed {
+        if (view.show_hidden && !self.sidebar_collapsed) || self.chat_overlay_open() {
             let spinning = snapshot
                 .agents
                 .iter()

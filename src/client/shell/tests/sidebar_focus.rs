@@ -794,8 +794,8 @@ fn chat_overlay_collapses_to_a_line_and_opens_without_resize() {
     assert_eq!(state.surface_size(100, 28), collapsed);
     let rows = frame_rows(&state.compose(100, 28).expect("frame"));
     assert_eq!(state.hits.chat_overlay, Rect::new(0, 0, 50, 28));
-    assert_eq!(hit_panes(&state), ["pane_1"]);
-    assert!(rows[0].starts_with("┌ chats "), "{}", rows[0]);
+    assert_eq!(hit_panes(&state), ["pane_1", "pane_2"]);
+    assert!(rows[0].contains("chats"), "{}", rows[0]);
 
     press(&mut state, &[0x02]);
     let close = press(&mut state, b"w");
@@ -932,4 +932,57 @@ fn chat_line_pulses_when_a_chat_newly_waits() {
     state.tick_chat_overlay(now, &mut outcome);
     assert!(state.chat_pulse_started.is_some());
     assert!(outcome.repaint);
+}
+
+#[test]
+fn chat_cards_show_context_and_the_blocked_reason() {
+    let mut snapshot = agents_snapshot();
+    snapshot.workspaces[0].git_ahead_behind = Some((2, 0));
+    snapshot.workspaces[0].attention_since = Some(crate::workspace::unix_millis_now() - 5 * 60_000);
+    let mut tab = snapshot.tabs[0].clone();
+    tab.tab_id = "tab_1b".into();
+    tab.number = 2;
+    snapshot.tabs.push(tab);
+    let mut state = chat_overlay_state_with(snapshot);
+    focus_sidebar(&mut state);
+    let rows = frame_rows(&state.compose(100, 28).expect("frame"));
+    let card = state.hits.agents[0].0;
+    assert_eq!(card.height, 3);
+    let lines = &rows[usize::from(card.y)..usize::from(card.y) + 3];
+    assert!(lines[0].contains("client-shell"), "{}", lines[0]);
+    assert!(lines[0].contains(" 5m "), "{}", lines[0]);
+    for part in ["claude", "repo", "main ↑2", "+1 shell"] {
+        assert!(lines[1].contains(part), "{part}: {}", lines[1]);
+    }
+    assert!(lines[2].contains("wartet auf Eingabe"), "{}", lines[2]);
+}
+
+#[test]
+fn chat_overlay_lists_running_chats_below_and_j_walks_into_them() {
+    let mut state = chat_overlay_state();
+    focus_sidebar(&mut state);
+    let rows = frame_rows(&state.compose(100, 28).expect("frame"));
+    assert_eq!(hit_panes(&state), ["pane_1", "pane_2"]);
+    let running = state.hits.agents[1].0;
+    assert_eq!(running.height, 1);
+    assert!(rows[usize::from(running.y) - 1].contains("läuft 1  snooze 0"));
+    assert!(rows[usize::from(running.y)].contains("second"));
+
+    press(&mut state, b"j");
+    assert_eq!(agent_cursor(&state), Some("pane_2"));
+    press(&mut state, b"h");
+    assert_eq!(agent_cursor(&state), Some("pane_1"));
+    press(&mut state, b"h");
+    assert_eq!(agent_cursor(&state), Some("pane_2"));
+}
+
+#[test]
+fn chat_overlay_shows_nothing_to_do_when_no_chat_waits() {
+    let mut snapshot = agents_snapshot();
+    snapshot.agents[0].agent_status = AgentStatus::Working;
+    let mut state = chat_overlay_state_with(snapshot);
+    focus_sidebar(&mut state);
+    let rows = frame_rows(&state.compose(100, 28).expect("frame"));
+    assert!(rows.iter().any(|row| row.contains("Nichts zu tun")));
+    assert!(rows.iter().any(|row| row.contains("läuft 2  snooze 0")));
 }

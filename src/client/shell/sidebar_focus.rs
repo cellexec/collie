@@ -486,6 +486,12 @@ impl ClientShellState {
         }
 
         // collie: In der Chat-Liste ist `h` fest an die versteckten Chats gebunden.
+        if self.chat_overlay_enabled() && code == KeyCode::Char('h') && modifiers.is_empty() {
+            self.sidebar_focus.pending = None;
+            self.jump_chat_overlay_section();
+            outcome.repaint = true;
+            return;
+        }
         if self.spaces_hidden() && code == KeyCode::Char('h') && modifiers.is_empty() {
             self.toggle_hidden_chats();
             outcome.repaint = true;
@@ -896,6 +902,22 @@ impl ClientShellState {
         let Some(snapshot) = self.snapshot.as_deref() else {
             return Vec::new();
         };
+        if self.chat_overlay_enabled() {
+            let (main, hidden) = super::chats::overlay_chat_rows(
+                snapshot,
+                self.config.chat_newest_first,
+                query,
+                crate::workspace::unix_millis_now(),
+            );
+            return main
+                .into_iter()
+                .chain(hidden)
+                .map(|row| SidebarAgentCursor {
+                    endpoint_id: self.active_endpoint_id.clone(),
+                    pane_id: row.pane_id,
+                })
+                .collect();
+        }
         if self.spaces_hidden() {
             return super::chats::visible_chat_rows(
                 snapshot,
@@ -987,6 +1009,27 @@ impl ClientShellState {
         let Some(target) = targets.iter().position(|target| target == &cursor) else {
             return;
         };
+        if self.chat_overlay_enabled() {
+            // collie: Nur die Karten der Hauptliste scrollen; der untere
+            // Abschnitt hält seinen Cursor beim Zeichnen sichtbar.
+            let main = self.chat_overlay_main_len();
+            if target >= main {
+                return;
+            }
+            let heights = vec![super::chat_cards::CARD_HEIGHT; main];
+            let mut gaps = vec![super::chat_cards::CARD_GAP; main];
+            if let Some(last) = gaps.last_mut() {
+                *last = 0;
+            }
+            self.agent_scroll = super::scroll::list_scroll_start_to_reveal(
+                &heights,
+                &gaps,
+                body_height,
+                self.agent_scroll,
+                target,
+            );
+            return;
+        }
         if self.spaces_hidden() {
             let heights = vec![1; targets.len()];
             let gaps = vec![0; targets.len()];
@@ -1101,6 +1144,40 @@ impl ClientShellState {
                 workspace_id: row.workspace_id,
             },
         }));
+    }
+
+    /// collie: Zahl der Karten in der Hauptliste des Chat-Overlays.
+    fn chat_overlay_main_len(&self) -> usize {
+        self.snapshot.as_deref().map_or(0, |snapshot| {
+            super::chats::overlay_chat_rows(
+                snapshot,
+                self.config.chat_newest_first,
+                self.sidebar_focus.agent_query.as_str(),
+                crate::workspace::unix_millis_now(),
+            )
+            .0
+            .len()
+        })
+    }
+
+    /// collie: Im Overlay springt `h` zwischen Hauptliste und unterem
+    /// Abschnitt.
+    fn jump_chat_overlay_section(&mut self) {
+        let main = self.chat_overlay_main_len();
+        let targets = self.sidebar_agent_targets();
+        let current = self
+            .sidebar_focus
+            .agent_cursor
+            .as_ref()
+            .and_then(|cursor| targets.iter().position(|target| target == cursor));
+        let next = match current {
+            Some(index) if index >= main => 0,
+            _ => main,
+        };
+        if let Some(target) = targets.into_iter().nth(next) {
+            self.sidebar_focus.agent_cursor = Some(target);
+            self.reveal_sidebar_agent();
+        }
     }
 
     /// collie: `h` wechselt zwischen wartenden und versteckten Chats.

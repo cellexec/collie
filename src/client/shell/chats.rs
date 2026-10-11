@@ -27,6 +27,16 @@ pub(super) struct ChatRow {
     pub(super) attention_since: u64,
     pub(super) snoozed_until: Option<u64>,
     pub(super) focused: bool,
+    /// Name des Agents (`claude`, `codex`, ...).
+    pub(super) agent: Option<String>,
+    /// Repo-Name: Basename des Agent-Verzeichnisses, sonst des Worktrees.
+    pub(super) repo: Option<String>,
+    pub(super) branch: Option<String>,
+    pub(super) ahead_behind: Option<(usize, usize)>,
+    /// Der Space ist ein verlinkter Worktree.
+    pub(super) linked_worktree: bool,
+    /// Tabs ab Nummer 2, die Nebenarbeit.
+    pub(super) extra_tabs: usize,
 }
 
 impl ChatRow {
@@ -82,6 +92,24 @@ fn chat_row(snapshot: &ClientShellSnapshot, workspace: &ClientShellWorkspace) ->
         Some(title) if !workspace.custom_label => title.to_owned(),
         _ => workspace.label.clone(),
     };
+    let repo = snapshot
+        .panes
+        .iter()
+        .find(|pane| pane.pane_id == pane_id)
+        .and_then(|pane| pane.foreground_cwd.as_deref().or(pane.cwd.as_deref()))
+        .and_then(|cwd| std::path::Path::new(cwd).file_name())
+        .map(|name| name.to_string_lossy().into_owned())
+        .or_else(|| {
+            workspace
+                .worktree
+                .as_ref()
+                .map(|worktree| worktree.label.clone())
+        });
+    let extra_tabs = snapshot
+        .tabs
+        .iter()
+        .filter(|tab| tab.workspace_id == workspace.workspace_id && tab.tab_id != first_tab.tab_id)
+        .count();
     Some(ChatRow {
         workspace_id: workspace.workspace_id.clone(),
         pane_id,
@@ -91,6 +119,21 @@ fn chat_row(snapshot: &ClientShellSnapshot, workspace: &ClientShellWorkspace) ->
         attention_since: workspace.attention_since.unwrap_or(0),
         snoozed_until: workspace.snoozed_until,
         focused: workspace.focused,
+        agent: agent.and_then(|agent| {
+            agent
+                .display_agent
+                .clone()
+                .or_else(|| agent.agent.clone())
+                .or_else(|| agent.name.clone())
+        }),
+        repo,
+        branch: workspace.branch.clone(),
+        ahead_behind: workspace.git_ahead_behind,
+        linked_worktree: workspace
+            .worktree
+            .as_ref()
+            .is_some_and(|worktree| worktree.is_linked_worktree),
+        extra_tabs,
     })
 }
 
@@ -114,11 +157,25 @@ pub(super) fn visible_chat_rows(
     rows
 }
 
+/// collie: Hauptliste und unterer Abschnitt des Chat-Overlays. Der untere
+/// Abschnitt hält laufende und gesnoozte Chats.
+pub(super) fn overlay_chat_rows(
+    snapshot: &ClientShellSnapshot,
+    newest_first: bool,
+    query: &str,
+    now: u64,
+) -> (Vec<ChatRow>, Vec<ChatRow>) {
+    (
+        visible_chat_rows(snapshot, false, newest_first, query, now),
+        visible_chat_rows(snapshot, true, newest_first, query, now),
+    )
+}
+
 const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 /// Dauer eines Spinner-Frames.
 pub(super) const SPINNER_FRAME_MS: u64 = 100;
 
-fn spinner_frame(now: u64) -> &'static str {
+pub(super) fn spinner_frame(now: u64) -> &'static str {
     SPINNER[((now / SPINNER_FRAME_MS) % SPINNER.len() as u64) as usize]
 }
 
@@ -136,7 +193,11 @@ pub(super) fn snooze_remaining_label(until: u64, now: u64) -> String {
 
 /// Symbol und Stil einer Zeile. Nur „du bist dran" und „arbeitet" haben ein
 /// Symbol.
-fn chat_symbol(row: &ChatRow, now: u64, palette: &Palette) -> Option<(&'static str, Style)> {
+pub(super) fn chat_symbol(
+    row: &ChatRow,
+    now: u64,
+    palette: &Palette,
+) -> Option<(&'static str, Style)> {
     match row.status {
         AgentStatus::Working => Some((
             spinner_frame(now),

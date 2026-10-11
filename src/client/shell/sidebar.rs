@@ -551,14 +551,13 @@ pub(crate) fn render_chat_overlay(
     render_sidebar_background(buffer, area, palette);
     hits.chat_overlay = area;
     let agent_area = Rect::new(area.x, area.y, area.width.saturating_sub(1), area.height);
-    super::super::chats::render_chat_panel(
+    super::super::chat_cards::render_chat_cards(
         buffer,
         agent_area,
         snapshot,
         config,
         view,
         endpoint_id,
-        config.chat_newest_first,
         agent_scroll,
         hits,
     );
