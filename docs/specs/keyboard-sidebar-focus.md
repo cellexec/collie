@@ -87,17 +87,10 @@ followed by Enter. `1`-`9` pick an entry directly.
 
 ## collie: Sidebar nur mit Agents
 
-Mit einem verbundenen Server zeigt die Sidebar keine Spaces mehr. Die
-Agents-Liste füllt die ganze Höhe, ihr Rahmen heißt `agents` ohne Nummer, und
-`new` und `menu` sitzen in seinem unteren Rand. Die eingeklappte Sidebar zeigt
-ebenfalls nur Agents.
-
-- Sidebar-Fokus landet immer in der Agents-Liste. `1`, `2`, `+` und `-` tun
-  nichts.
-- `n` und ein Klick auf `new` öffnen einen neuen Tab im aktuellen Space mit
-  `$HOME` als cwd. Mit `[[ui.sidebar.agent_commands]]` erscheint vorher die
-  Auswahl; der Tab startet ebenfalls in `$HOME`.
-- Mit mehreren Servern bleibt die Machines-Sektion wie bisher.
+Mit `ui.sidebar.agents_only` und einem verbundenen Server zeigt die Sidebar
+statt Spaces und Agents eine einzige Chat-Liste. Modell, Tasten und
+Server-Felder stehen in `chat-sidebar.md`. Mit mehreren Servern bleibt die
+Machines-Sektion wie bisher.
 
 ## Leader sequences and picker
 

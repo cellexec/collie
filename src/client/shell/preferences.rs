@@ -24,6 +24,9 @@ pub(super) struct ClientChromePreferences {
     pub(super) sidebar_collapsed: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) agent_panel_sort: Option<crate::config::AgentPanelSortConfig>,
+    /// collie: Sortierung der Chat-Liste, nur gespeichert, wenn umgeschaltet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) chat_newest_first: Option<bool>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(super) collapsed_groups: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

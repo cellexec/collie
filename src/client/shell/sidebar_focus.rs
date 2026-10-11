@@ -39,6 +39,8 @@ pub(super) struct SidebarFocusState {
     /// The inline `/` filter of the focused section receives typed keys.
     pub(super) editing: bool,
     pub(super) agent_status: Option<AgentStatus>,
+    /// collie: Die Chat-Liste zeigt die versteckten statt der wartenden Chats.
+    pub(super) show_hidden: bool,
     origin: Option<SidebarOrigin>,
     /// The sidebar was collapsed and is shown only while it has focus.
     drawer: bool,
@@ -64,6 +66,9 @@ impl SidebarFocusState {
             workspace_query: self.workspace_query.as_str(),
             agent_query: self.agent_query.as_str(),
             agent_status: self.agent_status,
+            show_hidden: self.show_hidden
+                && (mode == ClientShellMode::Navigate
+                    || (mode == ClientShellMode::Prefix && prefix_return_navigate)),
             editing: self.editing,
         }
     }
@@ -78,6 +83,7 @@ pub(super) struct SidebarRenderView<'a> {
     pub(super) workspace_query: &'a str,
     pub(super) agent_query: &'a str,
     pub(super) agent_status: Option<AgentStatus>,
+    pub(super) show_hidden: bool,
     pub(super) editing: bool,
 }
 
@@ -158,6 +164,10 @@ pub(super) fn workspace_matches_filter(workspace: &ClientShellWorkspace, query: 
                 .map(|worktree| worktree.label.as_str()),
         ],
     )
+}
+
+pub(super) fn chat_matches_filter(row: &super::chats::ChatRow, query: &str) -> bool {
+    query_matches(query, &[Some(row.label.as_str())])
 }
 
 pub(super) fn agent_matches_filter(
@@ -293,6 +303,9 @@ impl ClientShellState {
         }
         if self.spaces_hidden() {
             self.sidebar_focus.section = SidebarSection::Agents;
+            self.sidebar_focus.show_hidden = false;
+            self.sidebar_focus.agent_cursor = self.sidebar_agent_targets().into_iter().next();
+            self.agent_scroll = 0;
         }
         if !self.sidebar_agent_cursor_valid() {
             self.sidebar_focus.agent_cursor = self.focused_sidebar_agent();
@@ -465,6 +478,17 @@ impl ClientShellState {
             return;
         }
 
+        // collie: In der Chat-Liste ist `h` fest an die versteckten Chats gebunden.
+        if self.spaces_hidden() && code == KeyCode::Char('h') && modifiers.is_empty() {
+            self.toggle_hidden_chats();
+            outcome.repaint = true;
+            return;
+        }
+        if self.spaces_hidden() && code == KeyCode::Char('z') && modifiers.is_empty() {
+            self.sidebar_focus.pending = None;
+            self.open_snooze_picker(outcome);
+            return;
+        }
         let command = classify_sidebar_key(&self.config.keybinds.keybinds.navigate, key);
         if let Some(command) = command {
             self.run_sidebar_command(command, outcome);
@@ -550,6 +574,7 @@ impl ClientShellState {
                     KeybindMatch::Action(KeybindAction::RenameWorkspace),
                     outcome,
                 ),
+                SidebarSection::Agents if self.spaces_hidden() => self.rename_sidebar_chat(),
                 SidebarSection::Agents => {
                     if let Some(cursor) = self.local_sidebar_agent_cursor() {
                         self.open_rename_pane_overlay_for(&cursor.pane_id);
@@ -565,10 +590,15 @@ impl ClientShellState {
                     }
                 }
             },
+            Command::Sort if self.spaces_hidden() => {
+                self.toggle_chat_sort(outcome);
+                self.reveal_sidebar_agent();
+            }
             Command::Sort => {
                 self.toggle_agent_panel_sort(outcome);
                 self.reveal_sidebar_agent();
             }
+            Command::StateFilter if self.spaces_hidden() => {}
             Command::StateFilter => {
                 self.sidebar_focus.agent_status = match self.sidebar_focus.agent_status {
                     None => Some(AgentStatus::Blocked),
@@ -852,6 +882,21 @@ impl ClientShellState {
         let Some(snapshot) = self.snapshot.as_deref() else {
             return Vec::new();
         };
+        if self.spaces_hidden() {
+            return super::chats::visible_chat_rows(
+                snapshot,
+                self.sidebar_focus.show_hidden,
+                self.config.chat_newest_first,
+                query,
+                crate::workspace::unix_millis_now(),
+            )
+            .into_iter()
+            .map(|row| SidebarAgentCursor {
+                endpoint_id: self.active_endpoint_id.clone(),
+                pane_id: row.pane_id,
+            })
+            .collect();
+        }
         super::agent_sidebar::ordered_agent_pane_ids(snapshot, self.config.agent_panel_sort)
             .into_iter()
             .filter(|pane_id| {
@@ -902,6 +947,12 @@ impl ClientShellState {
             .filter(|cursor| cursor.endpoint_id == self.active_endpoint_id)
             .filter(|cursor| {
                 self.snapshot.as_deref().is_some_and(|snapshot| {
+                    if self.spaces_hidden() {
+                        return snapshot
+                            .panes
+                            .iter()
+                            .any(|pane| pane.pane_id == cursor.pane_id);
+                    }
                     snapshot
                         .agents
                         .iter()
@@ -922,6 +973,18 @@ impl ClientShellState {
         let Some(target) = targets.iter().position(|target| target == &cursor) else {
             return;
         };
+        if self.spaces_hidden() {
+            let heights = vec![1; targets.len()];
+            let gaps = vec![0; targets.len()];
+            self.agent_scroll = super::scroll::list_scroll_start_to_reveal(
+                &heights,
+                &gaps,
+                body_height,
+                self.agent_scroll,
+                target,
+            );
+            return;
+        }
         let heights = targets
             .iter()
             .map(|target| {
@@ -968,13 +1031,77 @@ impl ClientShellState {
                     .or_else(|| index.checked_sub(1).and_then(|prev| targets.get(prev)))
             })
             .cloned();
+        if self.spaces_hidden() {
+            self.close_sidebar_chat(&cursor.pane_id, outcome);
+        } else {
+            self.push_endpoint_method(
+                crate::api::schema::Method::PaneClose(crate::api::schema::PaneTarget {
+                    pane_id: cursor.pane_id,
+                }),
+                outcome,
+            );
+        }
+        self.sidebar_focus.agent_cursor = next;
+        outcome.repaint = true;
+    }
+
+    /// collie: Ein Chat schließt seinen ganzen Space. Arbeitet der Agent
+    /// gerade, fragt collie vorher nach.
+    fn close_sidebar_chat(&mut self, pane_id: &str, outcome: &mut ClientShellInput) {
+        let Some(row) = self.sidebar_chat_row(pane_id) else {
+            return;
+        };
+        if row.status == AgentStatus::Working {
+            self.open_close_confirmation(row.workspace_id, None, Some(false));
+            return;
+        }
         self.push_endpoint_method(
-            crate::api::schema::Method::PaneClose(crate::api::schema::PaneTarget {
-                pane_id: cursor.pane_id,
+            crate::api::schema::Method::WorkspaceClose(crate::api::schema::WorkspaceCloseParams {
+                workspace_id: row.workspace_id,
+                close_group: false,
             }),
             outcome,
         );
-        self.sidebar_focus.agent_cursor = next;
+    }
+
+    /// collie: Die Chat-Zeile, deren Pane `pane_id` ist.
+    pub(super) fn sidebar_chat_row(&self, pane_id: &str) -> Option<super::chats::ChatRow> {
+        super::chats::chat_rows(self.snapshot.as_deref()?)
+            .into_iter()
+            .find(|row| row.pane_id == pane_id)
+    }
+
+    /// collie: Benennt den Space des Chats unter dem Cursor um. Ein eigener
+    /// Name gewinnt danach über den Terminal-Titel.
+    fn rename_sidebar_chat(&mut self) {
+        let Some(cursor) = self.local_sidebar_agent_cursor() else {
+            return;
+        };
+        let Some(row) = self.sidebar_chat_row(&cursor.pane_id) else {
+            return;
+        };
+        self.overlay = Some(ClientShellOverlay::Rename(ClientRenameOverlay {
+            title: "rename chat",
+            input: TextEditor::new(&row.label, false),
+            target: ClientRenameTarget::Workspace {
+                workspace_id: row.workspace_id,
+            },
+        }));
+    }
+
+    /// collie: `h` wechselt zwischen wartenden und versteckten Chats.
+    fn toggle_hidden_chats(&mut self) {
+        self.sidebar_focus.show_hidden = !self.sidebar_focus.show_hidden;
+        self.sidebar_focus.pending = None;
+        self.agent_scroll = 0;
+        self.sidebar_focus.agent_cursor = self.sidebar_agent_targets().into_iter().next();
+    }
+
+    /// collie: `s` dreht die Chat-Liste zwischen ältester und neuester zuerst.
+    pub(super) fn toggle_chat_sort(&mut self, outcome: &mut ClientShellInput) {
+        self.config.chat_newest_first = !self.config.chat_newest_first;
+        self.agent_scroll = 0;
+        self.persist_chrome_preferences(outcome);
         outcome.repaint = true;
     }
 
@@ -1192,6 +1319,7 @@ impl ClientShellState {
             sidebar_section: self.sidebar_focus.section,
             sidebar_editing: self.sidebar_focus.editing,
             sidebar_pending_close: self.sidebar_focus.pending_close(),
+            sidebar_chats: self.spaces_hidden(),
             prefix_sequence: self.prefix_sequence,
         }
     }

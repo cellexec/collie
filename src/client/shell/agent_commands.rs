@@ -5,13 +5,13 @@ use crossterm::event::KeyModifiers;
 
 impl ClientShellState {
     pub(super) fn open_agent_commands(&mut self, outcome: &mut ClientShellInput) {
+        if self.spaces_hidden() {
+            self.open_new_chat(outcome);
+            return;
+        }
         let Some(workspace_id) = self.workspace_action_id() else {
             return;
         };
-        if self.config.agent_commands.is_empty() && self.spaces_hidden() {
-            self.open_home_tab(workspace_id, outcome);
-            return;
-        }
         if self.config.agent_commands.is_empty() {
             self.record_binding(
                 crate::input::KeybindMatch::Action(crate::input::KeybindAction::NewTab),
@@ -108,7 +108,7 @@ impl ClientShellState {
         let sent = self.push_endpoint_method_with_kind(
             crate::api::schema::Method::TabCreate(crate::api::schema::TabCreateParams {
                 workspace_id: Some(picker.workspace_id),
-                cwd: self.new_tab_home_cwd(),
+                cwd: None,
                 focus: true,
                 label,
                 env: Default::default(),
@@ -121,27 +121,29 @@ impl ClientShellState {
         self.leave_sidebar_for_new_tab(sent, outcome);
     }
 
-    /// collie: Im Agents-only-Modus ohne `agent_commands` öffnet `n` direkt
-    /// einen Tab im Home-Verzeichnis.
-    fn open_home_tab(&mut self, workspace_id: String, outcome: &mut ClientShellInput) {
+    /// collie: In der Chat-Liste öffnet `n` einen neuen Chat: einen Space in
+    /// `$HOME` mit leerer Shell. Den Agent startet der Nutzer selbst.
+    fn open_new_chat(&mut self, outcome: &mut ClientShellInput) {
         let sent = self.push_endpoint_method_with_kind(
-            crate::api::schema::Method::TabCreate(crate::api::schema::TabCreateParams {
-                workspace_id: Some(workspace_id),
-                cwd: self.new_tab_home_cwd(),
-                focus: true,
-                label: None,
-                env: Default::default(),
-            }),
+            crate::api::schema::Method::WorkspaceCreate(
+                crate::api::schema::WorkspaceCreateParams {
+                    source_workspace_id: None,
+                    cwd: self.home_cwd(),
+                    focus: true,
+                    label: None,
+                    env: Default::default(),
+                },
+            ),
             PendingEndpointKind::Generic,
             outcome,
         );
         self.leave_sidebar_for_new_tab(sent, outcome);
     }
 
-    /// Neue Tabs starten in `$HOME`, solange die Sidebar nur Agents zeigt. Das
-    /// Home-Verzeichnis kennt der Client nur für den lokalen Server.
-    fn new_tab_home_cwd(&self) -> Option<String> {
-        if !self.spaces_hidden() || !self.active_endpoint_id.is_local() {
+    /// Das Home-Verzeichnis kennt der Client nur für den lokalen Server; ein
+    /// entfernter Server nimmt sein eigenes Standardverzeichnis.
+    fn home_cwd(&self) -> Option<String> {
+        if !self.active_endpoint_id.is_local() {
             return None;
         }
         let home = crate::worktree::expand_tilde_path("~");

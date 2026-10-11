@@ -487,6 +487,9 @@ impl ClientShellState {
         if self.route_agent_commands_key(key, outcome) {
             return;
         }
+        if self.route_snooze_key(key, outcome) {
+            return;
+        }
         if matches!(self.overlay, Some(ClientShellOverlay::Onboarding)) {
             if matches!(
                 key.code,
@@ -1111,7 +1114,7 @@ impl ClientShellState {
         self.open_close_confirmation(workspace_id, None, None);
     }
 
-    fn open_close_confirmation(
+    pub(super) fn open_close_confirmation(
         &mut self,
         workspace_id: String,
         tab_id: Option<String>,

@@ -507,24 +507,44 @@ fn clicking_a_row_opens_it_and_returns_focus_to_the_panes() {
     ));
 }
 
-fn agents_only_state() -> (ClientShellState, Vec<String>) {
+fn agents_only_state_with(snapshot: ClientShellSnapshot) -> (ClientShellState, Vec<String>) {
     let mut config = Config::default();
     config.ui.sidebar.agents_only = true;
     let mut state = ClientShellState::new(ClientShellConfig::from_config(&config));
-    state.set_snapshot(Box::new(agents_snapshot()));
+    state.set_snapshot(Box::new(snapshot));
     state.set_pane_surface(surface());
     let frame = state.compose(100, 28).expect("frame");
     (state, frame_rows(&frame))
 }
 
+/// ws_1 wartet (`claude`, blocked), ws_2 arbeitet (`codex`).
+fn agents_only_state() -> (ClientShellState, Vec<String>) {
+    agents_only_state_with(agents_snapshot())
+}
+
+fn hit_panes(state: &ClientShellState) -> Vec<&str> {
+    state
+        .hits
+        .agents
+        .iter()
+        .map(|(_, pane_id)| pane_id.as_str())
+        .collect()
+}
+
+fn home() -> String {
+    crate::worktree::expand_tilde_path("~")
+        .to_string_lossy()
+        .into_owned()
+}
+
 #[test]
-fn agents_only_sidebar_hides_spaces_and_numbers() {
+fn agents_only_sidebar_lists_waiting_chats_without_spaces() {
     let (state, rows) = agents_only_state();
     assert!(state.hits.workspaces.is_empty());
-    assert_eq!(state.hits.agents.len(), 2);
-    assert!(rows[0].contains("┌ agents "), "{}", rows[0]);
+    assert_eq!(hit_panes(&state), ["pane_1"]);
+    assert!(rows[0].contains("┌ chats "), "{}", rows[0]);
     assert!(rows.iter().all(|row| !row.contains("spaces")));
-    assert!(rows.iter().all(|row| !row.contains("2 agents")));
+    assert!(rows.iter().all(|row| !row.contains("codex")));
     let footer = &rows[27];
     assert!(
         footer.contains(" new ") && footer.contains(" menu "),
@@ -543,25 +563,107 @@ fn agents_only_sidebar_keeps_focus_on_agents() {
 }
 
 #[test]
-fn agents_only_new_opens_a_tab_in_home() {
+fn h_toggles_between_waiting_and_hidden_chats() {
+    let (mut state, _) = agents_only_state();
+    focus_sidebar(&mut state);
+    assert_eq!(agent_cursor(&state), Some("pane_1"));
+
+    press(&mut state, b"h");
+    let rows = frame_rows(&state.compose(100, 28).expect("frame"));
+    assert!(rows[0].contains("┌ hidden "), "{}", rows[0]);
+    assert_eq!(hit_panes(&state), ["pane_2"]);
+    assert_eq!(agent_cursor(&state), Some("pane_2"));
+
+    press(&mut state, b"h");
+    state.compose(100, 28).expect("frame");
+    assert_eq!(hit_panes(&state), ["pane_1"]);
+}
+
+#[test]
+fn snoozed_chats_move_to_the_hidden_view() {
+    let mut snapshot = agents_snapshot();
+    snapshot.agents[1].agent_status = AgentStatus::Idle;
+    snapshot.workspaces[1].snoozed_until = Some(crate::workspace::unix_millis_now() + 3_600_000);
+    let (mut state, _) = agents_only_state_with(snapshot);
+    assert_eq!(hit_panes(&state), ["pane_1"]);
+
+    focus_sidebar(&mut state);
+    press(&mut state, b"h");
+    let rows = frame_rows(&state.compose(100, 28).expect("frame"));
+    assert_eq!(hit_panes(&state), ["pane_2"]);
+    assert!(rows
+        .iter()
+        .any(|row| row.contains("second") && row.contains(" 1h")));
+}
+
+#[test]
+fn chats_sort_by_waiting_time_and_s_flips_the_order() {
+    let mut snapshot = agents_snapshot();
+    snapshot.agents[1].agent_status = AgentStatus::Done;
+    snapshot.workspaces[0].attention_since = Some(2_000);
+    snapshot.workspaces[1].attention_since = Some(1_000);
+    let (mut state, rows) = agents_only_state_with(snapshot);
+    assert_eq!(hit_panes(&state), ["pane_2", "pane_1"]);
+    assert!(rows[0].contains(" oldest "), "{}", rows[0]);
+
+    focus_sidebar(&mut state);
+    press(&mut state, b"s");
+    let rows = frame_rows(&state.compose(100, 28).expect("frame"));
+    assert_eq!(hit_panes(&state), ["pane_1", "pane_2"]);
+    assert!(rows[0].contains(" newest "), "{}", rows[0]);
+}
+
+#[test]
+fn chat_without_agent_is_listed_by_its_space() {
+    let mut snapshot = agents_snapshot();
+    snapshot.agents.truncate(1);
+    let (state, rows) = agents_only_state_with(snapshot);
+    assert_eq!(hit_panes(&state), ["pane_1", "pane_2"]);
+    assert!(rows.iter().any(|row| row.contains("second")));
+}
+
+#[test]
+fn closing_a_chat_closes_its_space() {
+    let (mut state, _) = agents_only_state();
+    focus_sidebar(&mut state);
+    press(&mut state, b"d");
+    let outcome = press(&mut state, b"d");
+    assert!(matches!(
+        methods(&outcome).as_slice(),
+        [Method::WorkspaceClose(params)] if params.workspace_id == "ws_1" && !params.close_group
+    ));
+}
+
+#[test]
+fn closing_a_working_chat_asks_first() {
+    let (mut state, _) = agents_only_state();
+    focus_sidebar(&mut state);
+    press(&mut state, b"h");
+    press(&mut state, b"d");
+    let outcome = press(&mut state, b"d");
+    assert!(methods(&outcome).is_empty());
+    assert!(matches!(
+        state.overlay,
+        Some(ClientShellOverlay::ConfirmClose(_))
+    ));
+}
+
+#[test]
+fn agents_only_new_opens_a_chat_in_home() {
     let (mut state, _) = agents_only_state();
     focus_sidebar(&mut state);
     let outcome = press(&mut state, b"n");
-    let home = crate::worktree::expand_tilde_path("~")
-        .to_string_lossy()
-        .into_owned();
+    let home = home();
     assert!(matches!(
         methods(&outcome).as_slice(),
-        [Method::TabCreate(params)]
-            if params.focus
-                && params.workspace_id.as_deref() == Some("ws_1")
-                && params.cwd.as_deref() == Some(home.as_str())
+        [Method::WorkspaceCreate(params)]
+            if params.focus && params.cwd.as_deref() == Some(home.as_str())
     ));
     assert_eq!(state.mode, ClientShellMode::Terminal);
 }
 
 #[test]
-fn agents_only_new_button_opens_a_tab_in_home() {
+fn agents_only_new_button_opens_a_chat_in_home() {
     let (mut state, _) = agents_only_state();
     let new = state.hits.new_workspace;
     assert!(!new.is_empty());
@@ -579,6 +681,85 @@ fn agents_only_new_button_opens_a_tab_in_home() {
     outcome.actions.extend(up.actions);
     assert!(matches!(
         methods(&outcome).as_slice(),
-        [Method::TabCreate(params)] if params.cwd.is_some()
+        [Method::WorkspaceCreate(params)] if params.cwd.is_some()
     ));
+}
+
+#[test]
+fn chat_status_and_label_come_from_the_agent_in_the_first_tab() {
+    let mut snapshot = agents_snapshot();
+    let mut tab = snapshot.tabs[0].clone();
+    tab.tab_id = "tab_3".into();
+    tab.number = 2;
+    snapshot.tabs.push(tab);
+    let mut pane = snapshot.panes[0].clone();
+    pane.pane_id = "pane_3".into();
+    pane.tab_id = "tab_3".into();
+    snapshot.panes.push(pane);
+    let mut side_agent = snapshot.agents[1].clone();
+    side_agent.pane_id = "pane_3".into();
+    side_agent.workspace_id = "ws_1".into();
+    side_agent.tab_id = "tab_3".into();
+    snapshot.agents.push(side_agent);
+    snapshot.agents[0].terminal_title_stripped = Some("fix login bug".into());
+
+    let rows = crate::client::shell::chats::chat_rows(&snapshot);
+    let chat = rows
+        .iter()
+        .find(|row| row.workspace_id == "ws_1")
+        .expect("chat");
+    assert_eq!(chat.pane_id, "pane_1");
+    assert_eq!(chat.status, AgentStatus::Blocked);
+    assert_eq!(chat.label, "fix login bug");
+
+    snapshot.workspaces[0].custom_label = true;
+    snapshot.workspaces[0].label = "login".into();
+    let rows = crate::client::shell::chats::chat_rows(&snapshot);
+    assert_eq!(rows[0].label, "login");
+}
+
+#[test]
+fn z_snoozes_the_chat_under_the_cursor() {
+    let (mut state, _) = agents_only_state();
+    focus_sidebar(&mut state);
+    press(&mut state, b"z");
+    assert!(matches!(state.overlay, Some(ClientShellOverlay::Snooze(_))));
+
+    let before = crate::workspace::unix_millis_now();
+    let outcome = press(&mut state, b"1");
+    assert!(state.overlay.is_none());
+    assert!(matches!(
+        methods(&outcome).as_slice(),
+        [Method::WorkspaceSnooze(params)]
+            if params.workspace_id == "ws_1"
+                && params.until.is_some_and(|until| until >= before + 3_600_000)
+    ));
+}
+
+#[test]
+fn z_then_u_clears_a_snooze() {
+    let mut snapshot = agents_snapshot();
+    snapshot.workspaces[0].snoozed_until = Some(crate::workspace::unix_millis_now() + 60_000);
+    let (mut state, _) = agents_only_state_with(snapshot);
+    focus_sidebar(&mut state);
+    press(&mut state, b"h");
+    assert_eq!(agent_cursor(&state), Some("pane_1"));
+    press(&mut state, b"z");
+    let outcome = press(&mut state, b"u");
+    assert!(matches!(
+        methods(&outcome).as_slice(),
+        [Method::WorkspaceSnooze(params)] if params.workspace_id == "ws_1" && params.until.is_none()
+    ));
+}
+
+#[test]
+fn hidden_view_ends_with_sidebar_focus() {
+    let (mut state, _) = agents_only_state();
+    focus_sidebar(&mut state);
+    press(&mut state, b"h");
+    press(&mut state, b"\x1b");
+    state.compose(100, 28).expect("frame");
+    assert_eq!(hit_panes(&state), ["pane_1"]);
+    focus_sidebar(&mut state);
+    assert!(!state.sidebar_focus.show_hidden);
 }

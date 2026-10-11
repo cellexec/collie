@@ -80,6 +80,9 @@ pub(crate) fn render_client_overlay(
             worktree_overlays::render_worktree_remove_overlay(b, v, p)
         }
         ClientShellOverlay::AgentCommands(v) => render_agent_commands_overlay(b, v, p),
+        ClientShellOverlay::Snooze(v) => {
+            render_picker_overlay(b, " snooze ", &v.labels(), v.highlighted, p)
+        }
         ClientShellOverlay::ContextMenu(_) | ClientShellOverlay::GlobalMenu(_) => None,
     }
 }
@@ -1338,8 +1341,6 @@ fn render_agent_commands_overlay(
     picker: &ClientAgentCommandsOverlay,
     palette: &Palette,
 ) -> Option<OverlayRender> {
-    let screen = buffer.area;
-    let title = " start agent ";
     let labels = picker
         .labels
         .iter()
@@ -1352,6 +1353,24 @@ fn render_agent_commands_overlay(
             }
         })
         .collect::<Vec<_>>();
+    render_picker_overlay(
+        buffer,
+        " start agent ",
+        &labels,
+        picker.highlighted,
+        palette,
+    )
+}
+
+/// Kleine zentrierte Auswahl mit einer hervorgehobenen Zeile.
+fn render_picker_overlay(
+    buffer: &mut Buffer,
+    title: &str,
+    labels: &[String],
+    highlighted: usize,
+    palette: &Palette,
+) -> Option<OverlayRender> {
+    let screen = buffer.area;
     let width = labels
         .iter()
         .map(|label| UnicodeWidthStr::width(label.as_str()) as u16)
@@ -1385,7 +1404,7 @@ fn render_agent_commands_overlay(
             break;
         }
         let row = Rect::new(inner.x, y, inner.width, 1);
-        let style = if index == picker.highlighted {
+        let style = if index == highlighted {
             Style::default()
                 .fg(panel_contrast_fg(palette))
                 .bg(palette.accent)

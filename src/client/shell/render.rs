@@ -36,6 +36,8 @@ pub(super) struct ModeBarContext {
     pub(super) sidebar_section: super::sidebar_focus::SidebarSection,
     pub(super) sidebar_editing: bool,
     pub(super) sidebar_pending_close: bool,
+    /// collie: Die Sidebar zeigt die Chat-Liste.
+    pub(super) sidebar_chats: bool,
     pub(super) prefix_sequence: Option<ClientPrefixSequence>,
 }
 
@@ -133,6 +135,7 @@ pub(super) fn render_mode_bar(
                         .unwrap_or_else(|| "unset".to_owned())
                 };
                 let section = match context.sidebar_section {
+                    _ if context.sidebar_chats => " CHATS ",
                     super::sidebar_focus::SidebarSection::Spaces => " SPACES ",
                     super::sidebar_focus::SidebarSection::Agents => " AGENTS ",
                 };
@@ -144,6 +147,34 @@ pub(super) fn render_mode_bar(
                         (" keep  ".to_owned(), base),
                         ("esc".to_owned(), key),
                         (" clear".to_owned(), base),
+                    ]);
+                } else if context.sidebar_pending_close && context.sidebar_chats {
+                    segments.extend([
+                        (" ".to_owned(), base),
+                        (label(&navigate.close), key),
+                        (" again closes the chat  ".to_owned(), base),
+                        ("any key".to_owned(), key),
+                        (" cancel".to_owned(), base),
+                    ]);
+                } else if context.sidebar_chats {
+                    segments.extend([
+                        (" ".to_owned(), base),
+                        ("enter".to_owned(), key),
+                        (" open  ".to_owned(), base),
+                        (label(&navigate.new), key),
+                        (" new  ".to_owned(), base),
+                        ("z".to_owned(), key),
+                        (" snooze  ".to_owned(), base),
+                        ("h".to_owned(), key),
+                        (" hidden  ".to_owned(), base),
+                        (label(&navigate.sort), key),
+                        (" sort  ".to_owned(), base),
+                        (format!("{0}{0}", label(&navigate.close)), key),
+                        (" close  ".to_owned(), base),
+                        (label(&navigate.filter), key),
+                        (" filter  ".to_owned(), base),
+                        ("esc".to_owned(), key),
+                        (" back".to_owned(), base),
                     ]);
                 } else if context.sidebar_pending_close {
                     segments.extend([

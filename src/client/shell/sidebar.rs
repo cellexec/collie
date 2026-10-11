@@ -504,13 +504,14 @@ fn render_agents_only_sidebar(
         Rect::new(area.right().saturating_sub(1), area.y, 1, area.height)
     };
     let agent_area = Rect::new(area.x, area.y, area.width.saturating_sub(1), area.height);
-    super::render_agent_panel(
+    super::super::chats::render_chat_panel(
         buffer,
         agent_area,
         snapshot,
         config,
         state.sidebar,
         state.active_endpoint_id,
+        config.chat_newest_first,
         state.agent_scroll,
         hits,
     );
@@ -613,44 +614,14 @@ fn render_collapsed_agents_only_sidebar(
         area.width.saturating_sub(1),
         area.height.saturating_sub(1),
     );
-    for (index, pane_id) in super::ordered_agent_pane_ids(snapshot, config.agent_panel_sort)
-        .into_iter()
-        .take(content.height as usize)
-        .enumerate()
-    {
-        let Some(agent) = snapshot
-            .agents
-            .iter()
-            .find(|agent| agent.pane_id == pane_id)
-        else {
-            continue;
-        };
-        let rect = Rect::new(content.x, content.y + index as u16, content.width, 1);
-        if agent.focused {
-            buffer.set_style(rect, Style::default().bg(palette.active_row_bg));
-        }
-        put_text(
-            buffer,
-            rect.x,
-            rect.y,
-            rect.width.min(2),
-            &format!("{:<2}", index + 1),
-            Style::default().fg(if agent.focused {
-                palette.text
-            } else {
-                palette.overlay0
-            }),
-        );
-        put_text(
-            buffer,
-            rect.x.saturating_add(2),
-            rect.y,
-            rect.width.saturating_sub(2),
-            status_icon(agent.agent_status, config.status_indicators),
-            Style::default().fg(status_color(agent.agent_status, palette)),
-        );
-        hits.agents.push((rect, pane_id));
-    }
+    super::super::chats::render_collapsed_chats(
+        buffer,
+        content,
+        snapshot,
+        config,
+        config.chat_newest_first,
+        hits,
+    );
     hits.sidebar_toggle = if content.width == 0 || area.height == 0 {
         Rect::default()
     } else {

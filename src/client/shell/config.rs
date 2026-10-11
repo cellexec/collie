@@ -59,6 +59,7 @@ impl ClientShellState {
             agent_panel_sort: self
                 .agent_panel_sort_manual
                 .then_some(self.config.agent_panel_sort),
+            chat_newest_first: self.config.chat_newest_first.then_some(true),
             collapsed_groups,
             remote_collapsed_groups,
         };
@@ -124,6 +125,7 @@ impl ClientShellConfig {
             spaces: config.ui.sidebar.spaces.clone(),
             agent_commands: config.ui.sidebar.agent_commands.clone(),
             sidebar_agents_only: config.ui.sidebar.agents_only,
+            chat_newest_first: false,
             agents: config.ui.sidebar.agents.clone(),
             agent_panel_sort: config.ui.agent_panel_sort,
             status_indicators: config.ui.status_indicators,
