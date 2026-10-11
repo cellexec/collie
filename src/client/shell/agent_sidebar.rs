@@ -59,9 +59,16 @@ pub(super) fn render_agent_panel(
     agent_scroll: &mut usize,
     hits: &mut ShellHitMap,
 ) {
+    // collie: Ohne Spaces-Sektion braucht der Rahmen keine Nummer.
+    let title = if config.sidebar_agents_only {
+        " agents "
+    } else {
+        AGENTS_SECTION_TITLE
+    };
     if !render_agent_panel_header(
         buffer,
         area,
+        title,
         snapshot.agent_view_label.as_deref(),
         view,
         config,
@@ -100,9 +107,12 @@ pub(super) fn render_agent_panel(
     );
 }
 
+pub(super) const AGENTS_SECTION_TITLE: &str = " 2 agents ";
+
 pub(super) fn render_agent_panel_header(
     buffer: &mut Buffer,
     area: Rect,
+    title: &str,
     agent_view_label: Option<&str>,
     view: super::sidebar_focus::SidebarRenderView<'_>,
     config: &ClientShellConfig,
@@ -112,14 +122,7 @@ pub(super) fn render_agent_panel_header(
         return false;
     }
     let active = view.section_active(super::sidebar_focus::SidebarSection::Agents);
-    super::render::sidebar::render_section_box(
-        buffer,
-        area,
-        " 2 agents ",
-        active,
-        None,
-        &config.palette,
-    );
+    super::render::sidebar::render_section_box(buffer, area, title, active, None, &config.palette);
     let sort_label = format!(
         " {} ",
         agent_view_label.unwrap_or(match config.agent_panel_sort {
@@ -155,7 +158,7 @@ pub(super) fn render_agent_panel_header(
     );
     if let Some(filter) = view.filter_label(super::sidebar_focus::SidebarSection::Agents) {
         let label = format!(" {filter} ");
-        let title_end = area.x + 1 + display_width(" 2 agents ") as u16;
+        let title_end = area.x + 1 + display_width(title) as u16;
         let available = sort_rect.x.saturating_sub(title_end + 1);
         if available > 2 {
             let width = (display_width(&label) as u16).min(available);

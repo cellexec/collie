@@ -2050,6 +2050,10 @@ impl ClientShellState {
                     outcome.repaint = true;
                     return;
                 }
+                if super::contains(self.hits.new_workspace, point) && self.spaces_hidden() {
+                    self.open_agent_commands(outcome);
+                    return;
+                }
                 if super::contains(self.hits.new_workspace, point) {
                     self.record_binding(
                         crate::input::KeybindMatch::Action(

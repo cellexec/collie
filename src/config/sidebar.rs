@@ -482,6 +482,9 @@ pub struct SidebarConfig {
     pub spaces: SpacesSidebarConfig,
     /// Commands offered by `n` in the focused agents section.
     pub agent_commands: Vec<AgentCommandConfig>,
+    /// collie: Mit einem Server die Spaces ausblenden und nur die
+    /// Agents-Liste zeigen. `n` öffnet neue Tabs dann in `$HOME`.
+    pub agents_only: bool,
 }
 
 /// One entry of `[[ui.sidebar.agent_commands]]`.

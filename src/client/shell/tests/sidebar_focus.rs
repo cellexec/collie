@@ -506,3 +506,79 @@ fn clicking_a_row_opens_it_and_returns_focus_to_the_panes() {
         [Method::WorkspaceFocus(target)] if target.workspace_id == "ws_2"
     ));
 }
+
+fn agents_only_state() -> (ClientShellState, Vec<String>) {
+    let mut config = Config::default();
+    config.ui.sidebar.agents_only = true;
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&config));
+    state.set_snapshot(Box::new(agents_snapshot()));
+    state.set_pane_surface(surface());
+    let frame = state.compose(100, 28).expect("frame");
+    (state, frame_rows(&frame))
+}
+
+#[test]
+fn agents_only_sidebar_hides_spaces_and_numbers() {
+    let (state, rows) = agents_only_state();
+    assert!(state.hits.workspaces.is_empty());
+    assert_eq!(state.hits.agents.len(), 2);
+    assert!(rows[0].contains("┌ agents "), "{}", rows[0]);
+    assert!(rows.iter().all(|row| !row.contains("spaces")));
+    assert!(rows.iter().all(|row| !row.contains("2 agents")));
+    let footer = &rows[27];
+    assert!(
+        footer.contains(" new ") && footer.contains(" menu "),
+        "{footer}"
+    );
+}
+
+#[test]
+fn agents_only_sidebar_keeps_focus_on_agents() {
+    let (mut state, _) = agents_only_state();
+    focus_sidebar(&mut state);
+    let agents = crate::client::shell::sidebar_focus::SidebarSection::Agents;
+    assert_eq!(state.sidebar_focus.section, agents);
+    press(&mut state, b"1");
+    assert_eq!(state.sidebar_focus.section, agents);
+}
+
+#[test]
+fn agents_only_new_opens_a_tab_in_home() {
+    let (mut state, _) = agents_only_state();
+    focus_sidebar(&mut state);
+    let outcome = press(&mut state, b"n");
+    let home = crate::worktree::expand_tilde_path("~")
+        .to_string_lossy()
+        .into_owned();
+    assert!(matches!(
+        methods(&outcome).as_slice(),
+        [Method::TabCreate(params)]
+            if params.focus
+                && params.workspace_id.as_deref() == Some("ws_1")
+                && params.cwd.as_deref() == Some(home.as_str())
+    ));
+    assert_eq!(state.mode, ClientShellMode::Terminal);
+}
+
+#[test]
+fn agents_only_new_button_opens_a_tab_in_home() {
+    let (mut state, _) = agents_only_state();
+    let new = state.hits.new_workspace;
+    assert!(!new.is_empty());
+    let down = mouse(
+        &mut state,
+        crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+        (new.x, new.y),
+    );
+    let up = mouse(
+        &mut state,
+        crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left),
+        (new.x, new.y),
+    );
+    let mut outcome = down;
+    outcome.actions.extend(up.actions);
+    assert!(matches!(
+        methods(&outcome).as_slice(),
+        [Method::TabCreate(params)] if params.cwd.is_some()
+    ));
+}

@@ -291,10 +291,19 @@ impl ClientShellState {
             self.invalidate_pane_surface();
             outcome.resize = true;
         }
+        if self.spaces_hidden() {
+            self.sidebar_focus.section = SidebarSection::Agents;
+        }
         if !self.sidebar_agent_cursor_valid() {
             self.sidebar_focus.agent_cursor = self.focused_sidebar_agent();
         }
         outcome.repaint = true;
+    }
+
+    /// collie: Mit `ui.sidebar.agents_only` und nur einem Server zeigt die
+    /// Sidebar keine Spaces, nur Agents.
+    pub(super) fn spaces_hidden(&self) -> bool {
+        self.config.sidebar_agents_only && self.endpoints.len() <= 1
     }
 
     /// Collapse a drawer sidebar once its focus has gone elsewhere.
@@ -575,6 +584,7 @@ impl ClientShellState {
             Command::MoveUp => self.move_sidebar_workspace(true, outcome),
             Command::Narrower => self.adjust_sidebar_width(false, outcome),
             Command::Wider => self.adjust_sidebar_width(true, outcome),
+            Command::GrowSpaces | Command::GrowAgents if self.spaces_hidden() => {}
             Command::GrowSpaces => self.adjust_sidebar_split(SIDEBAR_SPLIT_STEP, outcome),
             Command::GrowAgents => self.adjust_sidebar_split(-SIDEBAR_SPLIT_STEP, outcome),
             Command::Menu => self.toggle_global_menu(),
@@ -698,6 +708,11 @@ impl ClientShellState {
     }
 
     fn set_sidebar_section(&mut self, section: SidebarSection) {
+        let section = if self.spaces_hidden() {
+            SidebarSection::Agents
+        } else {
+            section
+        };
         self.sidebar_focus.section = section;
         self.sidebar_focus.pending = None;
         match section {

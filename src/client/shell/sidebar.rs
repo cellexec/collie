@@ -52,6 +52,10 @@ pub(crate) fn render_collapsed_sidebar(
     selected_workspace_id: Option<&str>,
     hits: &mut ShellHitMap,
 ) {
+    if config.sidebar_agents_only {
+        render_collapsed_agents_only_sidebar(buffer, area, snapshot, config, hits);
+        return;
+    }
     let palette = &config.palette;
     let selection_background = workspace_selection_background(palette);
     let active_background = workspace_active_background(palette, selected_workspace_id.is_some());
@@ -204,6 +208,10 @@ pub(crate) fn render_sidebar(
     state: &mut ShellRenderState<'_>,
     hits: &mut ShellHitMap,
 ) {
+    if config.sidebar_agents_only {
+        render_agents_only_sidebar(buffer, area, snapshot, config, state, hits);
+        return;
+    }
     let palette = &config.palette;
     render_sidebar_background(buffer, area, palette);
     hits.sidebar_divider = if area.is_empty() {
@@ -475,6 +483,197 @@ pub(crate) fn render_sidebar(
         hits.sidebar_toggle.width,
         "«",
         Style::default().fg(palette.overlay0),
+    );
+}
+
+/// collie: Die Agents-Liste füllt die ganze Sidebar. `new` und `menu` sitzen
+/// in ihrem unteren Rahmen.
+fn render_agents_only_sidebar(
+    buffer: &mut Buffer,
+    area: Rect,
+    snapshot: &ClientShellSnapshot,
+    config: &ClientShellConfig,
+    state: &mut ShellRenderState<'_>,
+    hits: &mut ShellHitMap,
+) {
+    let palette = &config.palette;
+    render_sidebar_background(buffer, area, palette);
+    hits.sidebar_divider = if area.is_empty() {
+        Rect::default()
+    } else {
+        Rect::new(area.right().saturating_sub(1), area.y, 1, area.height)
+    };
+    let agent_area = Rect::new(area.x, area.y, area.width.saturating_sub(1), area.height);
+    super::render_agent_panel(
+        buffer,
+        agent_area,
+        snapshot,
+        config,
+        state.sidebar,
+        state.active_endpoint_id,
+        state.agent_scroll,
+        hits,
+    );
+    hits.sidebar_toggle = Rect::new(
+        area.right().saturating_sub(2),
+        area.bottom().saturating_sub(1),
+        u16::from(area.width > 1),
+        u16::from(area.height > 0),
+    );
+    if config.mouse_capture && agent_area.height >= 3 {
+        render_agents_only_footer(buffer, agent_area, snapshot, palette, hits);
+    }
+    put_text(
+        buffer,
+        hits.sidebar_toggle.x,
+        hits.sidebar_toggle.y,
+        hits.sidebar_toggle.width,
+        "«",
+        Style::default().fg(palette.overlay0),
+    );
+}
+
+/// `new` links, `menu` rechts im unteren Rahmen. Rechts bleiben zwei Spalten
+/// für die Rahmenecke und den Sidebar-Toggle frei.
+fn render_agents_only_footer(
+    buffer: &mut Buffer,
+    area: Rect,
+    snapshot: &ClientShellSnapshot,
+    palette: &Palette,
+    hits: &mut ShellHitMap,
+) {
+    let footer_y = area.bottom().saturating_sub(1);
+    let footer = Rect::new(area.x, footer_y, area.width.saturating_sub(2), 1);
+    hits.new_workspace = Rect::new(
+        footer.x.saturating_add(1),
+        footer_y,
+        5.min(footer.width.saturating_sub(1)),
+        1,
+    );
+    put_text(
+        buffer,
+        footer.x.saturating_add(1),
+        footer_y,
+        footer.width.saturating_sub(1),
+        " new ",
+        Style::default().fg(palette.overlay0),
+    );
+    let attention = super::super::global_menu::global_menu_attention(snapshot);
+    let launcher_width = if attention { 9 } else { 7 }.min(footer.width);
+    hits.global_launcher = Rect::new(
+        footer.right().saturating_sub(launcher_width),
+        footer_y,
+        launcher_width,
+        1,
+    );
+    if attention {
+        let start_x = footer.right().saturating_sub(7);
+        put_text(
+            buffer,
+            start_x,
+            footer_y,
+            2,
+            "● ",
+            Style::default()
+                .fg(palette.accent)
+                .add_modifier(Modifier::BOLD),
+        );
+        put_text(
+            buffer,
+            start_x.saturating_add(2),
+            footer_y,
+            5,
+            "menu ",
+            Style::default().fg(palette.overlay0),
+        );
+    } else {
+        put_right_text(
+            buffer,
+            footer,
+            footer_y,
+            " menu ",
+            Style::default().fg(palette.overlay0),
+        );
+    }
+}
+
+/// collie: Eingeklappt zeigt die Sidebar ebenfalls nur Agents.
+fn render_collapsed_agents_only_sidebar(
+    buffer: &mut Buffer,
+    area: Rect,
+    snapshot: &ClientShellSnapshot,
+    config: &ClientShellConfig,
+    hits: &mut ShellHitMap,
+) {
+    let palette = &config.palette;
+    render_sidebar_background(buffer, area, palette);
+    let content = Rect::new(
+        area.x,
+        area.y,
+        area.width.saturating_sub(1),
+        area.height.saturating_sub(1),
+    );
+    for (index, pane_id) in super::ordered_agent_pane_ids(snapshot, config.agent_panel_sort)
+        .into_iter()
+        .take(content.height as usize)
+        .enumerate()
+    {
+        let Some(agent) = snapshot
+            .agents
+            .iter()
+            .find(|agent| agent.pane_id == pane_id)
+        else {
+            continue;
+        };
+        let rect = Rect::new(content.x, content.y + index as u16, content.width, 1);
+        if agent.focused {
+            buffer.set_style(rect, Style::default().bg(palette.active_row_bg));
+        }
+        put_text(
+            buffer,
+            rect.x,
+            rect.y,
+            rect.width.min(2),
+            &format!("{:<2}", index + 1),
+            Style::default().fg(if agent.focused {
+                palette.text
+            } else {
+                palette.overlay0
+            }),
+        );
+        put_text(
+            buffer,
+            rect.x.saturating_add(2),
+            rect.y,
+            rect.width.saturating_sub(2),
+            status_icon(agent.agent_status, config.status_indicators),
+            Style::default().fg(status_color(agent.agent_status, palette)),
+        );
+        hits.agents.push((rect, pane_id));
+    }
+    hits.sidebar_toggle = if content.width == 0 || area.height == 0 {
+        Rect::default()
+    } else {
+        Rect::new(
+            content.x + content.width / 2,
+            area.bottom().saturating_sub(1),
+            1,
+            1,
+        )
+    };
+    put_text(
+        buffer,
+        hits.sidebar_toggle.x,
+        hits.sidebar_toggle.y,
+        hits.sidebar_toggle.width,
+        "»",
+        if super::super::global_menu::global_menu_attention(snapshot) {
+            Style::default()
+                .fg(palette.accent)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(palette.overlay0)
+        },
     );
 }
 

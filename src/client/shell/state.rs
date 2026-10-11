@@ -23,6 +23,7 @@ pub(crate) struct ClientShellConfig {
     pub(super) spaces: SpacesSidebarConfig,
     pub(super) agents: crate::config::AgentsSidebarConfig,
     pub(super) agent_commands: Vec<crate::config::AgentCommandConfig>,
+    pub(super) sidebar_agents_only: bool,
     pub(super) agent_panel_sort: crate::config::AgentPanelSortConfig,
     pub(super) status_indicators: crate::config::StatusIndicatorStyle,
     pub(super) sound_enabled: bool,

@@ -56,6 +56,7 @@ pub(super) fn render_expanded(
     if !super::agent_sidebar::render_agent_panel_header(
         buffer,
         area,
+        super::agent_sidebar::AGENTS_SECTION_TITLE,
         agent_view_label,
         view,
         config,
