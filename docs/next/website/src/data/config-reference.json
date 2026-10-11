@@ -1067,6 +1067,12 @@
           "description": "Lines to scroll per mouse wheel notch."
         },
         {
+          "key": "ui.copy_mode_scrolloff",
+          "type": "integer",
+          "default": "0",
+          "description": "Rows of context copy mode keeps above and below the cursor, like Vim's scrolloff."
+        },
+        {
           "key": "ui.confirm_close",
           "type": "boolean",
           "default": "true",

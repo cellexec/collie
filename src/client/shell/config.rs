@@ -153,6 +153,7 @@ impl ClientShellConfig {
             confirm_close: config.ui.confirm_close,
             mouse_capture: config.ui.mouse_capture,
             mouse_scroll_lines: config.ui.mouse_scroll_lines(),
+            copy_mode_scrolloff: config.ui.copy_mode_scrolloff,
             right_click_passthrough_modifiers: config.ui.right_click_passthrough_modifiers(),
             redraw_on_focus_gained: config.ui.redraw_on_focus_gained,
             switch_ascii_input_source_in_prefix: config
@@ -370,6 +371,7 @@ impl ClientShellConfig {
                 self.confirm_close = ui.confirm_close;
                 self.mouse_capture = ui.mouse_capture;
                 self.mouse_scroll_lines = ui.mouse_scroll_lines();
+                self.copy_mode_scrolloff = ui.copy_mode_scrolloff;
                 self.right_click_passthrough_modifiers = ui.right_click_passthrough_modifiers();
                 self.redraw_on_focus_gained = ui.redraw_on_focus_gained;
             }

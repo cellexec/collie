@@ -607,6 +607,7 @@ impl ClientShellState {
     }
 
     fn reveal_copy_cursor(&mut self, outcome: &mut ClientShellInput, reserve_mode_bar_row: bool) {
+        let scrolloff = self.config.copy_mode_scrolloff;
         let request = self.copy_mode.as_mut().and_then(|copy_mode| {
             let current_top = copy_mode
                 .max_offset_from_bottom
@@ -615,13 +616,16 @@ impl ClientShellState {
                 .geometry
                 .1
                 .saturating_sub(if reserve_mode_bar_row { 2 } else { 1 });
+            // Like Vim's scrolloff: keep this many rows of context between the
+            // cursor and the viewport edges, capped so both margins fit.
+            let margin = scrolloff.min(usize::from(max_cursor_row / 2)) as u32;
             let bottom = current_top.saturating_add(u32::from(max_cursor_row));
-            let desired_top = if copy_mode.cursor.row < current_top {
-                copy_mode.cursor.row
-            } else if copy_mode.cursor.row > bottom {
-                copy_mode
-                    .cursor
-                    .row
+            let cursor_row = copy_mode.cursor.row;
+            let desired_top = if cursor_row < current_top.saturating_add(margin) {
+                cursor_row.saturating_sub(margin)
+            } else if cursor_row.saturating_add(margin) > bottom {
+                cursor_row
+                    .saturating_add(margin)
                     .saturating_sub(u32::from(max_cursor_row))
             } else {
                 current_top

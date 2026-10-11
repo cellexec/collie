@@ -302,6 +302,9 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # Pane scrollback lines to scroll per mouse wheel notch.
 # mouse_scroll_lines = 3
 
+# Rows of context copy mode keeps above and below the cursor, like Vim's scrolloff.
+# copy_mode_scrolloff = 0
+
 # Ask for confirmation before closing a workspace
 # confirm_close = true
 

@@ -1080,6 +1080,8 @@ pub struct UiConfig {
     pub redraw_on_focus_gained: bool,
     /// Lines to scroll per mouse wheel notch. Default: 3.
     pub mouse_scroll_lines: Option<NonZeroUsize>,
+    /// Rows of context copy mode keeps above and below the cursor. Default: 0.
+    pub copy_mode_scrolloff: usize,
     /// Ask for confirmation before closing a workspace. Default: true.
     pub confirm_close: bool,
     /// Ask for a tab name before creating a new tab. Default: true.
@@ -1350,6 +1352,7 @@ impl Default for UiConfig {
             right_click_passthrough_modifier: RightClickPassthroughModifierConfig::default(),
             redraw_on_focus_gained: true,
             mouse_scroll_lines: None,
+            copy_mode_scrolloff: 0,
             confirm_close: true,
             prompt_new_tab_name: true,
             prompt_new_workspace_name: false,

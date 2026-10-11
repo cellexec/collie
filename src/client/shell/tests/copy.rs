@@ -2308,3 +2308,58 @@ fn copy_mode_repeat_during_projection_gap_stays_active() {
         );
     }
 }
+
+#[test]
+fn keyboard_copy_mode_scrolloff_keeps_context_above_the_cursor() {
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.config.copy_mode_scrolloff = 3;
+    state.set_snapshot(Box::new(snapshot()));
+    let mut pane_surface = surface();
+    let rows = ["LINE"; 10];
+    pane_surface.frame =
+        FrameData::from_ratatui_buffer_with_hyperlinks(&Buffer::with_lines(rows), None, &[]);
+    pane_surface.panes[0].rect.height = 10;
+    pane_surface.panes[0].inner_rect.height = 10;
+    pane_surface.panes[0].scroll = Some(crate::protocol::PaneSurfaceScrollMetrics {
+        offset_from_bottom: 0,
+        max_offset_from_bottom: 20,
+        viewport_rows: 10,
+    });
+    state.set_pane_surface(pane_surface);
+    state.compose(106, 20).expect("composed frame");
+
+    let mut enter = ClientShellInput::default();
+    state.record_binding(
+        crate::input::KeybindMatch::Action(crate::input::KeybindAction::CopyMode),
+        &mut enter,
+    );
+    assert_eq!(
+        state.copy_mode.as_ref().map(|mode| mode.cursor.row),
+        Some(29)
+    );
+
+    let up = |state: &mut ClientShellState| {
+        state.handle_raw_events(vec![RawInputEvent::Key(crate::input::TerminalKey::new(
+            KeyCode::Char('k'),
+            KeyModifiers::empty(),
+        ))])
+    };
+    // The viewport shows rows 20..=29; rows 20..=22 are the top margin.
+    for _ in 0..6 {
+        assert!(up(&mut state).actions.is_empty());
+    }
+    let scrolled = up(&mut state);
+    assert_eq!(
+        state.copy_mode.as_ref().map(|mode| mode.cursor.row),
+        Some(22)
+    );
+    assert!(matches!(
+        &scrolled.actions[..],
+        [ClientShellAction::Endpoint { request, .. }]
+            if matches!(
+                &request.method,
+                crate::api::schema::Method::PaneScroll(params)
+                    if params.offset_from_bottom == 1
+            )
+    ));
+}
