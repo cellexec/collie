@@ -131,14 +131,7 @@ impl Config {
     pub fn load() -> LoadedConfig {
         let path = config_path();
         let content = match read_optional_config(&path) {
-            Ok(Some(content)) => content,
-            Ok(None) => {
-                return LoadedConfig {
-                    config: Self::default(),
-                    diagnostics: Vec::new(),
-                    invalid_sections: Vec::new(),
-                };
-            }
+            Ok(content) => super::collie_defaults::layer_under(content.as_deref()),
             Err(err) => {
                 warn!(err = %err, "config read error, using defaults");
                 return LoadedConfig {
@@ -245,14 +238,7 @@ pub fn config_diagnostic_summary(diagnostics: &[String]) -> Option<String> {
 pub fn load_live_config() -> Result<LoadedConfig, Vec<String>> {
     let path = config_path();
     let content = match read_optional_config(&path) {
-        Ok(Some(content)) => content,
-        Ok(None) => {
-            return Ok(LoadedConfig {
-                config: Config::default(),
-                diagnostics: Vec::new(),
-                invalid_sections: Vec::new(),
-            });
-        }
+        Ok(content) => super::collie_defaults::layer_under(content.as_deref()),
         Err(err) => {
             return Err(vec![format!(
                 "config read error: {err}; keeping current config"

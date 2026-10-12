@@ -1,0 +1,24 @@
+# collie: Defaults, die collie über die herdr-Defaults legt. Die Nutzer-Config
+# liegt darüber und gewinnt bei jedem Schlüssel, den sie selbst setzt. Arrays
+# werden nicht gemischt, sondern als Ganzes ersetzt.
+
+[ui]
+status_indicators = "symbols"
+copy_mode_scrolloff = 5
+# Zeigt ZOOM in der Tab-Leiste, solange ein Pane gezoomt ist
+tab_bar_right = [{ type = "zoom" }]
+
+[ui.sidebar]
+agents_only = true
+overlay = true
+
+[keys]
+copy_mode = "prefix+v"
+# tmux-Stil: % teilt links/rechts, $ teilt oben/unten
+split_vertical = "prefix+percent"
+split_horizontal = "prefix+$"
+# tmux-Stil: o springt zum nächsten Pane, f zoomt das Pane
+cycle_pane_next = ["prefix+tab", "prefix+o"]
+zoom = ["prefix+z", "prefix+f"]
+# prefix+o ist Pane-Wechsel, die Benachrichtigung wandert auf O
+open_notification_target = "prefix+shift+o"

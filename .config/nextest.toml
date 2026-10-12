@@ -1,0 +1,11 @@
+# collie: Die Tests prüfen das herdr-Verhalten. HERDR_COLLIE_DEFAULTS=0 schaltet
+# den Layer aus src/config/collie_defaults.toml für alle Testprozesse und die
+# von ihnen gestarteten herdr-Binaries ab.
+experimental = ["setup-scripts"]
+
+[scripts.setup.collie-defaults-off]
+command = ["sh", "-c", "echo HERDR_COLLIE_DEFAULTS=0 >> \"$NEXTEST_ENV\""]
+
+[[profile.default.scripts]]
+filter = "all()"
+setup = "collie-defaults-off"

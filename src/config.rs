@@ -1,5 +1,6 @@
 use crossterm::event::{KeyCode, KeyModifiers};
 
+mod collie_defaults;
 mod io;
 mod keybinds;
 mod model;
