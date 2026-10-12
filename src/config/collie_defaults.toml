@@ -5,12 +5,22 @@
 [ui]
 status_indicators = "symbols"
 copy_mode_scrolloff = 5
-# Zeigt ZOOM in der Tab-Leiste, solange ein Pane gezoomt ist
-tab_bar_right = [{ type = "zoom" }]
+# Verzeichnis, Modell und Kontext des fokussierten Chats, dazu ZOOM, solange
+# ein Pane gezoomt ist
+tab_bar_right = [{ type = "chat" }, { type = "zoom" }]
+
+[ui.toast]
+# Hinweis innerhalb von collie, wenn ein Chat im Hintergrund fertig wird oder
+# blockiert
+delivery = "herdr"
 
 [ui.sidebar]
 agents_only = true
 overlay = true
+
+[session]
+# Gespeicherte Chats starten nach einem Neustart erst, wenn man sie öffnet
+resume_agents_lazily = true
 
 [keys]
 copy_mode = "prefix+v"
@@ -22,3 +32,12 @@ cycle_pane_next = ["prefix+tab", "prefix+o"]
 zoom = ["prefix+z", "prefix+f"]
 # prefix+o ist Pane-Wechsel, die Benachrichtigung wandert auf O
 open_notification_target = "prefix+shift+o"
+
+# Suche über alle Claude-Chats
+[[keys.command]]
+key = "prefix+slash"
+type = "popup"
+command = "herdr chat search"
+description = "search chats"
+width = "90%"
+height = "90%"

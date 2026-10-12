@@ -32,6 +32,20 @@ pub struct WorkspaceRenameParams {
     pub label: String,
 }
 
+/// collie: Submits the same prompt to the agents in several panes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ChatPromptParams {
+    pub pane_ids: Vec<String>,
+    pub text: String,
+}
+
+/// collie: Starts an orchestrating agent in a new workspace that knows the
+/// chats in these panes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ChatOrchestrateParams {
+    pub pane_ids: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct WorkspaceSnoozeParams {
     pub workspace_id: String,
@@ -99,6 +113,12 @@ pub struct WorkspaceInfo {
     /// Short reason why the agent is blocked, as reported by a hook.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blocked_reason: Option<String>,
+    /// What the agent waits for, for example `Formular: 7 Fragen`, as reported by a hook.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub awaiting: Option<String>,
+    /// Agent in the first tab whose saved resume command has not started yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stopped_agent: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]

@@ -213,10 +213,29 @@ pub struct Workspace {
     pub last_message: Option<String>,
     /// collie: Kurzer Grund, warum der Agent blockiert, gemeldet per Hook.
     pub blocked_reason: Option<String>,
+    /// collie: Chat-Fakten, die nur zur Laufzeit leben.
+    pub chat: ChatRuntime,
     pub tabs: Vec<Tab>,
     pub active_tab: usize,
     #[cfg(test)]
     pub(crate) test_runtimes: HashMap<PaneId, TerminalRuntime>,
+}
+
+/// collie: Chat-Fakten eines Space, die Hooks melden und die nicht mit der
+/// Session gespeichert werden.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ChatRuntime {
+    /// Worauf der Agent wartet, etwa `Formular: 7 Fragen`. Gelöscht, sobald
+    /// der Agent in Tab 1 wieder arbeitet.
+    pub awaiting: Option<String>,
+    /// Arbeitsverzeichnis des Agents.
+    pub cwd: Option<String>,
+    /// Anzeigename des Modells, etwa `Opus 5.5`.
+    pub model: Option<String>,
+    /// Belegter Kontext in Tokens.
+    pub context_tokens: Option<u64>,
+    /// Größe des Kontextfensters in Tokens.
+    pub context_window: Option<u64>,
 }
 
 /// Wanduhrzeit in Unix-Millisekunden für Session-Zeitstempel.
@@ -292,6 +311,7 @@ impl Workspace {
             attention_seen: true,
             last_message: None,
             blocked_reason: None,
+            chat: ChatRuntime::default(),
             tabs: vec![tab],
             active_tab: 0,
             #[cfg(test)]
@@ -450,6 +470,7 @@ impl Workspace {
                 attention_seen: true,
                 last_message: None,
                 blocked_reason: None,
+                chat: ChatRuntime::default(),
                 tabs: vec![tab],
                 active_tab: 0,
                 #[cfg(test)]
@@ -1245,6 +1266,7 @@ impl Workspace {
             attention_seen: true,
             last_message: None,
             blocked_reason: None,
+            chat: ChatRuntime::default(),
             tabs: vec![tab],
             active_tab: 0,
             test_runtimes: HashMap::new(),

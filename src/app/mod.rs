@@ -141,6 +141,8 @@ pub struct App {
     pub(crate) agent_metadata_deadline: Option<Instant>,
     pub(crate) pending_agent_resume_deadline: Option<Instant>,
     startup_per_agent_delay: Duration,
+    /// collie: Gespeicherte Agents starten erst, wenn ihr Space aktiv wird.
+    pub(crate) resume_agents_lazily: bool,
     next_agent_resume_at: Option<Instant>,
     pub(crate) session_save_deadline: Option<Instant>,
     pub(crate) session_save_thread: Option<std::thread::JoinHandle<()>>,
@@ -655,6 +657,7 @@ impl App {
             startup_per_agent_delay: Duration::from_millis(
                 config.session.startup_per_agent_delay_ms.into(),
             ),
+            resume_agents_lazily: config.session.resume_agents_lazily,
             next_agent_resume_at: None,
             session_save_deadline: None,
             session_save_thread: None,
@@ -923,6 +926,9 @@ impl App {
             }
         }
 
+        if !invalid_section("session") {
+            self.resume_agents_lazily = config.session.resume_agents_lazily;
+        }
         if !invalid_section("session")
             && Duration::from_millis(config.session.startup_per_agent_delay_ms.into())
                 != self.startup_per_agent_delay
@@ -1452,6 +1458,7 @@ mod tests {
                         pane_id: pane_id.clone(),
                         last_message: last_message.map(str::to_owned),
                         blocked_reason: blocked_reason.map(str::to_owned),
+                        ..Default::default()
                     },
                 ),
             });
@@ -1473,6 +1480,72 @@ mod tests {
         assert_eq!(
             app.state.workspaces[0].last_message.as_deref(),
             Some("Soll ich committen?")
+        );
+    }
+
+    #[test]
+    fn pane_report_chat_sets_title_awaiting_and_context() {
+        let mut app = test_app();
+        app.state
+            .workspaces
+            .push(crate::workspace::Workspace::test_new("chat"));
+        app.state.active = Some(0);
+        let pane_id = app
+            .public_pane_id(0, *app.state.workspaces[0].panes.keys().next().unwrap())
+            .unwrap();
+        let report = |app: &mut App, params: crate::api::schema::PaneReportChatParams| {
+            let response = app.handle_api_request(crate::api::schema::Request {
+                id: "req_chat".into(),
+                method: crate::api::schema::Method::PaneReportChat(
+                    crate::api::schema::PaneReportChatParams {
+                        pane_id: pane_id.clone(),
+                        ..params
+                    },
+                ),
+            });
+            serde_json::from_str::<serde_json::Value>(&response).unwrap()
+        };
+
+        let response = report(
+            &mut app,
+            crate::api::schema::PaneReportChatParams {
+                title: Some("Snooze-Logik umbauen".into()),
+                awaiting: Some("Formular: 3 Fragen".into()),
+                cwd: Some("/srv/collie".into()),
+                model: Some("Opus 5.5".into()),
+                context_tokens: Some(84_000),
+                context_window: Some(1_000_000),
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            response["result"]["workspace"]["label"],
+            "Snooze-Logik umbauen"
+        );
+        assert_eq!(
+            response["result"]["workspace"]["awaiting"],
+            "Formular: 3 Fragen"
+        );
+        let chat = &app.state.workspaces[0].chat;
+        assert_eq!(chat.model.as_deref(), Some("Opus 5.5"));
+        assert_eq!(chat.context_tokens, Some(84_000));
+        assert_eq!(chat.context_window, Some(1_000_000));
+        assert_eq!(
+            app.chat_status_line(0).as_deref(),
+            Some("/srv/collie · Opus 5.5 · 84k/1M")
+        );
+
+        report(
+            &mut app,
+            crate::api::schema::PaneReportChatParams {
+                awaiting: Some(String::new()),
+                ..Default::default()
+            },
+        );
+        assert_eq!(app.state.workspaces[0].chat.awaiting, None);
+        assert_eq!(
+            app.state.workspaces[0].custom_name.as_deref(),
+            Some("Snooze-Logik umbauen")
         );
     }
 

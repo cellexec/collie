@@ -154,6 +154,8 @@ fn workspace_focus_success(id: &str, workspace_id: &str) -> Vec<u8> {
                 attention_seen: None,
                 last_message: None,
                 blocked_reason: None,
+                awaiting: None,
+                stopped_agent: None,
             },
         },
     })

@@ -22,6 +22,8 @@ fn default_command_timeout_seconds() -> u64 {
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum TabBarRightEntryConfig {
     Zoom,
+    /// collie: Verzeichnis, Modell und Kontext des Agents im fokussierten Chat.
+    Chat,
     Hostname,
     Datetime {
         #[serde(default = "default_datetime_format")]
@@ -104,6 +106,7 @@ pub(crate) fn tab_bar_right_diagnostics(entries: &[TabBarRightEntryConfig]) -> V
                 }
             }
             TabBarRightEntryConfig::Zoom
+            | TabBarRightEntryConfig::Chat
             | TabBarRightEntryConfig::Hostname
             | TabBarRightEntryConfig::Text { .. } => {}
         }

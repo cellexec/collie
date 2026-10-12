@@ -399,7 +399,7 @@ pub struct PaneReportAgentSessionParams {
 
 /// collie: Chat facts a hook reports for the agent in a workspace's first tab.
 /// An omitted field stays unchanged; an empty string clears it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PaneReportChatParams {
     pub pane_id: String,
     /// Last line of the agent's latest reply.
@@ -408,6 +408,25 @@ pub struct PaneReportChatParams {
     /// Short reason why the agent waits for the user.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blocked_reason: Option<String>,
+    /// Chat title; becomes the workspace label.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// What the agent waits for, for example `Formular: 7 Fragen`. Cleared
+    /// when the agent starts working again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub awaiting: Option<String>,
+    /// The agent's working directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    /// Display name of the agent's model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Tokens in the agent's context window.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_tokens: Option<u64>,
+    /// Size of the agent's context window in tokens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]

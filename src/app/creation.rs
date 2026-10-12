@@ -415,7 +415,27 @@ impl App {
             attention_seen: Some(ws.attention_seen),
             last_message: ws.last_message.clone(),
             blocked_reason: ws.blocked_reason.clone(),
+            awaiting: ws.chat.awaiting.clone(),
+            stopped_agent: self.stopped_chat_agent(index),
         }
+    }
+
+    /// collie: Agent in Tab 1, dessen gespeicherter Resume-Befehl noch nicht
+    /// gestartet ist. Der Chat gilt so lange als gestoppt.
+    pub(crate) fn stopped_chat_agent(&self, index: usize) -> Option<String> {
+        let tab = self.state.workspaces.get(index)?.tabs.first()?;
+        tab.layout.pane_ids().into_iter().find_map(|pane_id| {
+            let pane = tab.panes.get(&pane_id)?;
+            if self
+                .terminal_runtimes
+                .get(&pane.attached_terminal_id)
+                .is_some()
+            {
+                return None;
+            }
+            let terminal = self.state.terminals.get(&pane.attached_terminal_id)?;
+            Some(terminal.pending_agent_resume_plan.as_ref()?.agent.clone())
+        })
     }
 }
 
@@ -442,4 +462,78 @@ fn terminal_agent_session_info(
             kind: session.session_ref.kind,
             value: session.session_ref.value.clone(),
         })
+}
+
+impl App {
+    /// collie: Statuszeile eines Chats für die Tab-Leiste: Verzeichnis des
+    /// Agents, Modell und Kontextbelegung. Liest nur gespeicherte Werte.
+    pub(crate) fn chat_status_line(&self, index: usize) -> Option<String> {
+        let ws = self.state.workspaces.get(index)?;
+        let cwd = ws.chat.cwd.clone().or_else(|| {
+            let tab = ws.tabs.first()?;
+            let pane = tab.panes.get(&tab.layout.focused())?;
+            let terminal = self.state.terminals.get(&pane.attached_terminal_id)?;
+            Some(terminal.cwd.display().to_string())
+        });
+        let home = std::env::var("HOME").ok();
+        let parts = [
+            cwd.map(|cwd| tilde_path(&cwd, home.as_deref())),
+            ws.chat.model.clone(),
+            ws.chat
+                .context_tokens
+                .map(|tokens| match ws.chat.context_window {
+                    Some(window) => format!("{}/{}", token_count(tokens), token_count(window)),
+                    None => token_count(tokens),
+                }),
+        ];
+        let line = parts.into_iter().flatten().collect::<Vec<_>>().join(" · ");
+        (!line.is_empty()).then_some(line)
+    }
+}
+
+/// collie: Ersetzt das Home-Verzeichnis am Anfang eines Pfads durch `~`.
+fn tilde_path(path: &str, home: Option<&str>) -> String {
+    match home.filter(|home| !home.is_empty()) {
+        Some(home) if path == home => "~".to_owned(),
+        Some(home) => path
+            .strip_prefix(home)
+            .filter(|rest| rest.starts_with('/'))
+            .map_or_else(|| path.to_owned(), |rest| format!("~{rest}")),
+        None => path.to_owned(),
+    }
+}
+
+/// collie: Tokens kurz, etwa `840`, `84k`, `1M` oder `1.5M`.
+fn token_count(tokens: u64) -> String {
+    match tokens {
+        0..=999 => tokens.to_string(),
+        1_000..=999_999 => format!("{}k", tokens / 1_000),
+        _ if tokens.is_multiple_of(1_000_000) => format!("{}M", tokens / 1_000_000),
+        _ => format!("{:.1}M", tokens as f64 / 1_000_000.0),
+    }
+}
+
+#[cfg(test)]
+mod chat_status_tests {
+    use super::{tilde_path, token_count};
+
+    #[test]
+    fn tilde_path_shortens_only_the_home_prefix() {
+        assert_eq!(
+            tilde_path("/home/a/projects", Some("/home/a")),
+            "~/projects"
+        );
+        assert_eq!(tilde_path("/home/a", Some("/home/a")), "~");
+        assert_eq!(tilde_path("/home/ab", Some("/home/a")), "/home/ab");
+        assert_eq!(tilde_path("/tmp", None), "/tmp");
+    }
+
+    #[test]
+    fn token_count_is_short() {
+        assert_eq!(token_count(840), "840");
+        assert_eq!(token_count(84_321), "84k");
+        assert_eq!(token_count(1_000_000), "1M");
+        assert_eq!(token_count(200_000), "200k");
+        assert_eq!(token_count(1_500_000), "1.5M");
+    }
 }

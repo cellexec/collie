@@ -104,6 +104,10 @@ impl App {
 
         let mut pending = Vec::new();
         for (ws_idx, ws) in self.state.workspaces.iter().enumerate() {
+            // collie: Ein gestoppter Chat startet erst, wenn sein Space aktiv ist.
+            if self.resume_agents_lazily && self.state.active != Some(ws_idx) {
+                continue;
+            }
             for (tab_idx, tab) in ws.tabs.iter().enumerate() {
                 for info in
                     self.pending_agent_resume_pane_infos(ws_idx, tab_idx, tab, terminal_area)
@@ -966,5 +970,54 @@ mod tests {
             Some("claude --resume 'session with '\\'' quote'")
         );
         assert_eq!(shell_command_from_argv(&[]), None);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn lazy_resume_waits_until_the_workspace_is_active() {
+        let mut app = test_app();
+        app.resume_agents_lazily = true;
+        app.state.host_terminal_theme = crate::terminal_theme::TerminalTheme {
+            foreground: Some(crate::terminal_theme::RgbColor {
+                r: 220,
+                g: 220,
+                b: 220,
+            }),
+            ..Default::default()
+        };
+        let active = crate::workspace::Workspace::test_new("active");
+        let stopped = crate::workspace::Workspace::test_new("stopped");
+        let stopped_terminal = stopped
+            .terminal_id(stopped.tabs[0].root_pane)
+            .cloned()
+            .unwrap();
+        app.state.workspaces = vec![active, stopped];
+        app.state.active = Some(0);
+        app.state.ensure_test_terminals();
+        app.state.view.terminal_area = ratatui::layout::Rect::new(0, 0, 100, 30);
+        app.state
+            .terminals
+            .get_mut(&stopped_terminal)
+            .expect("test terminal should exist")
+            .pending_agent_resume_plan = Some(crate::agent_resume::AgentResumePlan {
+            agent: "claude".into(),
+            argv: marker_resume_test_argv(),
+            dedupe_key: "herdr:claude\0claude\0Id\0lazy".into(),
+        });
+
+        assert!(!app.start_pending_agent_resumes(Instant::now(), true));
+        assert_eq!(app.stopped_chat_agent(1).as_deref(), Some("claude"));
+        assert_eq!(
+            app.workspace_info(1).stopped_agent.as_deref(),
+            Some("claude")
+        );
+
+        app.state.active = Some(1);
+        assert!(app.start_pending_agent_resumes(Instant::now(), true));
+        assert!(app.terminal_runtimes.get(&stopped_terminal).is_some());
+        assert_eq!(app.stopped_chat_agent(1), None);
+        for (_, runtime) in app.terminal_runtimes.drain() {
+            runtime.shutdown();
+        }
     }
 }

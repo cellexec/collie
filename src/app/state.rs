@@ -783,6 +783,8 @@ pub(crate) struct PaneFocusTarget {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TabBarStatusSegment {
     Zoom,
+    /// collie: Chat-Statuszeile des fokussierten Space.
+    Chat,
     Text(Option<String>),
 }
 

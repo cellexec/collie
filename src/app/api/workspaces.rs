@@ -181,6 +181,37 @@ impl App {
             if let Some(reason) = params.blocked_reason {
                 ws.blocked_reason = chat_text(&reason);
             }
+            if let Some(awaiting) = params.awaiting {
+                ws.chat.awaiting = chat_text(&awaiting);
+            }
+            if let Some(cwd) = params.cwd {
+                ws.chat.cwd = chat_text(&cwd);
+            }
+            if let Some(model) = params.model {
+                ws.chat.model = chat_text(&model);
+            }
+            if let Some(tokens) = params.context_tokens {
+                ws.chat.context_tokens = Some(tokens);
+            }
+            if let Some(window) = params.context_window {
+                ws.chat.context_window = (window > 0).then_some(window);
+            }
+            let title = params
+                .title
+                .as_deref()
+                .and_then(chat_text)
+                .filter(|title| ws.custom_name.as_deref() != Some(title));
+            if let Some(title) = title {
+                ws.set_custom_name(title.clone());
+                crate::logging::workspace_renamed(&ws.id);
+                self.emit_event(EventEnvelope {
+                    event: EventKind::WorkspaceRenamed,
+                    data: EventData::WorkspaceRenamed {
+                        workspace_id: self.public_workspace_id(index),
+                        label: title,
+                    },
+                });
+            }
             self.schedule_session_save();
         }
         encode_success(

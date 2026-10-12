@@ -333,6 +333,10 @@ pub(super) enum ClientRenameTarget {
     Pane {
         pane_id: String,
     },
+    /// collie: Prompt an die Agents dieser Panes.
+    ChatPrompt {
+        pane_ids: Vec<String>,
+    },
 }
 
 #[derive(Debug)]

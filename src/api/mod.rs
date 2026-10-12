@@ -32,6 +32,7 @@ pub(crate) fn request_changes_ui(request: &Request) -> bool {
             | Method::WorkspaceFocus(_)
             | Method::WorkspaceRename(_)
             | Method::WorkspaceSnooze(_)
+            | Method::ChatOrchestrate(_)
             | Method::WorkspaceMove(_)
             | Method::WorkspaceMoveBlock(_)
             | Method::WorkspaceReportMetadata(_)

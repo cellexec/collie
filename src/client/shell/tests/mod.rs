@@ -46,6 +46,8 @@ pub(super) fn snapshot() -> ClientShellSnapshot {
             attention_seen: None,
             last_message: None,
             blocked_reason: None,
+            awaiting: None,
+            stopped_agent: None,
         }],
         tabs: vec![ClientShellTab {
             tab_id: "tab_1".into(),

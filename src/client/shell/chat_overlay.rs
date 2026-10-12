@@ -51,7 +51,7 @@ fn line_color(
     palette: &Palette,
 ) -> ratatui::style::Color {
     let rows = super::chats::visible_chat_rows(snapshot, false, false, "", now);
-    if rows.iter().any(|row| row.status == AgentStatus::Blocked) {
+    if rows.iter().any(super::chats::ChatRow::needs_reply) {
         status_color(AgentStatus::Blocked, palette)
     } else if rows
         .iter()

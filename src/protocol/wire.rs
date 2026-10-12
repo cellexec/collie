@@ -1050,6 +1050,12 @@ pub struct ClientShellWorkspace {
     /// collie: Grund, warum der Agent blockiert.
     #[serde(default)]
     pub blocked_reason: Option<String>,
+    /// collie: Worauf der Agent wartet, etwa `Formular: 7 Fragen`.
+    #[serde(default)]
+    pub awaiting: Option<String>,
+    /// collie: Agent in Tab 1, dessen Resume-Befehl noch nicht gestartet ist.
+    #[serde(default)]
+    pub stopped_agent: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2854,6 +2860,8 @@ mod tests {
                 attention_seen: None,
                 last_message: None,
                 blocked_reason: None,
+                awaiting: None,
+                stopped_agent: None,
             }],
             tabs: vec![ClientShellTab {
                 tab_id: "w1:t1".into(),

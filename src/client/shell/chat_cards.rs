@@ -29,6 +29,7 @@ const ICON_BRANCH: &str = "";
 const ICON_WORKTREE: &str = "";
 const ICON_SNOOZE: &str = "󰒲";
 const ICON_DONE: &str = "";
+const ICON_MARKED: &str = "✓";
 
 /// Ab hier wird die Wartezeit gelb, dann orange.
 const AGE_WARM_MS: u64 = 15 * 60_000;
@@ -88,8 +89,26 @@ pub(super) fn render_chat_cards(
     let (main, hidden) =
         overlay_chat_rows(snapshot, config.chat_newest_first, view.agent_query, now);
     let selected = |row: &ChatRow| view.agent_selected(endpoint_id, &row.pane_id);
+    let marked = |row: &ChatRow| view.agent_marked(endpoint_id, &row.pane_id);
 
     render_header(buffer, area, config, &view, hits);
+    let marks = main.iter().chain(&hidden).filter(|row| marked(row)).count();
+    if marks > 0 {
+        let label = format!("{ICON_MARKED} {marks} marked ");
+        let width = display_width(&label);
+        let x = area
+            .right()
+            .saturating_sub(width)
+            .saturating_sub(display_width(" newest "));
+        put_text(
+            buffer,
+            x,
+            area.y,
+            width,
+            &label,
+            Style::default().fg(palette.green),
+        );
+    }
 
     // Kopfzeile, Leerzeile, Inhalt, Fußzeile mit `new` und `menu`.
     let content = Rect::new(
@@ -123,6 +142,7 @@ pub(super) fn render_chat_cards(
             agent_scroll,
             hits,
             &selected,
+            &marked,
         );
     }
 
@@ -133,7 +153,9 @@ pub(super) fn render_chat_cards(
             content.width,
             hidden_height,
         );
-        render_hidden_section(buffer, section, &hidden, now, palette, hits, &selected);
+        render_hidden_section(
+            buffer, section, &hidden, now, palette, hits, &selected, &marked,
+        );
     }
 }
 
@@ -209,6 +231,7 @@ fn render_main_cards(
     agent_scroll: &mut usize,
     hits: &mut ShellHitMap,
     selected: &impl Fn(&ChatRow) -> bool,
+    marked: &impl Fn(&ChatRow) -> bool,
 ) {
     if body.height < CARD_HEIGHT {
         return;
@@ -232,7 +255,7 @@ fn render_main_cards(
             break;
         }
         let rect = Rect::new(body.x, y, width, CARD_HEIGHT);
-        render_card(buffer, rect, row, selected(row), now, palette);
+        render_card(buffer, rect, row, selected(row), marked(row), now, palette);
         hits.agents.push((rect, row.pane_id.clone()));
         y = y.saturating_add(CARD_HEIGHT + CARD_GAP);
     }
@@ -250,6 +273,7 @@ fn render_card(
     rect: Rect,
     row: &ChatRow,
     selected: bool,
+    marked: bool,
     now: u64,
     palette: &Palette,
 ) {
@@ -264,6 +288,16 @@ fn render_card(
         for y in rect.y..rect.bottom() {
             put_text(buffer, rect.x, y, 1, "▌", base.fg(palette.accent));
         }
+    }
+    if marked {
+        put_text(
+            buffer,
+            rect.x,
+            rect.y,
+            1,
+            ICON_MARKED,
+            base.fg(palette.green),
+        );
     }
     let inner_x = rect.x.saturating_add(2);
     let right = rect.right().saturating_sub(1);
@@ -379,10 +413,37 @@ fn render_card(
         put_part(buffer, x, context_y, right, &shells, muted);
     }
 
-    // Zeile 3: bei Blocked der Grund, sonst die letzte Nachricht.
+    // Zeile 3: bei Blocked der Grund, bei einer offenen Rückfrage deren
+    // Thema, sonst die letzte Nachricht.
     let detail_x = inner_x.saturating_add(2);
     let detail_width = right.saturating_sub(detail_x);
-    if row.status == AgentStatus::Blocked {
+    if row.awaiting_reply() {
+        let awaiting = format!(
+            "wartet auf Antwort: {}",
+            row.awaiting.as_deref().unwrap_or_default()
+        );
+        put_text(
+            buffer,
+            detail_x,
+            rect.y.saturating_add(2),
+            detail_width,
+            &awaiting,
+            base.fg(palette.yellow),
+        );
+    } else if row.stopped {
+        let stopped = match row.last_message.as_deref() {
+            Some(message) => format!("gestoppt: {message}"),
+            None => "gestoppt, enter startet den Agent".to_owned(),
+        };
+        put_text(
+            buffer,
+            detail_x,
+            rect.y.saturating_add(2),
+            detail_width,
+            &stopped,
+            base.fg(palette.overlay0).add_modifier(Modifier::ITALIC),
+        );
+    } else if row.status == AgentStatus::Blocked {
         put_text(
             buffer,
             detail_x,
@@ -451,6 +512,8 @@ fn render_empty(buffer: &mut Buffer, body: Rect, hidden: &[ChatRow], now: u64, p
     }
 }
 
+// Die Zeichen-Helfer dieses Moduls reichen Stil und Treffer einzeln durch.
+#[allow(clippy::too_many_arguments)]
 fn render_hidden_section(
     buffer: &mut Buffer,
     section: Rect,
@@ -459,6 +522,7 @@ fn render_hidden_section(
     palette: &Palette,
     hits: &mut ShellHitMap,
     selected: &impl Fn(&ChatRow) -> bool,
+    marked: &impl Fn(&ChatRow) -> bool,
 ) {
     let running = rows
         .iter()
@@ -494,6 +558,16 @@ fn render_hidden_section(
     for (offset, row) in rows.iter().skip(start).take(visible).enumerate() {
         let rect = Rect::new(body.x, body.y + offset as u16, body.width, 1);
         render_hidden_row(buffer, rect, row, selected(row), now, palette);
+        if marked(row) {
+            put_text(
+                buffer,
+                rect.x,
+                rect.y,
+                1,
+                ICON_MARKED,
+                Style::default().fg(palette.green),
+            );
+        }
         hits.agents.push((rect, row.pane_id.clone()));
     }
 }

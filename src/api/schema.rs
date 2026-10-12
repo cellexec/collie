@@ -87,6 +87,10 @@ pub enum Method {
     WorkspaceRename(WorkspaceRenameParams),
     #[serde(rename = "workspace.snooze")]
     WorkspaceSnooze(WorkspaceSnoozeParams),
+    #[serde(rename = "chat.prompt")]
+    ChatPrompt(ChatPromptParams),
+    #[serde(rename = "chat.orchestrate")]
+    ChatOrchestrate(ChatOrchestrateParams),
     #[serde(rename = "workspace.move")]
     WorkspaceMove(WorkspaceMoveParams),
     #[serde(rename = "workspace.move_block")]

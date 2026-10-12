@@ -1098,6 +1098,13 @@
                 "null"
               ]
             },
+            "awaiting": {
+              "description": "What the agent waits for, for example `Formular: 7 Fragen`, as reported by a hook.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "blocked_reason": {
               "description": "Short reason why the agent is blocked, as reported by a hook.",
               "type": [
@@ -1134,6 +1141,13 @@
               "minimum": 0,
               "type": [
                 "integer",
+                "null"
+              ]
+            },
+            "stopped_agent": {
+              "description": "Agent in the first tab whose saved resume command has not started yet.",
+              "type": [
+                "string",
                 "null"
               ]
             },
@@ -1740,6 +1754,40 @@
           },
           "required": [
             "target"
+          ],
+          "type": "object"
+        },
+        "ChatOrchestrateParams": {
+          "description": "collie: Starts an orchestrating agent in a new workspace that knows the\nchats in these panes.",
+          "properties": {
+            "pane_ids": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "pane_ids"
+          ],
+          "type": "object"
+        },
+        "ChatPromptParams": {
+          "description": "collie: Submits the same prompt to the agents in several panes.",
+          "properties": {
+            "pane_ids": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "pane_ids",
+            "text"
           ],
           "type": "object"
         },
@@ -3048,8 +3096,40 @@
         "PaneReportChatParams": {
           "description": "collie: Chat facts a hook reports for the agent in a workspace's first tab.\nAn omitted field stays unchanged; an empty string clears it.",
           "properties": {
+            "awaiting": {
+              "description": "What the agent waits for, for example `Formular: 7 Fragen`. Cleared\nwhen the agent starts working again.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "blocked_reason": {
               "description": "Short reason why the agent waits for the user.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "context_tokens": {
+              "description": "Tokens in the agent's context window.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "context_window": {
+              "description": "Size of the agent's context window in tokens.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "cwd": {
+              "description": "The agent's working directory.",
               "type": [
                 "string",
                 "null"
@@ -3062,8 +3142,22 @@
                 "null"
               ]
             },
+            "model": {
+              "description": "Display name of the agent's model.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "pane_id": {
               "type": "string"
+            },
+            "title": {
+              "description": "Chat title; becomes the workspace label.",
+              "type": [
+                "string",
+                "null"
+              ]
             }
           },
           "required": [
@@ -5104,6 +5198,38 @@
             },
             "params": {
               "$ref": "#/schemas/request/$defs/WorkspaceSnoozeParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "chat.prompt",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ChatPromptParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "chat.orchestrate",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ChatOrchestrateParams"
             }
           },
           "required": [
@@ -10724,6 +10850,13 @@
                 "null"
               ]
             },
+            "awaiting": {
+              "description": "What the agent waits for, for example `Formular: 7 Fragen`, as reported by a hook.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "blocked_reason": {
               "description": "Short reason why the agent is blocked, as reported by a hook.",
               "type": [
@@ -10760,6 +10893,13 @@
               "minimum": 0,
               "type": [
                 "integer",
+                "null"
+              ]
+            },
+            "stopped_agent": {
+              "description": "Agent in the first tab whose saved resume command has not started yet.",
+              "type": [
+                "string",
                 "null"
               ]
             },

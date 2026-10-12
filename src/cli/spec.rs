@@ -43,6 +43,7 @@ pub(super) fn command() -> Command {
         .subcommand(notification_command())
         .subcommand(agent_command())
         .subcommand(pane_command())
+        .subcommand(chat_command())
         .subcommand(terminal_command())
         .subcommand(session_command())
         .subcommand(integration_command())
@@ -639,6 +640,7 @@ fn pane_command() -> Command {
         .subcommand(report_agent_session_command())
         .subcommand(release_agent_command())
         .subcommand(report_metadata_command())
+        .subcommand(report_chat_command())
 }
 
 fn report_agent_command() -> Command {
@@ -702,6 +704,34 @@ fn report_metadata_command() -> Command {
         .arg(repeatable_option("clear-token", "NAME"))
         .arg(option("seq", "N"))
         .arg(option("ttl-ms", "N"))
+}
+
+/// collie: Befehle rund um Agent-Chats.
+fn chat_command() -> Command {
+    Command::new("chat")
+        .about("Search and open agent chats")
+        .subcommand(
+            Command::new("search")
+                .about("Search all Claude transcripts with fzf and open the chosen chat")
+                .arg(flag("print").help("Print the search lines instead of running fzf")),
+        )
+        .subcommand(
+            Command::new("preview")
+                .about("Print the messages around a search hit")
+                .arg(required("transcript", "TRANSCRIPT"))
+                .arg(required("line", "LINE")),
+        )
+}
+
+/// collie: Chat-Fakten für die Chat-Sidebar.
+fn report_chat_command() -> Command {
+    Command::new("report-chat")
+        .about("Report chat facts for the agent in a workspace's first tab")
+        .arg(required("pane_id", "PANE_ID"))
+        .arg(option("title", "TEXT"))
+        .arg(option("awaiting", "TEXT"))
+        .arg(option("last-message", "TEXT"))
+        .arg(option("blocked-reason", "TEXT"))
 }
 
 fn terminal_command() -> Command {

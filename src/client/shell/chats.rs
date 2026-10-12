@@ -43,6 +43,10 @@ pub(super) struct ChatRow {
     pub(super) unread: bool,
     pub(super) last_message: Option<String>,
     pub(super) blocked_reason: Option<String>,
+    /// Worauf der Agent wartet, etwa `Formular: 7 Fragen`.
+    pub(super) awaiting: Option<String>,
+    /// Der gespeicherte Agent ist noch nicht gestartet.
+    pub(super) stopped: bool,
 }
 
 impl ChatRow {
@@ -53,6 +57,18 @@ impl ChatRow {
     /// Versteckt sind laufende und gesnoozte Chats.
     pub(super) fn hidden(&self, now: u64) -> bool {
         self.status == AgentStatus::Working || self.snoozed(now)
+    }
+
+    /// Der Agent wartet auf eine Antwort, etwa auf ein Formular. Solange er
+    /// arbeitet oder blockiert, zählt sein Status.
+    pub(super) fn awaiting_reply(&self) -> bool {
+        self.awaiting.is_some()
+            && !matches!(self.status, AgentStatus::Working | AgentStatus::Blocked)
+    }
+
+    /// Der Chat braucht den Nutzer dringend: blockiert oder wartet auf Antwort.
+    pub(super) fn needs_reply(&self) -> bool {
+        self.status == AgentStatus::Blocked || self.awaiting_reply()
     }
 }
 
@@ -116,22 +132,27 @@ fn chat_row(snapshot: &ClientShellSnapshot, workspace: &ClientShellWorkspace) ->
         .iter()
         .filter(|tab| tab.workspace_id == workspace.workspace_id && tab.tab_id != first_tab.tab_id)
         .count();
+    // Ein gestoppter Agent kann schon als Agent bekannt sein, etwa mit dem
+    // Namen aus der Session; sein Status zählt erst, wenn er läuft.
+    let stopped_agent = workspace.stopped_agent.clone();
     Some(ChatRow {
         workspace_id: workspace.workspace_id.clone(),
         pane_id,
         status: agent.map_or(AgentStatus::Unknown, |agent| agent.agent_status),
-        has_agent: agent.is_some(),
+        has_agent: agent.is_some() || stopped_agent.is_some(),
         label,
         attention_since: workspace.attention_since.unwrap_or(0),
         snoozed_until: workspace.snoozed_until,
         focused: workspace.focused,
-        agent: agent.and_then(|agent| {
-            agent
-                .display_agent
-                .clone()
-                .or_else(|| agent.agent.clone())
-                .or_else(|| agent.name.clone())
-        }),
+        agent: agent
+            .and_then(|agent| {
+                agent
+                    .display_agent
+                    .clone()
+                    .or_else(|| agent.agent.clone())
+                    .or_else(|| agent.name.clone())
+            })
+            .or_else(|| stopped_agent.clone()),
         repo,
         branch: workspace.branch.clone(),
         ahead_behind: workspace.git_ahead_behind,
@@ -144,6 +165,8 @@ fn chat_row(snapshot: &ClientShellSnapshot, workspace: &ClientShellWorkspace) ->
         unread: workspace.attention_seen == Some(false),
         last_message: workspace.last_message.clone(),
         blocked_reason: workspace.blocked_reason.clone(),
+        awaiting: workspace.awaiting.clone(),
+        stopped: stopped_agent.is_some(),
     })
 }
 
@@ -201,13 +224,29 @@ pub(super) fn snooze_remaining_label(until: u64, now: u64) -> String {
     }
 }
 
-/// Symbol und Stil einer Zeile. Nur „du bist dran" und „arbeitet" haben ein
-/// Symbol.
+/// Symbol eines gestoppten Chats.
+pub(super) const SYMBOL_STOPPED: &str = "■";
+/// Symbol eines Chats, der auf eine Antwort wartet.
+pub(super) const SYMBOL_AWAITING: &str = "?";
+
+/// Symbol und Stil einer Zeile. Nur „du bist dran", „arbeitet" und
+/// „gestoppt" haben ein Symbol.
 pub(super) fn chat_symbol(
     row: &ChatRow,
     now: u64,
     palette: &Palette,
 ) -> Option<(&'static str, Style)> {
+    if row.stopped {
+        return Some((SYMBOL_STOPPED, Style::default().fg(palette.overlay0)));
+    }
+    if row.awaiting_reply() {
+        return Some((
+            SYMBOL_AWAITING,
+            Style::default()
+                .fg(palette.yellow)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
     match row.status {
         AgentStatus::Working => Some((
             spinner_frame(now),

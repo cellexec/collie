@@ -650,7 +650,13 @@ fn render_rename_overlay(
     v: &ClientRenameOverlay,
     p: &Palette,
 ) -> Option<OverlayRender> {
-    let q = popup(b.area, 56, 7)?;
+    // collie: Ein Prompt ist länger als ein Name und bekommt mehr Platz.
+    let width = if matches!(v.target, ClientRenameTarget::ChatPrompt { .. }) {
+        b.area.width.saturating_sub(8).clamp(56, 110)
+    } else {
+        56
+    };
+    let q = popup(b.area, width, 7)?;
     let i = panel(b, q, p.accent, p.panel_bg)?;
     put_text(
         b,
@@ -675,10 +681,15 @@ fn render_rename_overlay(
     let [save, clear, cancel] = rs.as_slice() else {
         return None;
     };
+    let primary = if matches!(v.target, ClientRenameTarget::ChatPrompt { .. }) {
+        " ↵ send "
+    } else {
+        " ↵ save "
+    };
     button(
         b,
         *save,
-        " ↵ save ",
+        primary,
         Style::default()
             .fg(contrast(p))
             .bg(p.accent)

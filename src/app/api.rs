@@ -2,6 +2,7 @@ use std::time::{Duration, Instant};
 
 mod agent_view;
 mod agents;
+mod chats;
 mod env;
 mod integrations;
 mod layouts;
@@ -1200,6 +1201,10 @@ impl App {
             }
             Method::PaneReportChat(params) => {
                 return self.handle_pane_report_chat(request.id, params);
+            }
+            Method::ChatPrompt(params) => return self.handle_chat_prompt(request.id, params),
+            Method::ChatOrchestrate(params) => {
+                return self.handle_chat_orchestrate(request.id, params);
             }
             Method::PaneClearAgentAuthority(params) => {
                 return self.handle_pane_clear_agent_authority(request.id, params);

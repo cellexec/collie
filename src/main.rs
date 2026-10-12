@@ -343,8 +343,9 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # tab_bar_position = "top"
 
 # Ordered status entries at the right edge of the desktop tab bar.
-# Supported types: zoom, hostname, datetime, text, and command.
+# Supported types: zoom, chat, hostname, datetime, text, and command.
 # Hostname, datetime, and command entries resolve on the Herdr server.
+# chat shows directory, model, and context use of the focused chat's agent.
 # tab_bar_right = []
 # tab_bar_right_separator = " "
 
@@ -424,6 +425,9 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # resume_agents_on_restore = true
 # Milliseconds between automatic agent restores; 0 starts them without spacing.
 # startup_per_agent_delay_ms = 100
+# Resume a restored agent only once its workspace becomes active; until then
+# the chat counts as stopped.
+# resume_agents_lazily = false
 
 [remote]
 # Whether herdr manages the ssh config used for `herdr --remote`.

@@ -1041,3 +1041,96 @@ fn chat_cards_show_reported_messages_unread_state_and_runtime() {
     let running = card("pane_2");
     assert!(running[0].contains(" 3m"), "{}", running[0]);
 }
+
+#[test]
+fn chat_cards_show_stopped_and_awaiting_chats() {
+    let mut snapshot = agents_snapshot();
+    // ws_1: der Agent wartet auf ein Formular.
+    snapshot.agents[0].agent_status = AgentStatus::Done;
+    snapshot.workspaces[0].awaiting = Some("Formular: 3 Fragen".into());
+    // ws_2: der Agent ist gespeichert, aber noch nicht gestartet. Der Server
+    // kennt ihn schon mit Namen und altem Status.
+    snapshot.agents[1].agent_status = AgentStatus::Idle;
+    snapshot.workspaces[1].stopped_agent = Some("claude".into());
+    snapshot.workspaces[1].last_message = Some("Tests laufen grün".into());
+
+    let mut state = chat_overlay_state_with(snapshot);
+    focus_sidebar(&mut state);
+    let rows = frame_rows(&state.compose(100, 28).expect("frame"));
+    let card = |pane_id: &str| {
+        let rect = state
+            .hits
+            .agents
+            .iter()
+            .find(|(_, id)| id == pane_id)
+            .map(|(rect, _)| *rect)
+            .expect("card");
+        rows[usize::from(rect.y)..usize::from(rect.y + rect.height)].to_vec()
+    };
+
+    let awaiting = card("pane_1");
+    assert!(awaiting[0].contains('?'), "{}", awaiting[0]);
+    assert!(
+        awaiting[2].contains("wartet auf Antwort: Formular: 3 Fragen"),
+        "{}",
+        awaiting[2]
+    );
+    let stopped = card("pane_2");
+    assert!(stopped[0].contains('■'), "{}", stopped[0]);
+    assert!(stopped[1].contains("codex"), "{}", stopped[1]);
+    assert!(
+        stopped[2].contains("gestoppt: Tests laufen grün"),
+        "{}",
+        stopped[2]
+    );
+}
+
+#[test]
+fn x_marks_chats_and_p_prompts_all_marked_chats() {
+    let mut snapshot = agents_snapshot();
+    snapshot.agents[1].agent_status = AgentStatus::Idle;
+    let mut state = chat_overlay_state_with(snapshot);
+    focus_sidebar(&mut state);
+    assert_eq!(agent_cursor(&state), Some("pane_1"));
+
+    press(&mut state, b"x");
+    assert_eq!(agent_cursor(&state), Some("pane_2"));
+    press(&mut state, b"x");
+    let rows = frame_rows(&state.compose(100, 28).expect("frame"));
+    assert!(rows[0].contains("2 marked"), "{}", rows[0]);
+
+    press(&mut state, b"p");
+    let Some(ClientShellOverlay::Rename(prompt)) = state.overlay.as_ref() else {
+        panic!("prompt overlay");
+    };
+    assert_eq!(
+        prompt.input.as_str(),
+        super::super::chat_marks::WRAP_UP_PROMPT
+    );
+    let outcome = press(&mut state, b"\r");
+    assert!(matches!(
+        methods(&outcome).as_slice(),
+        [Method::ChatPrompt(params)]
+            if params.pane_ids == ["pane_1", "pane_2"]
+                && params.text == super::super::chat_marks::WRAP_UP_PROMPT
+    ));
+    assert!(state.sidebar_focus.marked.is_empty());
+}
+
+#[test]
+fn esc_clears_marks_before_leaving_and_o_orchestrates_the_cursor_chat() {
+    let mut state = chat_overlay_state();
+    focus_sidebar(&mut state);
+    press(&mut state, b"x");
+    press(&mut state, b"\x1b");
+    assert!(state.sidebar_focus.marked.is_empty());
+    assert_eq!(state.mode, ClientShellMode::Navigate);
+
+    press(&mut state, b"k");
+    let outcome = press(&mut state, b"O");
+    assert!(matches!(
+        methods(&outcome).as_slice(),
+        [Method::ChatOrchestrate(params)] if params.pane_ids == ["pane_1"]
+    ));
+    assert_ne!(state.mode, ClientShellMode::Navigate);
+}

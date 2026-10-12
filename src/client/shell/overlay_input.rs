@@ -1022,6 +1022,13 @@ impl ClientShellState {
                     label: Some(trimmed.to_owned()),
                 },
             )),
+            ClientRenameTarget::ChatPrompt { pane_ids } => (!trimmed.is_empty()).then(|| {
+                self.sidebar_focus.marked.clear();
+                crate::api::schema::Method::ChatPrompt(crate::api::schema::ChatPromptParams {
+                    pane_ids,
+                    text: trimmed.to_owned(),
+                })
+            }),
         };
         if let Some(method) = method {
             self.push_endpoint_method(method, outcome);

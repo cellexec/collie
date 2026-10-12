@@ -394,6 +394,7 @@ impl AppState {
         };
         if state == AgentState::Working {
             ws.working_since = Some(now);
+            ws.chat.awaiting = None;
         } else if previous == AgentState::Working {
             // Der Chat wartet ab jetzt auf den Nutzer. Ist er gerade offen,
             // gilt er als gelesen.
@@ -3156,8 +3157,10 @@ mod tests {
         assert!(!state.workspaces[1].attention_seen);
 
         state.workspaces[1].blocked_reason = Some("Bash".into());
+        state.workspaces[1].chat.awaiting = Some("Formular: 2 Fragen".into());
         change(&mut state, 1, AgentState::Working);
         assert_eq!(state.workspaces[1].blocked_reason, None);
+        assert_eq!(state.workspaces[1].chat.awaiting, None);
 
         state.switch_workspace(1);
         assert!(state.workspaces[1].attention_seen);

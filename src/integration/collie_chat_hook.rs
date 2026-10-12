@@ -4,6 +4,8 @@
 //! aus `scripts/collie/claude-chat-hook.sh` ab und trägt ihn für `Stop` und
 //! `Notification` in `settings.json` ein. Er meldet die letzte Nachricht und
 //! den Blocked-Grund per `pane.report_chat`, damit die Chat-Karten gefüllt sind.
+//! Ist noch keine Statusline gesetzt, trägt es den Hook auch als Statusline
+//! ein. Die meldet Verzeichnis, Modell und Kontext für die Chat-Statuszeile.
 //! Der herdr-Teil der Integration bleibt unverändert, damit Upstream-Merges
 //! sauber bleiben.
 
@@ -24,6 +26,8 @@ const CHAT_HOOK_ASSET: &str = include_str!("../../scripts/collie/claude-chat-hoo
 const CHAT_HOOK_TIMEOUT: u64 = 5;
 /// Hook-Event in Claude Code und das Argument, mit dem der Hook es auswertet.
 const CHAT_HOOK_EVENTS: &[(&str, &str)] = &[("Stop", "stop"), ("Notification", "notification")];
+/// Argument, mit dem der Hook als Statusline läuft.
+const STATUS_LINE_ACTION: &str = "status";
 /// Dateiname, unter dem der Hook vor der Integration von Hand eingetragen wurde.
 const LEGACY_HOOK_NAME: &str = "claude-chat-hook.sh";
 
@@ -69,12 +73,13 @@ fn edit_settings(content: &str, hook_path: &Path, installing: bool) -> io::Resul
     let Some(root_object) = root.object_value() else {
         return Err(io::Error::other("claude settings must be a JSON object"));
     };
+    let mut changed = edit_status_line(&root_object, hook_path, installing);
     let hooks = match (root_object.get("hooks"), installing) {
         (Some(_), _) | (None, true) => root_object.object_value_or_set("hooks"),
+        (None, false) if changed => return Ok(root.to_string()),
         (None, false) => return Ok(content.to_string()),
     };
 
-    let mut changed = false;
     for (event, action) in CHAT_HOOK_EVENTS {
         let command = hook_command(hook_path, Some(action));
         let entries = match (hooks.get(event), installing) {
@@ -114,6 +119,58 @@ fn edit_settings(content: &str, hook_path: &Path, installing: bool) -> io::Resul
         root.to_string()
     } else {
         content.to_string()
+    })
+}
+
+/// Trägt den Hook als Statusline ein, wenn keine gesetzt ist, und entfernt ihn
+/// beim Deinstallieren. Eine fremde Statusline bleibt unangetastet. Liefert, ob
+/// sich etwas geändert hat.
+fn edit_status_line(
+    root_object: &jsonc_parser::cst::CstObject,
+    hook_path: &Path,
+    installing: bool,
+) -> bool {
+    let command = hook_command(hook_path, Some(STATUS_LINE_ACTION));
+    let existing = root_object.get("statusLine");
+    let ours = existing.as_ref().is_some_and(|prop| {
+        prop.value()
+            .and_then(|value| value.to_serde_value())
+            .and_then(|value| {
+                value
+                    .get("command")
+                    .and_then(Value::as_str)
+                    .map(|current| is_chat_hook_command(current, STATUS_LINE_ACTION))
+            })
+            .unwrap_or(false)
+    });
+    match (existing, installing) {
+        (None, true) => {
+            root_object.append("statusLine", status_line_input(&command));
+            true
+        }
+        (Some(prop), true) if ours => {
+            let current = prop.value().and_then(|value| value.to_serde_value());
+            let wanted = serde_json::json!({ "type": "command", "command": command, "padding": 0 });
+            if current.as_ref() == Some(&wanted) {
+                false
+            } else {
+                prop.set_value(status_line_input(&command));
+                true
+            }
+        }
+        (Some(prop), false) if ours => {
+            prop.remove();
+            true
+        }
+        _ => false,
+    }
+}
+
+fn status_line_input(command: &str) -> CstInputValue {
+    json!({
+        "type": "command",
+        command: command,
+        padding: 0,
     })
 }
 
@@ -222,6 +279,28 @@ mod tests {
         let settings = parse(&edit_settings(&installed, &hook(), false).unwrap());
         assert_eq!(settings["hooks"]["Stop"].as_array().unwrap().len(), 1);
         assert!(settings["hooks"].get("Notification").is_none());
+    }
+
+    #[test]
+    fn install_adds_the_status_line_only_when_none_is_set() {
+        let settings = parse(&edit_settings("{}", &hook(), true).unwrap());
+        assert_eq!(
+            settings["statusLine"]["command"],
+            hook_command(&hook(), Some(STATUS_LINE_ACTION))
+        );
+
+        let foreign = r#"{"statusLine":{"type":"command","command":"my-status"}}"#;
+        let settings = parse(&edit_settings(foreign, &hook(), true).unwrap());
+        assert_eq!(settings["statusLine"]["command"], "my-status");
+        let settings = parse(&edit_settings(foreign, &hook(), false).unwrap());
+        assert_eq!(settings["statusLine"]["command"], "my-status");
+    }
+
+    #[test]
+    fn uninstall_removes_our_status_line() {
+        let installed = edit_settings("{}", &hook(), true).unwrap();
+        let settings = parse(&edit_settings(&installed, &hook(), false).unwrap());
+        assert!(settings.get("statusLine").is_none());
     }
 
     #[test]

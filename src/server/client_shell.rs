@@ -101,6 +101,8 @@ pub(super) fn snapshot_with_completions(
                 attention_seen: workspace.attention_seen,
                 last_message: workspace.last_message.clone(),
                 blocked_reason: workspace.blocked_reason.clone(),
+                awaiting: workspace.awaiting.clone(),
+                stopped_agent: workspace.stopped_agent.clone(),
             }
         })
         .collect();
@@ -221,6 +223,14 @@ pub(super) fn snapshot_with_completions(
                     accent: false,
                 })
             }
+            crate::app::state::TabBarStatusSegment::Chat => focused_workspace_id
+                .as_deref()
+                .and_then(|workspace_id| app.parse_workspace_id(workspace_id))
+                .and_then(|index| app.chat_status_line(index))
+                .map(|text| protocol::ClientShellTabStatusSegment {
+                    text,
+                    accent: false,
+                }),
             crate::app::state::TabBarStatusSegment::Zoom
             | crate::app::state::TabBarStatusSegment::Text(_) => None,
         })

@@ -1145,9 +1145,10 @@
           "key": "ui.tab_bar_right",
           "type": "array",
           "default": "[]",
-          "description": "Configure ordered right-aligned tab bar entries. Supported types are zoom, hostname, datetime, text, and command.",
+          "description": "Configure ordered right-aligned tab bar entries. Supported types are zoom, chat, hostname, datetime, text, and command. chat shows directory, model, and context use of the focused chat's agent.",
           "values": [
             "zoom",
+            "chat",
             "hostname",
             "datetime",
             "text",
@@ -1185,6 +1186,18 @@
             "dots",
             "symbols"
           ]
+        },
+        {
+          "key": "ui.sidebar.agents_only",
+          "type": "boolean",
+          "default": "false",
+          "description": "Hide spaces and show only the agents list. New tabs from n open in $HOME."
+        },
+        {
+          "key": "ui.sidebar.overlay",
+          "type": "boolean",
+          "default": "false",
+          "description": "With agents_only, slide the chat list over the panes as an overlay. Collapsed, a one-column line stays visible."
         },
         {
           "key": "ui.sidebar.agents.row_gap",
@@ -1567,6 +1580,12 @@
           "type": "integer",
           "default": "100",
           "description": "Milliseconds between automatic agent restores after a server restart. The first agent starts without this delay; 0 disables spacing. Does not delay manual launches or explicit terminal attaches. Restart the server to apply."
+        },
+        {
+          "key": "session.resume_agents_lazily",
+          "type": "boolean",
+          "default": "false",
+          "description": "Resume a restored agent only once its workspace becomes active. Until then the chat counts as stopped."
         }
       ]
     },

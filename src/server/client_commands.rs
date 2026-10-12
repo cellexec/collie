@@ -13,6 +13,8 @@ pub(crate) const MAX_ENDPOINT_REQUEST_ID_BYTES: usize = 128;
 const ENDPOINT_RESPONSE_CHUNK_BYTES: usize = 512 * 1024;
 
 const CLIENT_SHELL_METHODS: &[&str] = &[
+    "chat.orchestrate",
+    "chat.prompt",
     "client_shell.surface.set",
     "command.invoke",
     "integration.install",
@@ -302,6 +304,15 @@ mod tests {
         assert_eq!(
             actual.remove("pane.send_input").as_deref(),
             Some("b0984bc72d68f720d07555147e6a8f14d6f7cf75376e6a3da3a393ca8f2e29a7")
+        );
+        // collie: chat.prompt und chat.orchestrate sind additive Methoden des Forks.
+        assert_eq!(
+            actual.remove("chat.prompt").as_deref(),
+            Some("ae7d84cd20313f1fc463d679e74873771e4f7a40f044d3266e80450d9779a112")
+        );
+        assert_eq!(
+            actual.remove("chat.orchestrate").as_deref(),
+            Some("f0d52c9ed7fb751c34d24043c9eef3f336a5bc8050ad9f386126dfcc920562e9")
         );
         // collie: workspace.snooze ist eine additive Methode des Forks.
         assert_eq!(

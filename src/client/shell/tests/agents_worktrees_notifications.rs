@@ -122,6 +122,8 @@ fn grouped_worktrees_render_parent_branch_and_indented_child() {
         attention_seen: None,
         last_message: None,
         blocked_reason: None,
+        awaiting: None,
+        stopped_agent: None,
     });
     state.set_snapshot(Box::new(snapshot));
     state.set_pane_surface(surface());

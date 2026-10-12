@@ -814,6 +814,8 @@ fn worktree_request_and_response_round_trip() {
                 attention_seen: None,
                 last_message: None,
                 blocked_reason: None,
+                awaiting: None,
+                stopped_agent: None,
             },
             tab: TabInfo {
                 tab_id: "w_1:1".into(),
@@ -907,6 +909,8 @@ fn worktree_lifecycle_events_round_trip() {
         attention_seen: None,
         last_message: None,
         blocked_reason: None,
+        awaiting: None,
+        stopped_agent: None,
     };
     let worktree = WorktreeInfo {
         path: "/worktrees/herdr/worktree-api".into(),

@@ -49,6 +49,8 @@ pub(super) struct SidebarFocusState {
     pub(super) hover_opened: bool,
     /// First key of a fixed two-key sequence (`gg`, `za`, `dd`).
     pending: Option<char>,
+    /// collie: Mit `x` markierte Chats für `p` und `O`.
+    pub(super) marked: Vec<SidebarAgentCursor>,
 }
 
 impl SidebarFocusState {
@@ -73,6 +75,7 @@ impl SidebarFocusState {
                 && (mode == ClientShellMode::Navigate
                     || (mode == ClientShellMode::Prefix && prefix_return_navigate)),
             editing: self.editing,
+            marked: &self.marked,
         }
     }
 }
@@ -88,6 +91,8 @@ pub(super) struct SidebarRenderView<'a> {
     pub(super) agent_status: Option<AgentStatus>,
     pub(super) show_hidden: bool,
     pub(super) editing: bool,
+    /// collie: Markierte Chats.
+    pub(super) marked: &'a [SidebarAgentCursor],
 }
 
 impl SidebarRenderView<'_> {
@@ -100,6 +105,13 @@ impl SidebarRenderView<'_> {
             && self.agent_cursor.is_some_and(|cursor| {
                 &cursor.endpoint_id == endpoint_id && cursor.pane_id == pane_id
             })
+    }
+
+    /// collie: Der Chat ist mit `x` markiert.
+    pub(super) fn agent_marked(&self, endpoint_id: &ClientEndpointId, pane_id: &str) -> bool {
+        self.marked
+            .iter()
+            .any(|mark| &mark.endpoint_id == endpoint_id && mark.pane_id == pane_id)
     }
 
     pub(super) fn agent_visible(
@@ -273,7 +285,7 @@ fn classify_sidebar_key(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum SidebarStep {
+pub(super) enum SidebarStep {
     Delta(isize),
     Page(isize),
     First,
@@ -502,6 +514,10 @@ impl ClientShellState {
             self.open_snooze_picker(outcome);
             return;
         }
+        if self.spaces_hidden() && self.route_chat_marks_key(code, modifiers, outcome) {
+            self.sidebar_focus.pending = None;
+            return;
+        }
         let command = classify_sidebar_key(&self.config.keybinds.keybinds.navigate, key);
         if let Some(command) = command {
             self.run_sidebar_command(command, outcome);
@@ -653,6 +669,11 @@ impl ClientShellState {
     }
 
     fn escape_sidebar(&mut self, outcome: &mut ClientShellInput) {
+        if !self.sidebar_focus.marked.is_empty() {
+            self.sidebar_focus.marked.clear();
+            outcome.repaint = true;
+            return;
+        }
         let focus = &mut self.sidebar_focus;
         let filtered = match focus.section {
             SidebarSection::Spaces => !focus.workspace_query.is_empty(),
@@ -778,7 +799,7 @@ impl ClientShellState {
         }
     }
 
-    fn step_sidebar(&mut self, step: SidebarStep, outcome: &mut ClientShellInput) {
+    pub(super) fn step_sidebar(&mut self, step: SidebarStep, outcome: &mut ClientShellInput) {
         match self.sidebar_focus.section {
             SidebarSection::Spaces => {
                 match step {
@@ -976,7 +997,7 @@ impl ClientShellState {
     }
 
     /// The agent cursor when it targets the active endpoint and still exists.
-    fn local_sidebar_agent_cursor(&self) -> Option<SidebarAgentCursor> {
+    pub(super) fn local_sidebar_agent_cursor(&self) -> Option<SidebarAgentCursor> {
         self.sidebar_focus
             .agent_cursor
             .clone()

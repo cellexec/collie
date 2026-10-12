@@ -270,6 +270,9 @@ pub struct SessionConfig {
     pub resume_agents_on_restore: bool,
     /// Milliseconds between automatic agent restores. Zero disables spacing.
     pub startup_per_agent_delay_ms: u32,
+    /// collie: Resume a restored agent only once its workspace becomes active.
+    /// Until then the chat counts as stopped. Default: false.
+    pub resume_agents_lazily: bool,
 }
 
 impl Default for SessionConfig {
@@ -277,6 +280,7 @@ impl Default for SessionConfig {
         Self {
             resume_agents_on_restore: true,
             startup_per_agent_delay_ms: 100,
+            resume_agents_lazily: false,
         }
     }
 }

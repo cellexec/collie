@@ -3,10 +3,10 @@ use crate::api::schema::{
     PaneFocusDirectionParams, PaneInputSetParams, PaneLayoutParams, PaneListParams,
     PaneMoveDestination, PaneMoveParams, PaneNeighborParams, PaneProcessInfoParams, PaneReadParams,
     PaneReleaseAgentParams, PaneRenameParams, PaneReportAgentParams, PaneReportAgentSessionParams,
-    PaneReportMetadataParams, PaneResizeParams, PaneRightClickTarget, PaneSendInputParams,
-    PaneSendKeysParams, PaneSendTextParams, PaneSplitParams, PaneSwapParams, PaneTarget,
-    PaneWaitForOutputParams, PaneZoomMode, PaneZoomParams, ReadFormat, ReadSource, Request,
-    SplitDirection,
+    PaneReportChatParams, PaneReportMetadataParams, PaneResizeParams, PaneRightClickTarget,
+    PaneSendInputParams, PaneSendKeysParams, PaneSendTextParams, PaneSplitParams, PaneSwapParams,
+    PaneTarget, PaneWaitForOutputParams, PaneZoomMode, PaneZoomParams, ReadFormat, ReadSource,
+    Request, SplitDirection,
 };
 
 pub(super) fn run_pane_command(args: &[String]) -> std::io::Result<i32> {
@@ -40,6 +40,7 @@ pub(super) fn run_pane_command(args: &[String]) -> std::io::Result<i32> {
         "report-agent-session" => pane_report_agent_session(&args[1..]),
         "release-agent" => pane_release_agent(&args[1..]),
         "report-metadata" => pane_report_metadata(&args[1..]),
+        "report-chat" => pane_report_chat(&args[1..]),
         "run" => pane_run(&args[1..]),
         "help" | "--help" | "-h" => {
             print_pane_help();
@@ -1669,6 +1670,49 @@ fn pane_report_metadata(args: &[String]) -> std::io::Result<i32> {
     }))
 }
 
+/// collie: Meldet Chat-Fakten für den Agent in Tab 1. Ein leerer Text löscht
+/// das Feld.
+fn pane_report_chat(args: &[String]) -> std::io::Result<i32> {
+    const USAGE: &str = "usage: herdr pane report-chat <pane_id> [--title TEXT] [--awaiting TEXT] [--last-message TEXT] [--blocked-reason TEXT]";
+    let Some(raw_pane_id) = args.first() else {
+        eprintln!("{USAGE}");
+        return Ok(2);
+    };
+    let mut params = PaneReportChatParams {
+        pane_id: super::normalize_pane_id(raw_pane_id),
+        ..Default::default()
+    };
+    let mut index = 1;
+    while index < args.len() {
+        let flag = args[index].as_str();
+        let field = match flag {
+            "--title" => &mut params.title,
+            "--awaiting" => &mut params.awaiting,
+            "--last-message" => &mut params.last_message,
+            "--blocked-reason" => &mut params.blocked_reason,
+            other => {
+                eprintln!("unknown option: {other}");
+                return Ok(2);
+            }
+        };
+        let Some(value) = args.get(index + 1) else {
+            eprintln!("missing value for {flag}");
+            return Ok(2);
+        };
+        *field = Some(value.clone());
+        index += 2;
+    }
+    if params.title.is_none()
+        && params.awaiting.is_none()
+        && params.last_message.is_none()
+        && params.blocked_reason.is_none()
+    {
+        eprintln!("{USAGE}");
+        return Ok(2);
+    }
+    super::send_ok_request(Method::PaneReportChat(params))
+}
+
 fn print_pane_help() {
     eprintln!("herdr pane commands:");
     eprintln!("  herdr pane list [--workspace <workspace_id>]");
@@ -1702,6 +1746,7 @@ fn print_pane_help() {
     eprintln!("  herdr pane report-agent-session <pane_id> --source ID --agent LABEL [--seq N] [--agent-session-id ID] [--agent-session-path PATH]");
     eprintln!("  herdr pane release-agent <pane_id> --source ID --agent LABEL [--seq N]");
     eprintln!("  herdr pane report-metadata <pane_id> --source ID [--agent LABEL] [--applies-to-source ID] [--title TEXT|--clear-title] [--display-agent TEXT|--clear-display-agent] [--state-label STATUS=TEXT] [--clear-state-labels] [--token NAME=VALUE] [--clear-token NAME] [--seq N] [--ttl-ms N]");
+    eprintln!("  herdr pane report-chat <pane_id> [--title TEXT] [--awaiting TEXT] [--last-message TEXT] [--blocked-reason TEXT]");
     eprintln!("  herdr pane run <pane_id> <command>");
 }
 

@@ -438,6 +438,7 @@ fn restore_workspace(
             attention_seen: snap.attention_seen.unwrap_or(true),
             last_message: snap.last_message.clone(),
             blocked_reason: snap.blocked_reason.clone(),
+            chat: crate::workspace::ChatRuntime::default(),
             active_tab: snap.active_tab.min(tabs.len().saturating_sub(1)),
             tabs,
             #[cfg(test)]

@@ -62,6 +62,9 @@ impl App {
                 TabBarRightEntryConfig::Zoom => {
                     self.state.tab_bar_right.push(TabBarStatusSegment::Zoom);
                 }
+                TabBarRightEntryConfig::Chat => {
+                    self.state.tab_bar_right.push(TabBarStatusSegment::Chat);
+                }
                 TabBarRightEntryConfig::Hostname => {
                     self.state
                         .tab_bar_right
