@@ -15,19 +15,33 @@ What collie adds on top of herdr:
 - agent commands started from the agents section (`[[ui.sidebar.agent_commands]]`)
 - no self-update: `collie update` refuses and no update checks run, so an
   upstream release never replaces this build
+- chat cards: the Claude integration also installs a chat hook that reports
+  the last message and permission prompts per pane
+- its own defaults on top of herdr's, see
+  [`src/config/collie_defaults.toml`](src/config/collie_defaults.toml): the
+  agents-only sidebar as an overlay, symbol status indicators, tmux-style keys
+  (`prefix+%`/`prefix+$` split, `prefix+o` next pane, `prefix+f` zoom,
+  `prefix+v` copy mode). Any key you set in `~/.config/herdr/config.toml` wins.
 
 ### build and install
 
-There are no collie releases. Build it yourself:
+There are no collie releases. The installer builds from source; it needs
+`git`, `cargo` and `zig` 0.16.0:
 
 ```bash
-git clone git@github.com:cellexec/collie.git && cd collie
-cargo build --release
-ln -sf "$PWD/target/release/herdr" ~/.local/bin/collie
+curl -fsSL https://raw.githubusercontent.com/cellexec/collie/master/scripts/collie/install.sh | sh
 ```
 
-Agent integrations call `herdr` by name, so keep a `herdr` link to the same
-binary on your `PATH` as well.
+It clones to `~/.local/share/collie/src`, builds the release binary, links
+`collie` and `herdr` into `~/.local/bin` and runs
+`collie integration install claude`. Run it again to update. From a checkout,
+`just install` does the same with that checkout. An existing `herdr` that is
+not collie is left alone; agent hooks call `herdr` by name, so they keep
+talking to that one.
+
+Working on collie itself: `just dev-setup` links `collie-dev` (worktrees and
+debug builds with their own session), sets up a shared cargo target for the
+worktrees and guards the main checkout against edits from Claude Code.
 
 ### follow upstream
 

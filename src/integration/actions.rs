@@ -113,7 +113,8 @@ fn install_target_inner(target: crate::api::schema::IntegrationTarget) -> io::Re
         }
         crate::api::schema::IntegrationTarget::Claude => {
             let installed = install_claude()?;
-            vec![
+            #[allow(unused_mut)] // collie: nur unter Unix kommt der Chat-Hook dazu
+            let mut messages = vec![
                 format!(
                     "installed claude integration hook to {}",
                     installed.hook_path.display()
@@ -122,7 +123,13 @@ fn install_target_inner(target: crate::api::schema::IntegrationTarget) -> io::Re
                     "ensured claude settings at {}",
                     installed.settings_path.display()
                 ),
-            ]
+            ];
+            #[cfg(unix)]
+            messages.push(format!(
+                "installed collie chat hook to {}",
+                super::collie_chat_hook::install_for_claude()?.display()
+            ));
+            messages
         }
         crate::api::schema::IntegrationTarget::Codex => {
             let installed = install_codex()?;
@@ -358,6 +365,10 @@ pub(crate) fn uninstall_target(
         crate::api::schema::IntegrationTarget::Claude => {
             let result = uninstall_claude()?;
             let mut messages = Vec::new();
+            #[cfg(unix)]
+            if super::collie_chat_hook::uninstall_for_claude()? {
+                messages.push("removed collie chat hook".to_string());
+            }
             if result.removed_hook_file {
                 messages.push(format!(
                     "removed claude hook at {}",

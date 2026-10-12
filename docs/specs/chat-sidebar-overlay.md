@@ -123,17 +123,14 @@ gespeichert und erscheinen optional in `ClientShellWorkspace` und
   `blocked_reason`. Ein fehlendes Feld bleibt unverändert, ein leeres löscht.
   Meldungen aus anderen Tabs als Tab 1 ändern nichts. Der Text wird auf eine
   Zeile mit höchstens 200 Zeichen gekürzt.
-- Die herdr-Integration für Claude bleibt unverändert. Ihr Installer richtet
-  nur `SessionStart` ein und entfernt fremde herdr-Hooks auf anderen Events.
-- Das Hook-Skript `scripts/collie/claude-chat-hook.sh` liegt im Repo und wird
-  von Hand in `~/.claude/settings.json` eingetragen:
-
-  ```json
-  "hooks": {
-    "Stop": [{"hooks": [{"type": "command", "command": "~/projects/collie/scripts/collie/claude-chat-hook.sh stop"}]}],
-    "Notification": [{"hooks": [{"type": "command", "command": "~/projects/collie/scripts/collie/claude-chat-hook.sh notification"}]}]
-  }
-  ```
+- Der herdr-Teil der Claude-Integration bleibt unverändert. Ihr Installer
+  richtet nur `SessionStart` ein und entfernt fremde herdr-Hooks auf anderen
+  Events.
+- `collie integration install claude` legt danach
+  `scripts/collie/claude-chat-hook.sh` als `~/.claude/hooks/collie-chat-hook.sh`
+  ab und trägt es für `Stop` und `Notification` ein
+  (`src/integration/collie_chat_hook.rs`). Hand-Einträge, die auf
+  `claude-chat-hook.sh` zeigen, ersetzt es. `uninstall` entfernt beides.
 
   `stop` nimmt `last_assistant_message` aus der Hook-Eingabe, sonst die letzte
   Antwort aus dem Ende des Transcripts. `notification` meldet nur

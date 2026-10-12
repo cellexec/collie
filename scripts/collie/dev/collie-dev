@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+# collie-dev: run the debug build of a collie (herdr fork) checkout.
+#
+# Debug builds use ~/.config/herdr-dev (own server, config, sessions), so they
+# never touch the release server. Each checkout gets its own named session.
+set -euo pipefail
+
+# Hauptcheckout: das Repo, in dem dieses Skript liegt (auch über einen Symlink),
+# bei einem Worktree dessen Hauptcheckout. Worktrees liegen daneben.
+SCRIPT_DIR=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+DEFAULT_REPO=$(cd "$(git -C "$SCRIPT_DIR" rev-parse --path-format=absolute --git-common-dir)/.." && pwd -P)
+REPO=${HERDR_REPO:-$DEFAULT_REPO}
+TREES=${HERDR_WORKTREES:-$(dirname "$REPO")/collie-worktrees}
+
+usage() {
+    cat <<USAGE
+usage:
+  collie-dev [herdr args...]                pick a checkout with fzf, build + run debug collie
+  collie-dev <worktree> [herdr args...]     build + run debug collie in that worktree
+  collie-dev new <branch> [<worktree>]      create worktree off master (reuses an existing branch)
+  collie-dev ls                             list worktrees
+  collie-dev stop [<worktree>]              stop that worktree's dev server
+  collie-dev rm <worktree>                  stop dev server and remove the worktree (branch is kept)
+
+main checkout: $REPO (session "collie")
+worktrees live in $TREES
+USAGE
+}
+
+die() { echo "collie-dev: $*" >&2; exit 1; }
+
+# Prints the worktree name for the current directory, if it is inside $TREES.
+tree_from_cwd() {
+    local here
+    here=$(pwd -P)
+    case "$here/" in
+        "$TREES"/*) local rest=${here#"$TREES"/}; echo "${rest%%/*}" ;;
+    esac
+}
+
+resolve_tree() {
+    local name=${1:-}
+    [ -n "$name" ] || name=$(tree_from_cwd)
+    [ -n "$name" ] || die "not inside $TREES and no worktree given (see: collie-dev ls)"
+    [ -d "$TREES/$name" ] || die "no worktree $TREES/$name"
+    echo "$name"
+}
+
+# Session name for a checkout path: the worktree folder, or "collie" for main.
+session_for() {
+    case "$1" in
+        "$REPO") echo collie ;;
+        *) basename "$1" ;;
+    esac
+}
+
+# Prints "<session>\t<branch>\t<path>" per checkout, the one containing cwd first.
+checkouts() {
+    local here path branch
+    here=$(pwd -P)
+    git -C "$REPO" worktree list --porcelain | awk '
+        /^worktree / { path = substr($0, 10) }
+        /^branch /   { branch = substr($0, 19) }
+        /^detached/  { branch = "(detached)" }
+        /^$/         { print path "\t" branch; path = ""; branch = "" }
+        END          { if (path != "") print path "\t" branch }
+    ' | while IFS=$'\t' read -r path branch; do
+        printf '%s\t%s\t%s\n' "$(session_for "$path")" "$branch" "$path"
+    done | awk -F'\t' -v here="$here/" 'index(here, $3 "/") == 1 { print; next } { rest = rest $0 "\n" } END { printf "%s", rest }'
+}
+
+pick_checkout() {
+    command -v fzf >/dev/null || die "fzf not installed; use: collie-dev <worktree>"
+    checkouts | fzf --delimiter=$'\t' --with-nth=1,2 --nth=1,2 \
+        --prompt='collie-dev > ' --header='enter/click: build + run debug collie' \
+        --preview='git -C {3} status -sb; echo; git -C {3} log --oneline -8' \
+        --preview-window=right,60% | cut -f3
+}
+
+run_dev() {
+    local tree=$1; shift
+    local session
+    session=$(session_for "$tree")
+    cargo build -q --manifest-path "$tree/Cargo.toml" --bin herdr
+    # Worktrees teilen sich ein Target-Verzeichnis (collie-worktrees/.cargo/config.toml).
+    # Eine Kopie unter $tree/target/debug hält jeden Worktree bei seinem eigenen
+    # Binary, auch wenn danach ein anderer Worktree baut.
+    local target_dir
+    target_dir=$(cargo metadata -q --no-deps --format-version 1 --manifest-path "$tree/Cargo.toml" \
+        | python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')
+    if [ "$target_dir" != "$tree/target" ]; then
+        mkdir -p "$tree/target/debug"
+        cp -f "$target_dir/debug/herdr" "$tree/target/debug/herdr.new"
+        mv -f "$tree/target/debug/herdr.new" "$tree/target/debug/herdr"
+    fi
+    cd "$tree"
+    # Inherited socket overrides would point the debug client at the release server.
+    exec env -u HERDR_SOCKET_PATH -u HERDR_CLIENT_SOCKET_PATH -u HERDR_SESSION \
+        "$tree/target/debug/herdr" --session "$session" "$@"
+}
+
+case "${1:-}" in
+    -h | --help | help)
+        usage
+        ;;
+    new)
+        branch=${2:-}
+        [ -n "$branch" ] || die "usage: collie-dev new <branch> [<worktree>]"
+        name=${3:-${branch//\//-}}
+        mkdir -p "$TREES"
+        if git -C "$REPO" show-ref -q --verify "refs/heads/$branch"; then
+            git -C "$REPO" worktree add "$TREES/$name" "$branch"
+        else
+            git -C "$REPO" worktree add -b "$branch" "$TREES/$name" master
+        fi
+        echo "cd $TREES/$name && collie-dev $name"
+        ;;
+    ls | list)
+        git -C "$REPO" worktree list
+        ;;
+    stop)
+        name=$(resolve_tree "${2:-}")
+        env -u HERDR_SOCKET_PATH -u HERDR_CLIENT_SOCKET_PATH -u HERDR_SESSION "$TREES/$name/target/debug/herdr" --session "$name" server stop
+        ;;
+    rm)
+        [ -n "${2:-}" ] || die "usage: collie-dev rm <worktree>"
+        name=$(resolve_tree "$2")
+        env -u HERDR_SOCKET_PATH -u HERDR_CLIENT_SOCKET_PATH -u HERDR_SESSION "$TREES/$name/target/debug/herdr" --session "$name" server stop 2>/dev/null || true
+        git -C "$REPO" worktree remove "$TREES/$name"
+        ;;
+    *)
+        if [ -n "${1:-}" ] && [ "${1#-}" = "$1" ] && [ -d "$TREES/$1" ]; then
+            name=$1; shift
+            run_dev "$TREES/$name" "$@"
+        fi
+        tree=$(pick_checkout)
+        [ -n "$tree" ] || exit 0
+        run_dev "$tree" "$@"
+        ;;
+esac

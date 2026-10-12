@@ -1,5 +1,7 @@
 mod actions;
 mod claude_settings;
+#[cfg(unix)]
+mod collie_chat_hook;
 mod command;
 mod config_edit;
 mod config_file;

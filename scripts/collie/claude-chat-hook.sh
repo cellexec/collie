@@ -1,7 +1,7 @@
 #!/bin/sh
 # collie: meldet letzte Nachricht und Blocked-Grund eines Claude-Chats an den
-# Server (`pane.report_chat`). Nicht Teil der herdr-Integration; eintragen in
-# ~/.claude/settings.json, siehe docs/specs/chat-sidebar-overlay.md.
+# Server (`pane.report_chat`). `collie integration install claude` installiert
+# es als ~/.claude/hooks/collie-chat-hook.sh, siehe docs/specs/chat-sidebar-overlay.md.
 #
 #   claude-chat-hook.sh stop          Stop-Hook
 #   claude-chat-hook.sh notification  Notification-Hook

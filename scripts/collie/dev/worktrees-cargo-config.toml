@@ -1,0 +1,13 @@
+# Vorlage für <collie-worktrees>/.cargo/config.toml, `just dev-setup` setzt @TREES@ ein.
+# Gilt für alle collie-Worktrees unter diesem Ordner (Cargo sucht Configs in
+# Elternordnern). Der Hauptcheckout ist nicht betroffen. Ist mold installiert,
+# hängt `just dev-setup` den Linker-Abschnitt an.
+
+# Ein gemeinsames Target-Verzeichnis: Abhängigkeiten werden nur einmal gebaut.
+# Builds in zwei Worktrees gleichzeitig warten aufeinander (Cargo-Lock).
+[build]
+target-dir = "@TREES@/.target"
+
+# Nur Zeilentabellen statt voller Debuginfo: kleineres Binary, schnelleres Linken.
+[profile.dev]
+debug = "line-tables-only"

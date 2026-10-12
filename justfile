@@ -79,6 +79,16 @@ install-hooks:
     chmod +x .githooks/commit-msg
     @echo "installed git hooks from .githooks"
 
+# collie: Release bauen, collie/herdr verlinken, Claude-Integration installieren
+[unix]
+install:
+    scripts/collie/install.sh
+
+# collie: Maintainer-Setup (collie-dev, Worktree-Cargo-Config, Guard für den Hauptcheckout)
+[unix]
+dev-setup:
+    scripts/collie/dev/setup.sh
+
 # Build release binary
 [unix]
 build:
