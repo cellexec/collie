@@ -32,7 +32,9 @@ Neue Option `ui.sidebar.overlay = true`. Sie wirkt nur zusammen mit
 
 - Das Overlay liegt über den Panes. Kein PTY wird resized, das Pane-Layout
   ändert sich nicht.
-- Breite: 45 % der Terminalbreite, mindestens 50, höchstens 100 Spalten.
+- Breite: 45 % der Terminalbreite, mindestens 64, höchstens 100 Spalten.
+  Bei 64 Spalten passt neben Repo und Branch der Kontext-Balken. Ist das
+  Terminal schmaler, nimmt das Overlay die ganze Breite.
   `<`/`>` ändern den Prozentwert in 5er-Schritten zwischen 30 und 70 %. Der
   Wert wird gespeichert wie heute die manuelle Sidebar-Breite.
 - Die Panes rechts liegen im Backdrop wie heute bei Sidebar-Fokus. Der linke

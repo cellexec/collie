@@ -793,7 +793,7 @@ fn chat_overlay_collapses_to_a_line_and_opens_without_resize() {
     assert!(!prefix.resize && !open.resize);
     assert_eq!(state.surface_size(100, 28), collapsed);
     let rows = frame_rows(&state.compose(100, 28).expect("frame"));
-    assert_eq!(state.hits.chat_overlay, Rect::new(0, 0, 50, 28));
+    assert_eq!(state.hits.chat_overlay, Rect::new(0, 0, 64, 28));
     assert_eq!(hit_panes(&state), ["pane_1", "pane_2"]);
     assert!(rows[0].contains("chats"), "{}", rows[0]);
 
@@ -996,6 +996,7 @@ fn chat_cards_show_repo_badge_context_gauge_and_activity() {
     snapshot.workspaces[0].context_tokens = Some(640_000);
     snapshot.workspaces[0].context_window = Some(1_000_000);
     snapshot.workspaces[0].working_spans = vec![(now - 10 * 60_000, now - 5 * 60_000)];
+    snapshot.workspaces[0].branch = Some("feat/card-visuals".into());
     snapshot.workspaces[1].working_since = Some(now - 4 * 60_000);
     let mut state = chat_overlay_state_with(snapshot);
     focus_sidebar(&mut state);
@@ -1009,6 +1010,16 @@ fn chat_cards_show_repo_badge_context_gauge_and_activity() {
     let running = state.hits.agents[1].0;
     let running = &rows[usize::from(running.y)];
     assert!(running.contains("▅█"), "{running}");
+
+    // Bei Mindestbreite weicht zuerst die Kurve; Balken, Branch und Titel
+    // bleiben.
+    let rows = frame_rows(&state.compose(100, 28).expect("frame"));
+    let card = state.hits.agents[0].0;
+    let first = &rows[usize::from(card.y)];
+    assert!(first.contains("▰▰▰▱▱ 64%"), "{first}");
+    assert!(first.contains("feat/card-visuals"), "{first}");
+    assert!(!first.contains('█'), "{first}");
+    assert!(rows[usize::from(card.y) + 1].contains("client-shell"));
 }
 
 #[test]

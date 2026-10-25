@@ -16,7 +16,8 @@ pub(super) const DEFAULT_PERCENT: u16 = 45;
 const MIN_PERCENT: u16 = 30;
 const MAX_PERCENT: u16 = 70;
 const PERCENT_STEP: u16 = 5;
-const MIN_WIDTH: u16 = 50;
+/// Ab dieser Breite passt neben Repo und Branch der Kontext-Balken.
+const MIN_WIDTH: u16 = 64;
 const MAX_WIDTH: u16 = 100;
 /// So lange muss die Maus auf der Linie stehen, bis das Overlay ausfährt.
 const HOVER_DELAY: std::time::Duration = std::time::Duration::from_millis(300);
@@ -319,7 +320,8 @@ mod tests {
     #[test]
     fn overlay_width_follows_percent_within_bounds() {
         assert_eq!(overlay_rect(200, 40, 45).width, 90);
-        assert_eq!(overlay_rect(80, 40, 45).width, 50);
+        assert_eq!(overlay_rect(80, 40, 45).width, 64);
+        assert_eq!(overlay_rect(60, 40, 45).width, 60);
         assert_eq!(overlay_rect(300, 40, 45).width, 100);
         assert_eq!(overlay_rect(40, 40, 45).width, 40);
     }
