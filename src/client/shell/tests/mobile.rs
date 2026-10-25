@@ -380,6 +380,9 @@ fn mobile_background_workspace_uses_its_own_active_tab_status() {
         blocked_reason: None,
         awaiting: None,
         stopped_agent: None,
+        context_tokens: None,
+        context_window: None,
+        working_spans: Vec::new(),
     });
     for (number, tab_id, label) in [(1, "tab_2", "one"), (7, "tab_3", "two")] {
         projected.tabs.push(ClientShellTab {
@@ -587,6 +590,9 @@ fn mobile_previous_workspace_action_wraps_across_expanded_entries() {
             blocked_reason: None,
             awaiting: None,
             stopped_agent: None,
+            context_tokens: None,
+            context_window: None,
+            working_spans: Vec::new(),
         });
     }
     let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
@@ -635,6 +641,9 @@ fn mobile_switcher_scroll_close_and_width_transition_clear_mobile_hits() {
             blocked_reason: None,
             awaiting: None,
             stopped_agent: None,
+            context_tokens: None,
+            context_window: None,
+            working_spans: Vec::new(),
         });
     }
     state.set_snapshot(Box::new(projected));

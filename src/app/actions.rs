@@ -396,6 +396,9 @@ impl AppState {
             ws.working_since = Some(now);
             ws.chat.awaiting = None;
         } else if previous == AgentState::Working {
+            if let Some(start) = ws.working_since {
+                ws.chat.record_working_span(start, now);
+            }
             // Der Chat wartet ab jetzt auf den Nutzer. Ist er gerade offen,
             // gilt er als gelesen.
             ws.attention_since = Some(now);
@@ -3151,10 +3154,15 @@ mod tests {
             .working_since
             .is_some_and(|since| since >= before));
 
+        state.workspaces[1].working_since = Some(before - 60_000);
         change(&mut state, 0, AgentState::Idle);
         change(&mut state, 1, AgentState::Blocked);
         assert!(state.workspaces[0].attention_seen);
         assert!(!state.workspaces[1].attention_seen);
+        // Das Ende der Arbeit wird eine Phase der Aktivitätskurve.
+        let spans = &state.workspaces[1].chat.working_spans;
+        assert_eq!(spans.len(), 1);
+        assert!(spans[0].0 == before - 60_000 && spans[0].1 >= before);
 
         state.workspaces[1].blocked_reason = Some("Bash".into());
         state.workspaces[1].chat.awaiting = Some("Formular: 2 Fragen".into());

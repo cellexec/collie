@@ -417,6 +417,9 @@ impl App {
             blocked_reason: ws.blocked_reason.clone(),
             awaiting: ws.chat.awaiting.clone(),
             stopped_agent: self.stopped_chat_agent(index),
+            context_tokens: ws.chat.context_tokens,
+            context_window: ws.chat.context_window,
+            working_spans: ws.chat.working_spans.clone(),
         }
     }
 

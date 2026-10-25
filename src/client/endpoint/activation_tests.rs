@@ -156,6 +156,9 @@ fn workspace_focus_success(id: &str, workspace_id: &str) -> Vec<u8> {
                 blocked_reason: None,
                 awaiting: None,
                 stopped_agent: None,
+                context_tokens: None,
+                context_window: None,
+                working_spans: Vec::new(),
             },
         },
     })

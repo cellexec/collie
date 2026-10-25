@@ -6,6 +6,7 @@ mod aggregate_navigation;
 mod chat_cards;
 mod chat_marks;
 mod chat_overlay;
+mod chat_visuals;
 mod chats;
 mod machine_diagnostics;
 mod workspace_navigation;

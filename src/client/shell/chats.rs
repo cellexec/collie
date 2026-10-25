@@ -47,6 +47,10 @@ pub(super) struct ChatRow {
     pub(super) awaiting: Option<String>,
     /// Der gespeicherte Agent ist noch nicht gestartet.
     pub(super) stopped: bool,
+    pub(super) context_tokens: Option<u64>,
+    pub(super) context_window: Option<u64>,
+    /// Abgeschlossene Arbeitsphasen der letzten 30 Minuten.
+    pub(super) working_spans: Vec<(u64, u64)>,
 }
 
 impl ChatRow {
@@ -167,6 +171,9 @@ fn chat_row(snapshot: &ClientShellSnapshot, workspace: &ClientShellWorkspace) ->
         blocked_reason: workspace.blocked_reason.clone(),
         awaiting: workspace.awaiting.clone(),
         stopped: stopped_agent.is_some(),
+        context_tokens: workspace.context_tokens,
+        context_window: workspace.context_window,
+        working_spans: workspace.working_spans.clone(),
     })
 }
 

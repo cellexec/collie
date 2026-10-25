@@ -63,20 +63,36 @@ Jeder Chat der Hauptliste ist eine Karte mit 3 Zeilen. Alle Karten sind gleich
 hoch.
 
 ```
-▌ ● 󰚩 Refactor der Snooze-Logik                    12m
-▌     collie   feat/snooze ↑2  +1 shell
+▌ ● 󰚩 Refactor der Snooze-Logik                                  12m
+▌   claude   CO  collie   feat/snooze ↑2   ▂███▁▁▁▁▁▅█  ▰▰▰▱▱ 64%
 ▌   wartet auf Freigabe: Bash(cargo test)
 ```
 
 | Zeile | Inhalt |
 | --- | --- |
 | 1 | Status-Symbol, Agent-Icon, Titel, Wartezeit rechts |
-| 2 | Repo, Branch, ahead/behind, Worktree-Marker, Zahl der Neben-Tabs |
+| 2 | Agent, Repo-Chip und Repo, Branch, ahead/behind, Worktree-Marker, Zahl der Neben-Tabs; rechts Aktivitätskurve und Kontext-Balken |
 | 3 | bei `Blocked` der Grund, sonst die letzte Nachricht |
 
 - Abtrennung: leicht getönter Hintergrund pro Karte (`surface_dim`), eine
   Leerzeile Abstand. Die Karte unter dem Cursor hat links einen Akzentbalken
   `▌`.
+- Wärmestreifen: Die übrigen Karten tragen links einen Streifen, dessen Farbe
+  fließend mit der Wartezeit wechselt: grau, gelb bei 15 Minuten, peach bei
+  einer Stunde, rot ab vier Stunden.
+- Nachleuchten: Wartet ein Chat neu, färbt sich seine Karte 1,5 Sekunden lang
+  in Akzentfarbe, bei `Blocked` oder offener Rückfrage in Rot, und klingt dann
+  ab. Grundlage ist `attention_since`; eine Zeit in der Zukunft leuchtet nicht.
+- Repo-Farbe: Jedes Repo bekommt per FNV-Hash über den Namen einen festen
+  Farbton aus der Palette, nie Rot oder Gelb. Das Kürzel (`SB` für
+  `second-brain`, `CO` für `collie`) steht als Chip, der Name in derselben
+  Farbe.
+- Kontext-Balken: `▰▰▰▱▱ 64%` aus `context_tokens` und `context_window`.
+  Grün, ab 70 % gelb, ab 90 % peach. Fehlt das Fenster, fehlt der Balken.
+- Aktivitätskurve: 12 Spalten über die letzten 30 Minuten, je Spalte der
+  Anteil Arbeitszeit aus `working_spans` und der laufenden Phase. Ohne Arbeit
+  im Fenster fehlt sie. Balken und Kurve stehen nur dort, wo links mindestens
+  24 Zellen frei bleiben; die Kurve weicht zuerst.
 - Sortierung bleibt flach nach Wartezeit (`s` dreht sie), ohne Abschnitte.
   Der Status steckt nur in der Farbe.
 - Wartezeit relativ (`12m`, `3h`, `2d`). Farbe nach Alter: grau, gelb ab 15
@@ -96,15 +112,18 @@ hoch.
 
 - Unter der Hauptliste steht ein kompakter Abschnitt mit einer Zeile pro Chat:
   Spinner bzw. Snooze-Restzeit, Titel, rechts die Laufzeit seit
-  `working_since` bzw. die Restzeit.
+  `working_since` bzw. die Restzeit. Laufende Chats zeigen davor ihre
+  Aktivitätskurve, wenn der Titel 20 Zellen behält.
 - Er nimmt höchstens ein Drittel der Höhe ein und scrollt darin.
 - `j`/`k` läuft durchgehend von der Hauptliste in den Abschnitt. `h` springt
   zum ersten Eintrag des Abschnitts und zurück.
 
 ## Leere Hauptliste
 
-Wartet kein Chat, steht zentriert ein Nerd-Font-Icon, darunter `Nichts zu tun`
-und die Zähler der laufenden und gesnoozten Chats.
+Wartet kein Chat, döst zentriert eine ASCII-Collie mit aufsteigenden `z`
+(ein Frame pro 900 ms), darunter `alles erledigt` und die Zähler der laufenden
+und gesnoozten Chats. Ist die Fläche kleiner als 10 Zeilen, steht stattdessen
+ein Nerd-Font-Icon mit `Nichts zu tun`.
 
 ## Server
 
@@ -118,6 +137,8 @@ gespeichert und erscheinen optional in `ClientShellWorkspace` und
 | `blocked_reason` | kurzer Grund für `Blocked` | `pane.report_chat` aus dem Notification-Hook; gelöscht, sobald der Agent `Blocked` verlässt |
 | `working_since` | Unix-Millisekunden seit Beginn von `Working` | beim Wechsel des Agents in Tab 1 zu `Working` |
 | `attention_seen` | Nutzer hatte den Chat seit `attention_since` offen | beim Setzen von `attention_since` wahr, wenn der Space gerade aktiv ist, sonst `false`; `true` beim Fokussieren des Space |
+| `context_tokens`, `context_window` | Kontextbelegung des Agents in Tab 1 | `pane.report_chat`; nicht gespeichert |
+| `working_spans` | abgeschlossene Arbeitsphasen der letzten 30 Minuten als `(start, ende)`, höchstens 64 | beim Wechsel des Agents in Tab 1 weg von `Working`; nicht gespeichert |
 
 - Neue Methode `pane.report_chat` mit `pane_id`, `last_message` und
   `blocked_reason`. Ein fehlendes Feld bleibt unverändert, ein leeres löscht.
@@ -142,7 +163,9 @@ gespeichert und erscheinen optional in `ClientShellWorkspace` und
 - Das Overlay rendert nur Client-seitig und löst keinen Resize aus.
 - Karten lesen nur Snapshot-Felder. Kein Bildschirm-Read, kein Dateizugriff im
   Render-Pfad.
-- Puls und Spinner fordern Frames nur an, solange sie laufen.
+- Puls und Spinner fordern Frames nur an, solange sie laufen. Das gilt auch
+  für das Nachleuchten der Karten und die dösende Collie; beide ticken nur bei
+  offenem Overlay. Wärmestreifen und Kurve zeichnen minütlich neu.
 
 ## Umsetzung
 

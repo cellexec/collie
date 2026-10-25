@@ -236,6 +236,29 @@ pub struct ChatRuntime {
     pub context_tokens: Option<u64>,
     /// Größe des Kontextfensters in Tokens.
     pub context_window: Option<u64>,
+    /// Abgeschlossene Arbeitsphasen des Agents in Tab 1 als `(start, ende)` in
+    /// Unix-Millisekunden, höchstens [`WORKING_SPAN_WINDOW_MS`] alt.
+    pub working_spans: Vec<(u64, u64)>,
+}
+
+/// So weit reicht die Aktivitätskurve einer Chat-Karte zurück.
+pub const WORKING_SPAN_WINDOW_MS: u64 = 30 * 60_000;
+/// Höchstens so viele Arbeitsphasen hält ein Space.
+const MAX_WORKING_SPANS: usize = 64;
+
+impl ChatRuntime {
+    /// Merkt sich eine abgeschlossene Arbeitsphase und verwirft Phasen, die
+    /// vor dem Fenster enden.
+    pub fn record_working_span(&mut self, start: u64, end: u64) {
+        let cutoff = end.saturating_sub(WORKING_SPAN_WINDOW_MS);
+        self.working_spans
+            .retain(|&(_, span_end)| span_end >= cutoff);
+        if end > start && end >= cutoff {
+            self.working_spans.push((start.max(cutoff), end));
+        }
+        let excess = self.working_spans.len().saturating_sub(MAX_WORKING_SPANS);
+        self.working_spans.drain(..excess);
+    }
 }
 
 /// Wanduhrzeit in Unix-Millisekunden für Session-Zeitstempel.
@@ -1488,6 +1511,30 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn working_spans_keep_only_the_window() {
+        let mut chat = ChatRuntime::default();
+        let now = 10 * WORKING_SPAN_WINDOW_MS;
+        chat.record_working_span(
+            now - 3 * WORKING_SPAN_WINDOW_MS,
+            now - 2 * WORKING_SPAN_WINDOW_MS,
+        );
+        chat.record_working_span(now - 60_000, now - 30_000);
+        chat.record_working_span(now - WORKING_SPAN_WINDOW_MS - 5, now);
+        assert_eq!(
+            chat.working_spans,
+            [
+                (now - 60_000, now - 30_000),
+                (now - WORKING_SPAN_WINDOW_MS, now)
+            ]
+        );
+        for index in 0..100 {
+            chat.record_working_span(now + index, now + index + 1);
+        }
+        assert_eq!(chat.working_spans.len(), MAX_WORKING_SPANS);
+        assert_eq!(chat.working_spans.last(), Some(&(now + 99, now + 100)));
+    }
 
     #[test]
     fn generated_workspace_ids_are_short_base32_handles() {

@@ -187,8 +187,9 @@ impl ClientShellState {
         outcome.repaint = true;
     }
 
-    /// Neu zeichnen, wenn ein Snooze abläuft, der Spinner weiterdreht oder die
-    /// Restzeit springt.
+    /// Neu zeichnen, wenn ein Snooze abläuft, der Spinner weiterdreht, die
+    /// Restzeit springt oder eine Karte nachleuchtet. Im leeren Overlay döst
+    /// die Collie.
     pub(crate) fn tick_chat_sidebar(&mut self) -> bool {
         if !self.spaces_hidden() {
             return false;
@@ -218,6 +219,26 @@ impl ClientShellState {
             }
             if snoozed > 0 {
                 key = key.wrapping_mul(31).wrapping_add(now / 60_000);
+            }
+        }
+        if self.chat_overlay_open() {
+            // Wärmestreifen und Aktivitätskurve wandern minütlich weiter.
+            key = key.wrapping_mul(31).wrapping_add(now / 60_000);
+            if snapshot
+                .workspaces
+                .iter()
+                .any(|workspace| super::chat_visuals::pulsing(workspace.attention_since, now))
+            {
+                key = key
+                    .wrapping_mul(31)
+                    .wrapping_add(now / super::chats::SPINNER_FRAME_MS);
+            }
+            if super::chats::visible_chat_rows(snapshot, false, false, view.agent_query, now)
+                .is_empty()
+            {
+                key = key
+                    .wrapping_mul(31)
+                    .wrapping_add(now / super::chat_visuals::DOZE_FRAME_MS);
             }
         }
         if let Some(phase) = self.chat_pulse_phase(now) {

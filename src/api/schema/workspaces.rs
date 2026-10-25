@@ -119,6 +119,16 @@ pub struct WorkspaceInfo {
     /// Agent in the first tab whose saved resume command has not started yet.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stopped_agent: Option<String>,
+    /// Tokens in the context window of the agent in the first tab.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_tokens: Option<u64>,
+    /// Size of that context window in tokens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<u64>,
+    /// Finished working spans of the agent in the first tab from the last 30
+    /// minutes, as `[start, end]` in Unix milliseconds.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub working_spans: Vec<(u64, u64)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]

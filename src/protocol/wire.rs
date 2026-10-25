@@ -1056,6 +1056,16 @@ pub struct ClientShellWorkspace {
     /// collie: Agent in Tab 1, dessen Resume-Befehl noch nicht gestartet ist.
     #[serde(default)]
     pub stopped_agent: Option<String>,
+    /// collie: Belegter Kontext des Agents in Tab 1 in Tokens.
+    #[serde(default)]
+    pub context_tokens: Option<u64>,
+    /// collie: Größe dieses Kontextfensters in Tokens.
+    #[serde(default)]
+    pub context_window: Option<u64>,
+    /// collie: Abgeschlossene Arbeitsphasen der letzten 30 Minuten als
+    /// `(start, ende)` in Unix-Millisekunden.
+    #[serde(default)]
+    pub working_spans: Vec<(u64, u64)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2862,6 +2872,9 @@ mod tests {
                 blocked_reason: None,
                 awaiting: None,
                 stopped_agent: None,
+                context_tokens: None,
+                context_window: None,
+                working_spans: Vec::new(),
             }],
             tabs: vec![ClientShellTab {
                 tab_id: "w1:t1".into(),

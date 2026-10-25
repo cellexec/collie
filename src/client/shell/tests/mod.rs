@@ -48,6 +48,9 @@ pub(super) fn snapshot() -> ClientShellSnapshot {
             blocked_reason: None,
             awaiting: None,
             stopped_agent: None,
+            context_tokens: None,
+            context_window: None,
+            working_spans: Vec::new(),
         }],
         tabs: vec![ClientShellTab {
             tab_id: "tab_1".into(),

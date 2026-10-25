@@ -1112,6 +1112,24 @@
                 "null"
               ]
             },
+            "context_tokens": {
+              "description": "Tokens in the context window of the agent in the first tab.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "context_window": {
+              "description": "Size of that context window in tokens.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
             "focused": {
               "type": "boolean"
             },
@@ -1174,6 +1192,27 @@
                 "integer",
                 "null"
               ]
+            },
+            "working_spans": {
+              "description": "Finished working spans of the agent in the first tab from the last 30\nminutes, as `[start, end]` in Unix milliseconds.",
+              "items": {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "format": "uint64",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "format": "uint64",
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                ],
+                "type": "array"
+              },
+              "type": "array"
             },
             "workspace_id": {
               "type": "string"
@@ -10864,6 +10903,24 @@
                 "null"
               ]
             },
+            "context_tokens": {
+              "description": "Tokens in the context window of the agent in the first tab.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "context_window": {
+              "description": "Size of that context window in tokens.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
             "focused": {
               "type": "boolean"
             },
@@ -10926,6 +10983,27 @@
                 "integer",
                 "null"
               ]
+            },
+            "working_spans": {
+              "description": "Finished working spans of the agent in the first tab from the last 30\nminutes, as `[start, end]` in Unix milliseconds.",
+              "items": {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "format": "uint64",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "format": "uint64",
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                ],
+                "type": "array"
+              },
+              "type": "array"
             },
             "workspace_id": {
               "type": "string"

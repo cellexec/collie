@@ -103,6 +103,9 @@ pub(super) fn snapshot_with_completions(
                 blocked_reason: workspace.blocked_reason.clone(),
                 awaiting: workspace.awaiting.clone(),
                 stopped_agent: workspace.stopped_agent.clone(),
+                context_tokens: workspace.context_tokens,
+                context_window: workspace.context_window,
+                working_spans: workspace.working_spans.clone(),
             }
         })
         .collect();

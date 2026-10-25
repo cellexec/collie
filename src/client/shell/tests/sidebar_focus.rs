@@ -983,8 +983,32 @@ fn chat_overlay_shows_nothing_to_do_when_no_chat_waits() {
     let mut state = chat_overlay_state_with(snapshot);
     focus_sidebar(&mut state);
     let rows = frame_rows(&state.compose(100, 28).expect("frame"));
-    assert!(rows.iter().any(|row| row.contains("Nichts zu tun")));
+    assert!(rows.iter().any(|row| row.contains("alles erledigt")));
+    assert!(rows.iter().any(|row| row.contains("(_____/")));
     assert!(rows.iter().any(|row| row.contains("läuft 2  snooze 0")));
+}
+
+#[test]
+fn chat_cards_show_repo_badge_context_gauge_and_activity() {
+    let now = crate::workspace::unix_millis_now();
+    let mut snapshot = agents_snapshot();
+    snapshot.workspaces[0].attention_since = Some(now - 5 * 60_000);
+    snapshot.workspaces[0].context_tokens = Some(640_000);
+    snapshot.workspaces[0].context_window = Some(1_000_000);
+    snapshot.workspaces[0].working_spans = vec![(now - 10 * 60_000, now - 5 * 60_000)];
+    snapshot.workspaces[1].working_since = Some(now - 4 * 60_000);
+    let mut state = chat_overlay_state_with(snapshot);
+    focus_sidebar(&mut state);
+    // Breit genug, dass neben dem Kontext-Balken auch die Kurve Platz hat.
+    let rows = frame_rows(&state.compose(160, 28).expect("frame"));
+    let card = state.hits.agents[0].0;
+    let context = &rows[usize::from(card.y) + 1];
+    assert!(context.contains(" RE  repo"), "{context}");
+    assert!(context.contains("▰▰▰▱▱ 64%"), "{context}");
+    assert!(context.contains('█'), "{context}");
+    let running = state.hits.agents[1].0;
+    let running = &rows[usize::from(running.y)];
+    assert!(running.contains("▅█"), "{running}");
 }
 
 #[test]
