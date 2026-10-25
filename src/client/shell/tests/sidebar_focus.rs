@@ -889,6 +889,43 @@ fn chat_overlay_opens_on_line_click_and_closes_on_pane_click() {
 }
 
 #[test]
+fn wide_terminals_show_a_chat_rail_with_initials_and_spinners() {
+    let mut state = chat_overlay_state();
+    assert_eq!(state.surface_size(160, 28).cols, 152);
+    let rows = frame_rows(&state.compose(160, 28).expect("frame"));
+    assert_eq!(state.hits.sidebar_line, Rect::new(0, 0, 8, 28));
+    let waiting = state.hits.agents[0].0;
+    let waiting_row: String = rows[usize::from(waiting.y)].chars().take(8).collect();
+    assert!(waiting_row.contains(" RE "), "{waiting_row}");
+    let running = state.hits.agents[1].0;
+    assert!(running.y > waiting.y);
+    let running_row: String = rows[usize::from(running.y)].chars().take(8).collect();
+    assert!(running_row.contains("RE"), "{running_row}");
+    assert!(rows[usize::from(running.y) - 1].starts_with("───"));
+
+    // Ausgefahren gehören die Treffer allein den Karten.
+    focus_sidebar(&mut state);
+    state.compose(160, 28).expect("frame");
+    assert_eq!(state.hits.agents.len(), 2);
+    assert_eq!(state.hits.agents[0].0.height, 3);
+    press(&mut state, b"\x1b");
+    state.compose(160, 28).expect("frame");
+
+    // Ein Klick auf eine Zeile öffnet den Chat, ohne das Overlay auszufahren.
+    let outcome = mouse(
+        &mut state,
+        MouseEventKind::Down(MouseButton::Left),
+        (running.x + 3, running.y),
+    );
+    assert!(!state.chat_overlay_open());
+    assert!(
+        format!("{:?}", outcome.actions).contains("pane_2"),
+        "{:?}",
+        outcome.actions
+    );
+}
+
+#[test]
 fn chat_overlay_click_on_a_card_opens_the_chat() {
     let mut state = chat_overlay_state();
     focus_sidebar(&mut state);

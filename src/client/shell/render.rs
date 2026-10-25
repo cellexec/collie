@@ -382,7 +382,16 @@ pub(super) fn render_shell(
         );
     }
     if layout.sidebar.width > 0 {
-        if state.chat_line {
+        if state.chat_line && layout.sidebar.width > 1 {
+            super::chat_rail::render_chat_rail(
+                buffer,
+                layout.sidebar,
+                snapshot,
+                config,
+                state.chat_line_bright,
+                &mut hits,
+            );
+        } else if state.chat_line {
             super::chat_overlay::render_chat_line(
                 buffer,
                 layout.sidebar,

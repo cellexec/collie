@@ -17,6 +17,36 @@ Neue Option `ui.sidebar.overlay = true`. Sie wirkt nur zusammen mit
 `ui.sidebar.agents_only`. Ohne sie bleibt das bisherige Verhalten samt
 `sidebar_collapsed_mode` und `sidebar_width`.
 
+## Eingeklappt: Leiste auf breiten Terminals
+
+Ab 110 Spalten Terminalbreite steht statt der Linie eine Leiste von 8 Spalten.
+Darunter bleibt die Linie, auf dem Handy die mobile Kopfzeile.
+
+```
+ 󰭹 2   ▕
+       ▕
+▌●  CO ▕
+       ▕
+▌?  SB ▕
+       ▕
+───────▕
+ ⠹  HE ▕
+ 󰒲  DO ▕
+```
+
+- Kopf: Chat-Icon und Zahl der wartenden Chats.
+- Je wartendem Chat eine Zeile: Wärmestreifen (Akzent für den offenen Chat),
+  Status-Symbol wie auf der Karte, Repo-Kürzel als Chip in der Repo-Farbe.
+  Ohne Repo kommt das Kürzel aus dem Titel. Passt die Liste, steht eine
+  Leerzeile dazwischen; was nicht passt, zählt die letzte Zeile als `+N`.
+- Unten, unter einer Trennlinie, laufende Chats mit Spinner und gesnoozte mit
+  Snooze-Icon, das Kürzel als farbiger Text. Höchstens ein Drittel der Höhe.
+- Der rechte Rand trägt die Farbe der Linie und pulsiert wie sie.
+- Maus: Klick auf eine Zeile öffnet den Chat direkt. Klick auf eine freie
+  Stelle fährt das Overlay aus. Darüberfahren fährt nichts aus, sonst läge das
+  Overlay über der Zeile, die man anklicken will.
+- Der Spinner zeichnet neu, solange ein Chat arbeitet und die Leiste steht.
+
 ## Eingeklappt: Linie
 
 - Links steht eine Linie von 1 Spalte Breite. Sie ist eine eigene

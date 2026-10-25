@@ -46,7 +46,7 @@ pub(super) fn pulse_bright(started: Option<u64>, now: u64) -> bool {
 
 /// Farbe der Linie: rot bei einem blockierten Chat, Akzent bei einem
 /// wartenden, sonst gedimmt.
-fn line_color(
+pub(super) fn line_color(
     snapshot: &ClientShellSnapshot,
     now: u64,
     palette: &Palette,
@@ -222,11 +222,33 @@ impl ClientShellState {
             return self.route_open_chat_overlay_mouse(mouse, point, outcome);
         }
         let on_line = super::contains(self.hits.sidebar_line, point);
+        // Auf der Leiste öffnet ein Klick auf eine Zeile direkt den Chat. Die
+        // Leiste fährt nicht beim Darüberfahren aus, sonst läge das Overlay
+        // über der Zeile, die man gerade anklicken will.
+        let rail = self.hits.sidebar_line.width > 1;
+        let rail_chat = self
+            .hits
+            .agents
+            .iter()
+            .find(|(rect, _)| rail && super::contains(*rect, point))
+            .map(|(_, pane_id)| pane_id.clone());
         match mouse.kind {
+            MouseEventKind::Down(MouseButton::Left) if rail_chat.is_some() => {
+                if let Some(pane_id) = rail_chat {
+                    self.focus_or_activate(
+                        self.active_endpoint_id.clone(),
+                        ClientEndpointFocusTarget::Pane(pane_id),
+                        outcome,
+                    );
+                    outcome.repaint = true;
+                }
+                true
+            }
             MouseEventKind::Down(MouseButton::Left) if on_line => {
                 self.open_chat_overlay(false, outcome);
                 true
             }
+            MouseEventKind::Moved if on_line && rail => true,
             MouseEventKind::Moved if on_line => {
                 if self.chat_line_hover_deadline.is_none() {
                     self.chat_line_hover_deadline = Some(std::time::Instant::now() + HOVER_DELAY);

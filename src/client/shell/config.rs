@@ -414,9 +414,10 @@ impl ClientShellConfig {
             };
         }
 
-        // collie: Das Chat-Overlay belegt eingeklappt wie ausgefahren nur die Linie.
+        // collie: Das Chat-Overlay belegt eingeklappt wie ausgefahren nur die
+        // Chat-Spalte: auf breiten Terminals die Leiste, sonst die Linie.
         let sidebar_width = if chat_line {
-            1
+            super::chat_rail::chat_column_width(cols)
         } else if sidebar_collapsed {
             match self.sidebar_collapsed_mode {
                 SidebarCollapsedModeConfig::Compact => 4,

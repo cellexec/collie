@@ -207,7 +207,9 @@ impl ClientShellState {
         let view = self
             .sidebar_focus
             .render_view(self.mode, self.prefix_return_navigate);
-        if (view.show_hidden && !self.sidebar_collapsed) || self.chat_overlay_open() {
+        // collie: Die Leiste zeigt laufende Chats mit Spinner.
+        let rail = self.chat_overlay_enabled() && self.hits.sidebar_line.width > 1;
+        if (view.show_hidden && !self.sidebar_collapsed) || self.chat_overlay_open() || rail {
             let spinning = snapshot
                 .agents
                 .iter()

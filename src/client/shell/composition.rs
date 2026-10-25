@@ -823,6 +823,9 @@ fn render_chat_overlay(
     if area.is_empty() {
         return;
     }
+    // collie: Das Overlay liegt über der Chat-Leiste; deren Zeilen sind
+    // verdeckt und dürfen keine Klicks mehr fangen.
+    hits.agents.clear();
     let mut buffer = Buffer::empty(Rect::new(0, 0, frame.width, frame.height));
     render::sidebar::render_chat_overlay(
         &mut buffer,
