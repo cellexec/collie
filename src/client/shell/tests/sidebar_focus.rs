@@ -949,11 +949,11 @@ fn chat_cards_show_context_and_the_blocked_reason() {
     let card = state.hits.agents[0].0;
     assert_eq!(card.height, 3);
     let lines = &rows[usize::from(card.y)..usize::from(card.y) + 3];
-    assert!(lines[0].contains("client-shell"), "{}", lines[0]);
-    assert!(lines[0].contains(" 5m "), "{}", lines[0]);
-    for part in ["claude", "repo", "main ↑2", "+1 shell"] {
-        assert!(lines[1].contains(part), "{part}: {}", lines[1]);
+    for part in [" RE  repo", " +1", "main ↑2"] {
+        assert!(lines[0].contains(part), "{part}: {}", lines[0]);
     }
+    assert!(lines[1].contains("client-shell"), "{}", lines[1]);
+    assert!(lines[1].contains(" 5m "), "{}", lines[1]);
     assert!(lines[2].contains("wartet auf Eingabe"), "{}", lines[2]);
 }
 
@@ -1000,9 +1000,9 @@ fn chat_cards_show_repo_badge_context_gauge_and_activity() {
     let mut state = chat_overlay_state_with(snapshot);
     focus_sidebar(&mut state);
     // Breit genug, dass neben dem Kontext-Balken auch die Kurve Platz hat.
-    let rows = frame_rows(&state.compose(160, 28).expect("frame"));
+    let rows = frame_rows(&state.compose(200, 28).expect("frame"));
     let card = state.hits.agents[0].0;
-    let context = &rows[usize::from(card.y) + 1];
+    let context = &rows[usize::from(card.y)];
     assert!(context.contains(" RE  repo"), "{context}");
     assert!(context.contains("▰▰▰▱▱ 64%"), "{context}");
     assert!(context.contains('█'), "{context}");
@@ -1057,10 +1057,10 @@ fn chat_cards_show_reported_messages_unread_state_and_runtime() {
     };
 
     let blocked = card("pane_1");
-    assert!(blocked[0].contains('●'), "{}", blocked[0]);
+    assert!(blocked[1].contains('●'), "{}", blocked[1]);
     assert!(blocked[2].contains("Freigabe: Bash"), "{}", blocked[2]);
     let done = card("pane_3");
-    assert!(done[0].contains('○'), "{}", done[0]);
+    assert!(done[1].contains('○'), "{}", done[1]);
     assert!(done[2].contains("Soll ich committen?"), "{}", done[2]);
     let running = card("pane_2");
     assert!(running[0].contains(" 3m"), "{}", running[0]);
@@ -1093,15 +1093,14 @@ fn chat_cards_show_stopped_and_awaiting_chats() {
     };
 
     let awaiting = card("pane_1");
-    assert!(awaiting[0].contains('?'), "{}", awaiting[0]);
+    assert!(awaiting[1].contains('?'), "{}", awaiting[1]);
     assert!(
         awaiting[2].contains("wartet auf Antwort: Formular: 3 Fragen"),
         "{}",
         awaiting[2]
     );
     let stopped = card("pane_2");
-    assert!(stopped[0].contains('■'), "{}", stopped[0]);
-    assert!(stopped[1].contains("codex"), "{}", stopped[1]);
+    assert!(stopped[1].contains('■'), "{}", stopped[1]);
     assert!(
         stopped[2].contains("gestoppt: Tests laufen grün"),
         "{}",

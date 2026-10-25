@@ -63,16 +63,20 @@ Jeder Chat der Hauptliste ist eine Karte mit 3 Zeilen. Alle Karten sind gleich
 hoch.
 
 ```
-▌ ● 󰚩 Refactor der Snooze-Logik                                  12m
-▌   claude   CO  collie   feat/snooze ↑2   ▂███▁▁▁▁▁▅█  ▰▰▰▱▱ 64%
-▌   wartet auf Freigabe: Bash(cargo test)
+▌  CO  collie   +1      ▂███▁▁▁▁▁▅█  ▰▰▰▱▱ 64%    feat/snooze ↑2
+▌ ● Refactor der Snooze-Logik                                  12m
+▌ wartet auf Freigabe: Bash(cargo test), danach noch die Tests im …
 ```
 
 | Zeile | Inhalt |
 | --- | --- |
-| 1 | Status-Symbol, Agent-Icon, Titel, Wartezeit rechts |
-| 2 | Agent, Repo-Chip und Repo, Branch, ahead/behind, Worktree-Marker, Zahl der Neben-Tabs; rechts Aktivitätskurve und Kontext-Balken |
+| 1 | Repo-Chip und Repo, Worktree-Marker, Zahl der Neben-Tabs; rechts Branch mit ahead/behind, davor Aktivitätskurve und Kontext-Balken. Ohne Repo stehen Agent-Icon und Agent-Name links. |
+| 2 | Status-Symbol, Titel, Wartezeit rechts |
 | 3 | bei `Blocked` der Grund, sonst die letzte Nachricht |
+
+Titel und Zeile 3 enden abgeschnitten mit `…`. Wird Zeile 1 eng, weicht
+zuerst die Aktivitätskurve, dann der Kontext-Balken. Der Branch bekommt
+höchstens die halbe Zeile und wird erst danach gekürzt.
 
 - Abtrennung: leicht getönter Hintergrund pro Karte (`surface_dim`), eine
   Leerzeile Abstand. Die Karte unter dem Cursor hat links einen Akzentbalken
@@ -103,7 +107,7 @@ hoch.
   Worktree-Label. Branch und ahead/behind kommen vom Space; der Branch wird im
   Overlay-Modus periodisch aktualisiert, auch ohne konfiguriertes
   `Branch`-Token.
-- Neben-Tabs: `+N shells` für Tabs ab Nummer 2, fehlt bei 0.
+- Neben-Tabs: Shell-Icon und `+N` für Tabs ab Nummer 2, fehlt bei 0.
 - Zeile 3: die letzte nicht-leere Zeile der letzten Assistant-Nachricht,
   Markdown entfernt, auf Kartenbreite gekürzt. Leer, wenn nichts bekannt ist.
 - Icons kommen fest verdrahtet aus dem Nerd Font, ohne Unicode-Fallback.

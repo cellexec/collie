@@ -20,6 +20,7 @@ use super::chats::{
 use super::render::{display_width, put_text};
 use super::*;
 use crate::api::schema::AgentStatus;
+use crate::ui::truncate_end;
 
 /// Zeilen einer Karte.
 pub(super) const CARD_HEIGHT: u16 = 3;
@@ -272,8 +273,8 @@ fn render_main_cards(
     }
 }
 
-/// Eine Karte: Status, Agent, Titel und Wartezeit; Repo und Branch; Grund
-/// oder Vorschau.
+/// Eine Karte: Repo und Branch; Status, Titel und Wartezeit; Grund oder
+/// Vorschau.
 fn render_card(
     buffer: &mut Buffer,
     rect: Rect,
@@ -323,9 +324,107 @@ fn render_card(
     }
     let inner_x = rect.x.saturating_add(2);
     let right = rect.right().saturating_sub(1);
+    let muted = base.fg(palette.overlay0);
 
-    // Zeile 1: Status, Agent-Icon, Titel, Wartezeit. Ohne bekannte
-    // Wartezeit (älterer Server) bleibt sie leer.
+    // Zeile 1: Repo links, Branch rechts, davor Aktivität und Kontext.
+    let first_y = rect.y;
+    let branch = row.branch.as_deref().map(|branch| {
+        let mut label = format!("{ICON_BRANCH} {branch}");
+        if let Some((ahead, behind)) = row.ahead_behind {
+            if ahead > 0 {
+                label.push_str(&format!(" ↑{ahead}"));
+            }
+            if behind > 0 {
+                label.push_str(&format!(" ↓{behind}"));
+            }
+        }
+        label
+    });
+    let mut line_end = right;
+    if let Some(branch) = branch.as_deref() {
+        // Der Branch bekommt höchstens die halbe Zeile.
+        let width = display_width(branch).min(right.saturating_sub(inner_x) / 2);
+        let branch = truncate_end(branch, usize::from(width));
+        put_text(
+            buffer,
+            right.saturating_sub(width),
+            first_y,
+            width,
+            &branch,
+            base.fg(palette.mauve),
+        );
+        line_end = right.saturating_sub(width).saturating_sub(2);
+    }
+    let line_end = render_card_meters(buffer, inner_x, first_y, line_end, row, now, palette, base);
+    let mut x = inner_x;
+    if let Some(repo) = row.repo.as_deref() {
+        // Jedes Repo hat einen festen Farbton: Kürzel als Chip, Name in
+        // derselben Farbe.
+        let hue = repo_color(repo, palette);
+        let initials = repo_initials(repo);
+        x = if initials.is_empty() {
+            put_part(buffer, x, first_y, line_end, ICON_REPO, muted)
+        } else {
+            put_part(
+                buffer,
+                x,
+                first_y,
+                line_end,
+                &format!(" {initials} "),
+                base.fg(background).bg(hue).add_modifier(Modifier::BOLD),
+            )
+        };
+        x = put_part(
+            buffer,
+            x.saturating_add(1),
+            first_y,
+            line_end,
+            repo,
+            base.fg(hue).add_modifier(Modifier::BOLD),
+        );
+    } else {
+        let icon = if row.has_agent {
+            ICON_AGENT
+        } else {
+            ICON_SHELL
+        };
+        x = put_part(
+            buffer,
+            x,
+            first_y,
+            line_end,
+            icon,
+            base.fg(palette.overlay1),
+        );
+        if let Some(agent) = row.agent.as_deref() {
+            x = put_part(buffer, x.saturating_add(1), first_y, line_end, agent, muted);
+        }
+    }
+    if row.linked_worktree {
+        x = put_part(
+            buffer,
+            x.saturating_add(2),
+            first_y,
+            line_end,
+            ICON_WORKTREE,
+            muted,
+        );
+    }
+    if row.extra_tabs > 0 {
+        let shells = format!("{ICON_SHELL} +{}", row.extra_tabs);
+        put_part(
+            buffer,
+            x.saturating_add(2),
+            first_y,
+            line_end,
+            &shells,
+            muted,
+        );
+    }
+
+    // Zeile 2: Status, Titel, Wartezeit. Ohne bekannte Wartezeit (älterer
+    // Server) bleibt sie leer.
+    let title_y = rect.y.saturating_add(1);
     let age = if row.attention_since == 0 {
         String::new()
     } else {
@@ -335,12 +434,11 @@ fn render_card(
     put_text(
         buffer,
         right.saturating_sub(age_width),
-        rect.y,
+        title_y,
         age_width,
         &age,
         base.fg(age_color(row.attention_since, now, palette)),
     );
-    let mut x = inner_x;
     if let Some((symbol, style)) = chat_symbol(row, now, palette) {
         // Gelesene Chats bekommen ein hohles Symbol.
         let symbol = if row.unread || symbol != "●" {
@@ -348,160 +446,70 @@ fn render_card(
         } else {
             "○"
         };
-        put_text(buffer, x, rect.y, 1, symbol, style.bg(background));
+        put_text(buffer, inner_x, title_y, 1, symbol, style.bg(background));
     }
-    x = x.saturating_add(2);
-    let icon = if row.has_agent {
-        ICON_AGENT
-    } else {
-        ICON_SHELL
-    };
-    put_text(buffer, x, rect.y, 1, icon, base.fg(palette.overlay1));
-    x = x.saturating_add(2);
+    let title_x = inner_x.saturating_add(2);
     let title_width = right
         .saturating_sub(age_width)
         .saturating_sub(1)
-        .saturating_sub(x);
+        .saturating_sub(title_x);
     let title_style = if row.unread || row.focused || selected {
         base.fg(palette.text).add_modifier(Modifier::BOLD)
     } else {
         base.fg(palette.subtext0)
     };
-    put_text(buffer, x, rect.y, title_width, &row.label, title_style);
-
-    // Zeile 2: Kontext, rechts Aktivität und Kontextbelegung.
-    let context_y = rect.y.saturating_add(1);
-    let mut x = inner_x.saturating_add(2);
-    let muted = base.fg(palette.overlay0);
-    let right = render_card_meters(buffer, x, context_y, right, row, now, palette, base);
-    if let Some(agent) = row.agent.as_deref() {
-        x = put_part(buffer, x, context_y, right, agent, muted);
-        x = x.saturating_add(2);
-    }
-    if let Some(repo) = row.repo.as_deref() {
-        // Jedes Repo hat einen festen Farbton: Kürzel als Chip, Name in
-        // derselben Farbe.
-        let hue = repo_color(repo, palette);
-        let initials = repo_initials(repo);
-        x = if initials.is_empty() {
-            put_part(buffer, x, context_y, right, ICON_REPO, muted)
-        } else {
-            put_part(
-                buffer,
-                x,
-                context_y,
-                right,
-                &format!(" {initials} "),
-                base.fg(background).bg(hue).add_modifier(Modifier::BOLD),
-            )
-        };
-        x = put_part(
-            buffer,
-            x.saturating_add(1),
-            context_y,
-            right,
-            repo,
-            base.fg(hue),
-        );
-        x = x.saturating_add(2);
-    }
-    if let Some(branch) = row.branch.as_deref() {
-        x = put_part(
-            buffer,
-            x,
-            context_y,
-            right,
-            ICON_BRANCH,
-            base.fg(palette.mauve),
-        );
-        x = put_part(
-            buffer,
-            x.saturating_add(1),
-            context_y,
-            right,
-            branch,
-            base.fg(palette.mauve),
-        );
-        if let Some((ahead, behind)) = row.ahead_behind {
-            let mut sync = String::new();
-            if ahead > 0 {
-                sync.push_str(&format!(" ↑{ahead}"));
-            }
-            if behind > 0 {
-                sync.push_str(&format!(" ↓{behind}"));
-            }
-            x = put_part(buffer, x, context_y, right, &sync, muted);
-        }
-        x = x.saturating_add(2);
-    }
-    if row.linked_worktree {
-        x = put_part(buffer, x, context_y, right, ICON_WORKTREE, muted);
-        x = x.saturating_add(2);
-    }
-    if row.extra_tabs > 0 {
-        let shells = format!(
-            "{ICON_SHELL} +{} {}",
-            row.extra_tabs,
-            if row.extra_tabs == 1 {
-                "shell"
-            } else {
-                "shells"
-            }
-        );
-        put_part(buffer, x, context_y, right, &shells, muted);
-    }
+    put_text(
+        buffer,
+        title_x,
+        title_y,
+        title_width,
+        &truncate_end(&row.label, usize::from(title_width)),
+        title_style,
+    );
 
     // Zeile 3: bei Blocked der Grund, bei einer offenen Rückfrage deren
     // Thema, sonst die letzte Nachricht.
-    let detail_x = inner_x.saturating_add(2);
-    let detail_width = right.saturating_sub(detail_x);
-    if row.awaiting_reply() {
-        let awaiting = format!(
-            "wartet auf Antwort: {}",
-            row.awaiting.as_deref().unwrap_or_default()
-        );
-        put_text(
-            buffer,
-            detail_x,
-            rect.y.saturating_add(2),
-            detail_width,
-            &awaiting,
+    let detail_y = rect.y.saturating_add(2);
+    let detail_width = right.saturating_sub(inner_x);
+    let (detail, detail_style) = if row.awaiting_reply() {
+        (
+            format!(
+                "wartet auf Antwort: {}",
+                row.awaiting.as_deref().unwrap_or_default()
+            ),
             base.fg(palette.yellow),
-        );
+        )
     } else if row.stopped {
-        let stopped = match row.last_message.as_deref() {
-            Some(message) => format!("gestoppt: {message}"),
-            None => "gestoppt, enter startet den Agent".to_owned(),
-        };
-        put_text(
-            buffer,
-            detail_x,
-            rect.y.saturating_add(2),
-            detail_width,
-            &stopped,
+        (
+            match row.last_message.as_deref() {
+                Some(message) => format!("gestoppt: {message}"),
+                None => "gestoppt, enter startet den Agent".to_owned(),
+            },
             base.fg(palette.overlay0).add_modifier(Modifier::ITALIC),
-        );
+        )
     } else if row.status == AgentStatus::Blocked {
-        put_text(
-            buffer,
-            detail_x,
-            rect.y.saturating_add(2),
-            detail_width,
+        (
             row.blocked_reason
-                .as_deref()
-                .unwrap_or("wartet auf Eingabe"),
+                .clone()
+                .unwrap_or_else(|| "wartet auf Eingabe".to_owned()),
             base.fg(status_color(AgentStatus::Blocked, palette)),
-        );
+        )
     } else if let Some(message) = row.last_message.as_deref() {
-        put_text(
-            buffer,
-            detail_x,
-            rect.y.saturating_add(2),
-            detail_width,
-            message,
+        (
+            message.to_owned(),
             base.fg(palette.overlay1).add_modifier(Modifier::ITALIC),
-        );
-    }
+        )
+    } else {
+        return;
+    };
+    put_text(
+        buffer,
+        inner_x,
+        detail_y,
+        detail_width,
+        &truncate_end(&detail, usize::from(detail_width)),
+        detail_style,
+    );
 }
 
 /// Zeichnet rechtsbündig Aktivitätskurve und Kontext-Balken, soweit Platz
