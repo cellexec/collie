@@ -235,6 +235,19 @@ fn server_live_handoff(args: &[String]) -> std::io::Result<i32> {
     Ok(0)
 }
 
+/// collie: `herdr live-restart` startet den Server mit dem Binary dieses
+/// Aufrufs neu. Alle Panes und ihre Prozesse wandern per Live-Handoff mit.
+/// Das Binary wird ausdrücklich übergeben, weil das des laufenden Servers
+/// nach einem Neubau gelöscht ist.
+pub(super) fn run_live_restart(args: &[String]) -> std::io::Result<i32> {
+    if !args.is_empty() {
+        eprintln!("usage: herdr live-restart");
+        return Ok(2);
+    }
+    let exe = std::env::current_exe()?;
+    server_live_handoff(&["--import-exe".to_string(), exe.display().to_string()])
+}
+
 fn parse_live_handoff_params(args: &[String]) -> Option<ServerLiveHandoffParams> {
     let mut params = ServerLiveHandoffParams::default();
     let mut idx = 0;

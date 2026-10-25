@@ -44,6 +44,10 @@ pub(super) fn command() -> Command {
         .subcommand(agent_command())
         .subcommand(pane_command())
         .subcommand(chat_command())
+        .subcommand(
+            Command::new("live-restart")
+                .about("Restart the server on this binary and keep running panes alive"),
+        )
         .subcommand(terminal_command())
         .subcommand(session_command())
         .subcommand(integration_command())
