@@ -35,8 +35,9 @@ gleichberechtigt in der Liste.
 - `Done` und gesehenes `Idle` sehen gleich aus. Das `●` bleibt, bis der Agent
   wieder arbeitet oder der Chat geschlossen wird.
 - Beginnt ein Chat zu arbeiten, verschwindet er sofort aus der Hauptliste. Das
-  Pane rechts bleibt offen. Beim Wechsel in die Sidebar steht der Cursor auf
-  dem ersten Eintrag.
+  Pane rechts bleibt offen. Beim Wechsel in die Sidebar bleibt der Cursor auf
+  dem zuletzt gewählten Chat, solange es ihn noch gibt. Sonst steht er auf dem
+  fokussierten Chat, ohne den auf dem ersten Eintrag.
 - `h` zeigt ausschließlich die versteckten Chats (laufend und gesnoozt),
   nochmal `h` schaltet zurück. Der Spinner läuft nur dort.
 - Die eingeklappte Sidebar zeigt die Hauptliste.

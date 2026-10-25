@@ -846,6 +846,21 @@ fn chat_overlay_moves_the_cursor_without_preview() {
 }
 
 #[test]
+fn sidebar_keeps_the_last_chat_selection_when_reentered() {
+    let mut state = chat_overlay_state();
+    focus_sidebar(&mut state);
+    assert_eq!(agent_cursor(&state), Some("pane_1"));
+    press(&mut state, b"j");
+    assert_eq!(agent_cursor(&state), Some("pane_2"));
+    press(&mut state, b"\r");
+    focus_sidebar(&mut state);
+    assert_eq!(agent_cursor(&state), Some("pane_2"));
+    press(&mut state, b"\x1b");
+    focus_sidebar(&mut state);
+    assert_eq!(agent_cursor(&state), Some("pane_2"));
+}
+
+#[test]
 fn chat_overlay_esc_leaves_without_focus_changes() {
     let mut state = chat_overlay_state();
     focus_sidebar(&mut state);

@@ -321,11 +321,15 @@ impl ClientShellState {
         if self.spaces_hidden() {
             self.sidebar_focus.section = SidebarSection::Agents;
             self.sidebar_focus.show_hidden = false;
-            self.sidebar_focus.agent_cursor = self.sidebar_agent_targets().into_iter().next();
             self.agent_scroll = 0;
         }
+        // Der Cursor bleibt auf dem zuletzt gewählten Chat, solange es ihn in
+        // der Liste noch gibt. Sonst landet er auf dem fokussierten Chat.
         if !self.sidebar_agent_cursor_valid() {
             self.sidebar_focus.agent_cursor = self.focused_sidebar_agent();
+        }
+        if self.spaces_hidden() {
+            self.reveal_sidebar_agent();
         }
         outcome.repaint = true;
     }
