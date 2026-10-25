@@ -22,8 +22,14 @@ Neue Option `ui.sidebar.overlay = true`. Sie wirkt nur zusammen mit
 - Links steht eine Linie von 1 Spalte Breite. Sie ist eine eigene
   Layout-Spalte; die Panes sind dauerhaft 1 Spalte schmaler, die Linie
   verdeckt nichts.
-- Farbe: rot, wenn ein Chat `Blocked` ist; Akzent, wenn ein Chat `Done` oder
-  `Idle` ist und wartet; sonst gedimmt. Rot gewinnt.
+- Oben steht je wartendem Chat sein Status-Symbol wie auf der Karte (`●`
+  ungelesen, `○` gelesen, `?` Rückfrage, `■` gestoppt), in Kartenreihenfolge.
+  Nach einer Lücke folgt je laufendem Chat ein `◌` in der Arbeitsfarbe.
+  Gesnoozte Chats fehlen. Die Symbole drehen sich nicht, damit die Linie keine
+  Frames anfordert.
+- Darunter läuft die Linie weiter. Farbe: rot, wenn ein Chat `Blocked` ist;
+  Akzent, wenn ein Chat `Done` oder `Idle` ist und wartet; sonst gedimmt. Rot
+  gewinnt.
 - Wird ein Chat neu fertig oder blockiert, pulsiert die Linie dreimal hell und
   normal über etwa 1,5 s und bleibt dann in ihrer Dauerfarbe.
 - Maus: Klick fährt aus. Hover fährt nach 300 ms aus.

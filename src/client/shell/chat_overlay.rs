@@ -64,7 +64,52 @@ fn line_color(
     }
 }
 
-/// Zeichnet die eingeklappte Linie und meldet sie als Treffer.
+/// Symbol eines laufenden Chats auf der Linie. Es dreht sich nicht, damit
+/// die eingeklappte Linie keine Frames anfordert.
+const LINE_WORKING: &str = "◌";
+
+/// Zeichen der Linie von oben nach unten: je wartendem Chat sein
+/// Status-Symbol, nach einer Lücke je laufendem Chat [`LINE_WORKING`].
+/// Gesnoozte Chats fehlen. `None` ist ein Stück Linie.
+fn line_marks(
+    snapshot: &ClientShellSnapshot,
+    newest_first: bool,
+    now: u64,
+    palette: &Palette,
+) -> Vec<(&'static str, Style)> {
+    let (waiting, hidden) = super::chats::overlay_chat_rows(snapshot, newest_first, "", now);
+    let mut marks = waiting
+        .iter()
+        .filter_map(|row| {
+            let (symbol, style) = super::chats::chat_symbol(row, now, palette)?;
+            // Gelesene Chats bekommen wie auf den Karten ein hohles Symbol.
+            let symbol = if row.unread || symbol != "●" {
+                symbol
+            } else {
+                "○"
+            };
+            Some((symbol, style))
+        })
+        .collect::<Vec<_>>();
+    let working = hidden
+        .iter()
+        .filter(|row| row.status == AgentStatus::Working && !row.snoozed(now))
+        .map(|_| {
+            (
+                LINE_WORKING,
+                Style::default().fg(status_color(AgentStatus::Working, palette)),
+            )
+        })
+        .collect::<Vec<_>>();
+    if !marks.is_empty() && !working.is_empty() {
+        marks.push(("▎", Style::default().fg(palette.surface1)));
+    }
+    marks.extend(working);
+    marks
+}
+
+/// Zeichnet die eingeklappte Linie und meldet sie als Treffer. Oben stehen
+/// die Symbole der Chats, darunter läuft die Linie in ihrer Statusfarbe.
 pub(super) fn render_chat_line(
     buffer: &mut Buffer,
     area: Rect,
@@ -74,16 +119,22 @@ pub(super) fn render_chat_line(
     hits: &mut ShellHitMap,
 ) {
     let palette = &config.palette;
+    let now = crate::workspace::unix_millis_now();
     let color = if bright {
         palette.text
     } else {
-        line_color(snapshot, crate::workspace::unix_millis_now(), palette)
+        line_color(snapshot, now, palette)
     };
     let style = Style::default().fg(color).bg(palette.sidebar_bg);
-    for y in area.y..area.bottom() {
+    let marks = line_marks(snapshot, config.chat_newest_first, now, palette);
+    for (offset, y) in (area.y..area.bottom()).enumerate() {
+        let (symbol, mark_style) = match marks.get(offset) {
+            Some((symbol, mark_style)) => (*symbol, mark_style.bg(palette.sidebar_bg)),
+            None => ("▎", style),
+        };
         for x in area.x..area.right() {
             if let Some(cell) = buffer.cell_mut((x, y)) {
-                cell.set_symbol("▎").set_style(style);
+                cell.set_symbol(symbol).set_style(mark_style);
             }
         }
     }

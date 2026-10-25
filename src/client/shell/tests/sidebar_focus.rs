@@ -806,6 +806,24 @@ fn chat_overlay_collapses_to_a_line_and_opens_without_resize() {
 }
 
 #[test]
+fn collapsed_line_stacks_one_mark_per_chat() {
+    let mut snapshot = agents_snapshot();
+    let mut third = snapshot.workspaces[1].clone();
+    third.workspace_id = "ws_3".into();
+    third.snoozed_until = Some(crate::workspace::unix_millis_now() + 60_000);
+    snapshot.workspaces.push(third);
+    let mut state = chat_overlay_state_with(snapshot);
+    let rows = frame_rows(&state.compose(100, 28).expect("frame"));
+    let column = rows
+        .iter()
+        .map(|row| row.chars().next().unwrap_or(' '))
+        .collect::<String>();
+    // Blockiert und gelesen, Lücke, laufend; der gesnoozte Chat fehlt.
+    assert!(column.starts_with("○▎◌▎"), "{column}");
+    assert_eq!(state.hits.sidebar_line, Rect::new(0, 0, 1, 28));
+}
+
+#[test]
 fn chat_overlay_moves_the_cursor_without_preview() {
     let mut snapshot = agents_snapshot();
     snapshot.agents[1].agent_status = AgentStatus::Done;
