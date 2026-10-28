@@ -1,29 +1,85 @@
 # collie
 
-collie is a personal, keyboard-first build of [herdr](https://github.com/herdrdev/herdr).
-It is not affiliated with or endorsed by the herdr project. The code, crate,
-config paths and environment variables keep the herdr names so upstream changes
-merge cleanly; only the installed commands are called `collie` and `collie-dev`.
+collie is a personal, keyboard-first build of [herdr](https://github.com/herdrdev/herdr),
+tuned for running many Claude Code chats side by side. herdr provides the
+runtime: a background server that keeps terminals alive when the client
+detaches, agent status detection, panes, tabs and the socket API. collie turns
+that into a chat workbench.
 
-What collie adds on top of herdr:
+collie is not affiliated with or endorsed by the herdr project. The code,
+crate, config paths and environment variables keep the herdr names so upstream
+changes merge cleanly; only the installed commands are called `collie` and
+`collie-dev`.
 
-- the sidebar as a second keyboard focus zone: spaces and agents sections,
-  `j`/`k` with live preview, inline `/` filter, list actions, mouse hover and
-  click, a backdrop over the panes while the sidebar has focus
-  ([keyboard docs](docs/next/website/src/content/docs/keyboard.mdx#sidebar-focus))
+<p align="center">
+  <img src="assets/collie/demo.gif" alt="collie: open the chat overlay, pick a chat, mark chats for a shared prompt" width="100%" />
+</p>
+
+## chats
+
+Every space is a chat. The sidebar is an overlay with one card per chat, so
+you can decide which one needs you next without opening it.
+
+<p align="center">
+  <img src="assets/collie/chats.png" alt="chat overlay with cards for waiting chats and running chats below" width="100%" />
+</p>
+
+- **chat cards**: title, repo and branch, last message, runtime, unread state,
+  a heat stripe that warms up the longer a chat waits, a context meter and an
+  activity curve for the last 30 minutes. Each repo keeps a fixed color.
+- **automatic titles**: the chat hook names a chat with Haiku after the first
+  turn and renames it every third turn.
+- **waiting states**: blocked, permission prompt, or a custom "awaiting" text
+  (`herdr pane report-chat <pane> --awaiting <text>`).
+- **chat rail**: on terminals 110 columns and wider, the collapsed overlay
+  shows waiting chats with status and repo initials, running chats with a
+  spinner below. Click a row to open that chat.
+- **stopped chats**: with `session.resume_agents_lazily`, restored agents only
+  start when you open their space.
+- **marks and fan-out**: `x` marks cards, `p` sends one prompt to all marked
+  chats, `O` starts an orchestrator over them.
+- **snooze**: park a chat until later; attention and snooze state live on the
+  server and survive restarts.
+- **chat search**: `herdr chat search` (`prefix+/`) searches every Claude
+  transcript with fzf and focuses or resumes the hit.
+- **status line**: the `chat` tab bar entry shows directory, model and context
+  of the focused chat.
+
+Collapsed, the overlay leaves a rail next to the open chat:
+
+<p align="center">
+  <img src="assets/collie/rail.png" alt="collapsed chat rail next to an open chat" width="100%" />
+</p>
+
+The screenshots come from a scripted demo session with placeholder agents.
+
+## keyboard
+
+- the sidebar is a second focus zone: `j`/`k` with live preview, inline `/`
+  filter, list actions, mouse hover and click, a backdrop over the panes while
+  it has focus ([keyboard docs](docs/next/website/src/content/docs/keyboard.mdx#sidebar-focus))
 - `prefix+s a` / `prefix+s s` pickers for agents and spaces
-- agent commands started from the agents section (`[[ui.sidebar.agent_commands]]`)
-- no self-update: `collie update` refuses and no update checks run, so an
-  upstream release never replaces this build
-- chat cards: the Claude integration also installs a chat hook that reports
-  the last message and permission prompts per pane
-- its own defaults on top of herdr's, see
-  [`src/config/collie_defaults.toml`](src/config/collie_defaults.toml): the
-  agents-only sidebar as an overlay, symbol status indicators, tmux-style keys
-  (`prefix+%`/`prefix+$` split, `prefix+o` next pane, `prefix+f` zoom,
-  `prefix+v` copy mode). Any key you set in `~/.config/herdr/config.toml` wins.
+- agent commands started from the sidebar (`[[ui.sidebar.agent_commands]]`)
+- tmux-style defaults: `prefix+%` / `prefix+$` split, `prefix+o` next pane,
+  `prefix+f` zoom, `prefix+v` copy mode
+- `ui.copy_mode_scrolloff` keeps context lines around the copy cursor, like
+  `scrolloff` in Vim
 
-### build and install
+## defaults
+
+collie layers its own defaults over herdr's, see
+[`src/config/collie_defaults.toml`](src/config/collie_defaults.toml): the
+chat overlay sidebar, symbol status indicators, in-app toasts, lazy resume,
+the keys above. Any key you set in `~/.config/herdr/config.toml` wins.
+
+## no self-update
+
+`collie update` refuses and no update checks run, so an upstream release never
+replaces this build. Update by rebuilding (see below). After a rebuild,
+`herdr live-restart` hands the running session over to the new binary without
+stopping any pane.
+
+## build and install
 
 There are no collie releases. The installer builds from source; it needs
 `git`, `cargo` and `zig` 0.16.0:
@@ -34,16 +90,30 @@ curl -fsSL https://raw.githubusercontent.com/cellexec/collie/master/scripts/coll
 
 It clones to `~/.local/share/collie/src`, builds the release binary, links
 `collie` and `herdr` into `~/.local/bin` and runs
-`collie integration install claude`. Run it again to update. From a checkout,
-`just install` does the same with that checkout. An existing `herdr` that is
-not collie is left alone; agent hooks call `herdr` by name, so they keep
-talking to that one.
+`collie integration install claude`. That integration also installs the chat
+hook that reports last message, titles and permission prompts per pane. Run
+the installer again to update. From a checkout, `just install` does the same
+with that checkout.
 
-Working on collie itself: `just dev-setup` links `collie-dev` (worktrees and
-debug builds with their own session), sets up a shared cargo target for the
-worktrees and guards the main checkout against edits from Claude Code.
+An existing `herdr` that is not collie is left alone; agent hooks call `herdr`
+by name, so they keep talking to that one.
 
-### follow upstream
+## development
+
+```bash
+just dev-setup   # link collie-dev, shared cargo target, guard the main checkout
+just test        # unit tests
+just check       # formatting, tests and maintenance checks
+```
+
+`collie-dev` picks a checkout or worktree, builds the debug binary and starts
+it with its own session in `~/.config/herdr-dev`. `collie-dev new <branch>`
+creates a worktree under `~/projects/collie-worktrees/`.
+
+Design notes for the collie features live in [`docs/specs/`](docs/specs/).
+For everything herdr itself does, see the [herdr docs](https://herdr.dev/docs/).
+
+## follow upstream
 
 ```bash
 git remote add upstream https://github.com/herdrdev/herdr.git
@@ -51,93 +121,7 @@ git fetch upstream && git merge upstream/master
 cargo build --release
 ```
 
-collie is distributed under the herdr project's Apache License 2.0; see
-[LICENSE](LICENSE). The herdr README follows unchanged.
-
----
-
-# herdr
-
-
-<p align="center">
-  <img src="assets/logo.png" alt="herdr" width="100" />
-</p>
-
-<p align="center">
-  <a href="https://herdr.dev">herdr.dev</a> · <a href="#install">install</a> · <a href="https://herdr.dev/docs/quick-start/">quick start</a> · <a href="https://herdr.dev/docs/">docs</a>
-</p>
-
-<p align="center">
-  English · <a href="README.zh-CN.md">简体中文</a>
-</p>
-
-<p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-666666?labelColor=333333" alt="Apache 2.0 license" /></a>
-  <a href="https://github.com/herdrdev/herdr/releases"><img src="https://img.shields.io/github/downloads/herdrdev/herdr/total?labelColor=333333&color=666666" alt="total GitHub release downloads" /></a>
-  <a href="https://github.com/herdrdev/herdr/stargazers"><img src="https://img.shields.io/github/stars/herdrdev/herdr?labelColor=333333&color=666666&logo=github" alt="GitHub stars" /></a>
-  <a href="https://github.com/herdrdev/herdr/releases/latest"><img src="https://img.shields.io/github/v/release/herdrdev/herdr?label=release&labelColor=333333&color=666666" alt="latest stable release" /></a>
-  <a href="https://formulae.brew.sh/formula/herdr"><img src="https://img.shields.io/homebrew/v/herdr?label=homebrew&labelColor=333333&color=666666" alt="Homebrew version" /></a>
-  <a href="https://x.com/herdrdev"><img src="https://img.shields.io/badge/follow-%40herdrdev-000000?logo=x&logoColor=white" alt="follow @herdrdev on X" /></a>
-</p>
-
----
-
-https://github.com/user-attachments/assets/043ec09f-4bdd-41d5-aee0-8fda6b83e267
-
-**the runtime your coding agents live on.**
-
-- **detach without stopping work** — herdr keeps terminals running in a background server when you close the client or lose your SSH connection. after a server or machine restart, herdr restores the saved layout and can resume supported agent sessions; the original processes do not survive. [session state →](https://herdr.dev/docs/session-state/)
-- **several machines, one window** — keep local work and saved ssh machines together, with a combined agent list and independent reconnects. [remote machines →](https://herdr.dev/docs/connecting-machines/)
-- **never hunt for the stuck one** — every pane is marked working, blocked, or idle. when an agent stops and needs an answer, herdr says so.
-- **agent-native** — agents drive herdr through the cli and socket api: they can spawn panes, prompt each other, and wait until another agent is genuinely blocked. [agent skill →](https://herdr.dev/docs/agent-skill/)
-- **runs what you already run** — claude code, codex, cursor, opencode, grok and the rest. herdr doesn't wrap or replace them; it owns their terminals. building an agent? [add herdr support →](https://herdr.dev/docs/add-herdr-support/)
-- **keyboard and mouse, both first-class** — tmux-style prefix keys *and* click, drag, split. pick per moment, not per tool.
-- **plugins** — extend panes and workflows. [browse the marketplace →](https://herdr.dev/plugins/)
-- **one rust binary, no electron** — runs in whatever terminal you already use.
-
----
-
-## install
-
-```bash
-curl -fsSL https://herdr.dev/install.sh | sh
-```
-
-or `brew install herdr` · `mise use -g herdr` · windows: `powershell -ExecutionPolicy Bypass -c "irm https://herdr.dev/install.ps1 | iex"` · [endpoint-protected Windows](https://herdr.dev/docs/windows-beta/) · [binaries](https://github.com/herdrdev/herdr/releases)
-
-then start it where the work lives:
-
-```bash
-herdr
-```
-
-run your agents, split panes, walk away. `ctrl+b q` detaches, `herdr` reattaches. [quick start →](https://herdr.dev/docs/quick-start/)
-
-## docs
-
-everything lives at [herdr.dev/docs](https://herdr.dev/docs/): [quick start](https://herdr.dev/docs/quick-start/) · [concepts](https://herdr.dev/docs/concepts/) · [supported agents](https://herdr.dev/docs/agents/) · [keyboard](https://herdr.dev/docs/keyboard/) · [configuration](https://herdr.dev/docs/configuration/) · [session state](https://herdr.dev/docs/session-state/) · [connecting machines](https://herdr.dev/docs/connecting-machines/) · [remote](https://herdr.dev/docs/persistence-remote/) · [integrations](https://herdr.dev/docs/integrations/) · [add herdr support to your agent](https://herdr.dev/docs/add-herdr-support/) · [plugins](https://herdr.dev/docs/plugins/) · [socket api](https://herdr.dev/docs/socket-api/)
-
-## thanks
-
-every past sponsor and backer is listed in [SPONSORS.md](./SPONSORS.md) — thank you 🐑
-
-enterprise / partnership: hey@herdr.dev
-
-## agent instructions
-
-if you are an ai agent helping with this repository, read [`AGENTS.md`](./AGENTS.md) before making changes and read [`CONTRIBUTING.md`](./CONTRIBUTING.md) before opening issues or PRs.
-
-## development
-
-```bash
-git clone https://github.com/herdrdev/herdr
-cd herdr
-cargo build --release
-
-just test        # unit tests
-just check       # formatting, tests, and maintenance checks
-```
-
 ## license
 
-Herdr is licensed under the [Apache License 2.0](LICENSE).
+collie is distributed under the herdr project's Apache License 2.0; see
+[LICENSE](LICENSE).
