@@ -119,9 +119,7 @@ fn write_requested_help(
 }
 
 fn update_command() -> Command {
-    Command::new("update")
-        .about("Download and install the latest version")
-        .arg(flag("handoff").help("Try live handoff after installing"))
+    Command::new("update").about("Pull and rebuild the collie checkout, then run live-restart")
 }
 
 fn status_command() -> Command {

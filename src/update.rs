@@ -1113,6 +1113,9 @@ pub(crate) struct SelfUpdateOptions {
     pub(crate) live_handoff: bool,
 }
 
+// collie: `herdr update` läuft über source_update; der Upstream-Parser bleibt
+// für die Tests und spätere Merges von upstream erhalten.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn parse_self_update_args(args: &[String]) -> Result<SelfUpdateOptions, String> {
     let mut options = SelfUpdateOptions::default();
     for arg in args {

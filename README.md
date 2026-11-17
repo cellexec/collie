@@ -72,12 +72,17 @@ collie layers its own defaults over herdr's, see
 chat overlay sidebar, symbol status indicators, in-app toasts, lazy resume,
 the keys above. Any key you set in `~/.config/herdr/config.toml` wins.
 
-## no self-update
+## update
 
-`collie update` refuses and no update checks run, so an upstream release never
-replaces this build. Update by rebuilding (see below). After a rebuild,
-`herdr live-restart` hands the running session over to the new binary without
-stopping any pane.
+`collie update` never downloads upstream releases, so an upstream release
+never replaces this build. It finds the checkout this binary was built from,
+runs `git pull --ff-only` on master and `cargo build --release --locked`.
+After that, `collie live-restart` hands the running session over to the new
+binary without stopping any pane:
+
+```bash
+collie update && collie live-restart
+```
 
 ## build and install
 

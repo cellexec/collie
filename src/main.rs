@@ -53,6 +53,7 @@ mod selection;
 mod server;
 mod session;
 mod sound;
+mod source_update;
 mod terminal;
 mod terminal_effects;
 mod terminal_modes;
@@ -605,30 +606,9 @@ fn main() -> io::Result<()> {
         return client::run_client();
     }
 
+    // collie: `update` pullt und baut den Quell-Checkout statt Upstream-Releases.
     if args.get(1).map(|s| s.as_str()) == Some("update") {
-        let options = match update::parse_self_update_args(&args[2..]) {
-            Ok(options) => options,
-            Err(err) if err.starts_with("usage:") => {
-                eprintln!("{err}");
-                std::process::exit(0);
-            }
-            Err(err) => {
-                eprintln!("{err}");
-                eprintln!("usage: herdr update [--handoff]");
-                std::process::exit(2);
-            }
-        };
-        match update::self_update(options) {
-            Ok(_) => return Ok(()),
-            Err(e) => {
-                if e.starts_with("self-update is disabled") {
-                    eprintln!("{e}");
-                } else {
-                    eprintln!("update failed: {e}");
-                }
-                std::process::exit(1);
-            }
-        }
+        std::process::exit(source_update::run(&args[2..]));
     }
 
     if args.iter().any(|a| a == "--help" || a == "-h") {
@@ -641,7 +621,7 @@ fn main() -> io::Result<()> {
         println!("       herdr --remote <ssh-target> [--session <name>]");
         println!("       herdr session attach <name>");
         println!("       herdr completion zsh");
-        println!("       herdr update [--handoff]");
+        println!("       herdr update");
         println!("       herdr channel set <stable|preview>");
         println!("       herdr machine <subcommand> ...");
         println!("       herdr server stop");
@@ -666,7 +646,7 @@ fn main() -> io::Result<()> {
                 "herdr status [server|client]",
                 "Show local client and running server status",
             ),
-            ("herdr update", "Download and install the latest version"),
+            ("herdr update", "Pull and rebuild the collie checkout"),
             ("herdr completion zsh", "Generate shell completions for zsh"),
             (
                 "herdr server stop",
