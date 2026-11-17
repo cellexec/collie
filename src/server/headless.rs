@@ -2408,6 +2408,10 @@ impl HeadlessServer {
                     return runtime.scroll_metrics() != scroll_before;
                 }
                 let interaction = client_pane_input_has_interaction(&events);
+                if interaction {
+                    // collie: Die Master-Inbox wartet, solange der Nutzer tippt.
+                    self.app.note_chat_user_input(workspace_index);
+                }
                 if let Some(client) = self.clients.get_mut(&client_id) {
                     client
                         .track_shell_input(ClientShellInputTarget::Pane(pane_id.clone()), &events);
@@ -2881,6 +2885,15 @@ impl HeadlessServer {
             return false;
         }
 
+        // collie: Ein Child-Chat darf nur seinen eigenen Space verändern.
+        self.app.api_caller_pid = msg.caller_pid;
+        let child_rejection = self.app.child_caller_rejection(&msg.request);
+        self.app.api_caller_pid = None;
+        if let Some(response) = child_rejection {
+            let _ = msg.respond_to.send(response);
+            return false;
+        }
+
         let frozen_alt_screen_read = match self.alt_screen_read_conflict(&msg.request) {
             AltScreenReadConflict::None => None,
             AltScreenReadConflict::Frozen(snapshot) => Some(snapshot),
@@ -3050,8 +3063,12 @@ impl HeadlessServer {
                 .unwrap_or_else(|_| "{}".to_string())
             })
         } else {
-            self.app
-                .handle_api_request_after_internal_events_drained(msg.request)
+            self.app.api_caller_pid = msg.caller_pid;
+            let response = self
+                .app
+                .handle_api_request_after_internal_events_drained(msg.request);
+            self.app.api_caller_pid = None;
+            response
         };
         if let Some(snapshot) = frozen_alt_screen_read {
             if let Ok(mut success) = serde_json::from_str::<api::schema::SuccessResponse>(&response)
@@ -3327,6 +3344,8 @@ impl HeadlessServer {
             self.app.expire_metadata_at(deadline, now);
             changed = true;
         }
+
+        changed |= self.app.handle_chat_inbox_tasks(now);
 
         changed |= self.app.handle_tab_bar_status_tasks(now);
 

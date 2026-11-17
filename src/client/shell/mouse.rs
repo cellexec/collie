@@ -1387,6 +1387,9 @@ impl ClientShellState {
                 return;
             }
         }
+        if self.route_telescope_mouse(mouse, outcome) {
+            return;
+        }
         if matches!(self.overlay, Some(ClientShellOverlay::GlobalMenu(_))) {
             let row_hit = self
                 .hits
@@ -2075,6 +2078,21 @@ impl ClientShellState {
                         crate::input::KeybindMatch::Action(crate::input::KeybindAction::NewTab),
                         outcome,
                     );
+                    return;
+                }
+                // collie: Der Breadcrumb eines Childs führt zum Master zurück.
+                if let Some((_, master)) = self
+                    .hits
+                    .master_breadcrumb
+                    .clone()
+                    .filter(|(rect, _)| super::contains(*rect, point))
+                {
+                    self.focus_or_activate(
+                        self.active_endpoint_id.clone(),
+                        ClientEndpointFocusTarget::Workspace(master),
+                        outcome,
+                    );
+                    outcome.repaint = true;
                     return;
                 }
                 if super::contains(self.hits.tab_scroll_left, point) {

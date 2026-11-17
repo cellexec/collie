@@ -1133,6 +1133,11 @@ impl ClientShellState {
         let Some(row) = self.sidebar_chat_row(pane_id) else {
             return;
         };
+        // collie: Ein Master fragt, was mit seinen Children passiert.
+        if row.master {
+            self.request_master_close(row.workspace_id, row.children.total, outcome);
+            return;
+        }
         if row.status == AgentStatus::Working {
             self.open_close_confirmation(row.workspace_id, None, Some(false));
             return;
@@ -1148,7 +1153,7 @@ impl ClientShellState {
 
     /// collie: Die Chat-Zeile, deren Pane `pane_id` ist.
     pub(super) fn sidebar_chat_row(&self, pane_id: &str) -> Option<super::chats::ChatRow> {
-        super::chats::chat_rows(self.snapshot.as_deref()?)
+        super::chats::all_chat_rows(self.snapshot.as_deref()?)
             .into_iter()
             .find(|row| row.pane_id == pane_id)
     }

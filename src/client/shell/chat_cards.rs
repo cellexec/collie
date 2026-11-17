@@ -261,8 +261,28 @@ fn render_main_cards(
         if y.saturating_add(CARD_HEIGHT) > body.bottom() {
             break;
         }
-        let rect = Rect::new(body.x, y, width, CARD_HEIGHT);
-        render_card(buffer, rect, row, selected(row), marked(row), now, palette);
+        // Ein offenes Child steht eingerückt unter seinem Master.
+        let indent = if row.nested { 2 } else { 0 };
+        let rect = Rect::new(
+            body.x.saturating_add(indent),
+            y,
+            width.saturating_sub(indent),
+            CARD_HEIGHT,
+        );
+        if row.master {
+            render_master_card(
+                buffer,
+                rect,
+                row,
+                selected(row),
+                marked(row),
+                now,
+                palette,
+                hits,
+            );
+        } else {
+            render_card(buffer, rect, row, selected(row), marked(row), now, palette);
+        }
         hits.agents.push((rect, row.pane_id.clone()));
         y = y.saturating_add(CARD_HEIGHT + CARD_GAP);
     }
@@ -509,6 +529,223 @@ fn render_card(
         detail_width,
         &truncate_end(&detail, usize::from(detail_width)),
         detail_style,
+    );
+}
+
+/// Krone eines Master Chats.
+pub(super) const ICON_CROWN: &str = "󰆥";
+
+/// Zähler der Children als Teile mit Farbe: blockiert, laufend, fertig,
+/// gestoppt. Leere Zähler fehlen.
+pub(super) fn child_count_parts(
+    counts: &super::chats::ChildCounts,
+    palette: &Palette,
+) -> Vec<(String, Color)> {
+    [
+        (
+            "⚠",
+            counts.blocked,
+            status_color(AgentStatus::Blocked, palette),
+        ),
+        (
+            "⟳",
+            counts.working,
+            status_color(AgentStatus::Working, palette),
+        ),
+        ("✓", counts.done, palette.accent),
+        ("■", counts.stopped, palette.overlay0),
+    ]
+    .into_iter()
+    .filter(|(_, count, _)| *count > 0)
+    .map(|(symbol, count, color)| (format!("{symbol}{count}"), color))
+    .collect()
+}
+
+/// Karte eines Master Chats: Krone und Zahl der Children; Status und
+/// Zähler; offene Rückfrage, letzte Inbox-Nachricht oder letzte Nachricht.
+#[allow(clippy::too_many_arguments)]
+fn render_master_card(
+    buffer: &mut Buffer,
+    rect: Rect,
+    row: &ChatRow,
+    selected: bool,
+    marked: bool,
+    now: u64,
+    palette: &Palette,
+    hits: &mut ShellHitMap,
+) {
+    let resting = if selected {
+        palette.surface0
+    } else {
+        palette.surface_dim
+    };
+    let pulse_color = if row.needs_reply() {
+        status_color(AgentStatus::Blocked, palette)
+    } else {
+        palette.accent
+    };
+    let background = blend(
+        resting,
+        pulse_color,
+        PULSE_TINT * pulse_amount(row.attention_since, now),
+    );
+    buffer.set_style(rect, Style::default().bg(background));
+    let base = Style::default().bg(background);
+    let stripe = if selected {
+        palette.accent
+    } else {
+        palette.yellow
+    };
+    for y in rect.y..rect.bottom() {
+        put_text(buffer, rect.x, y, 1, "▌", base.fg(stripe));
+    }
+    if marked {
+        put_text(
+            buffer,
+            rect.x,
+            rect.y,
+            1,
+            ICON_MARKED,
+            base.fg(palette.green),
+        );
+    }
+    let inner_x = rect.x.saturating_add(2);
+    let right = rect.right().saturating_sub(1);
+
+    // Zeile 1: Krone, Name, rechts Zahl der Children und Kontext.
+    let first_y = rect.y;
+    let mut line_end = right;
+    if let Some(ratio) = context_ratio(row.context_tokens, row.context_window) {
+        let label = format!(
+            "{} {:>2}%",
+            context_gauge(ratio),
+            (ratio * 100.0).round() as u32
+        );
+        let width = display_width(&label);
+        if right.saturating_sub(inner_x) > width + 30 {
+            put_text(
+                buffer,
+                right - width,
+                first_y,
+                width,
+                &label,
+                base.fg(context_color(ratio, palette)),
+            );
+            line_end = right.saturating_sub(width).saturating_sub(2);
+        }
+    }
+    let count = match row.children.total {
+        1 => " 1 Chat ".to_owned(),
+        total => format!(" {total} Chats "),
+    };
+    let count_width = display_width(&count);
+    if line_end.saturating_sub(inner_x) > count_width + 16 {
+        let count_rect = Rect::new(line_end - count_width, first_y, count_width, 1);
+        put_text(
+            buffer,
+            count_rect.x,
+            first_y,
+            count_width,
+            &count,
+            base.fg(palette.accent).add_modifier(Modifier::BOLD),
+        );
+        hits.master_counts
+            .push((count_rect, row.workspace_id.clone()));
+        line_end = count_rect.x.saturating_sub(1);
+    }
+    let x = put_part(
+        buffer,
+        inner_x,
+        first_y,
+        line_end,
+        ICON_CROWN,
+        base.fg(palette.yellow).add_modifier(Modifier::BOLD),
+    );
+    put_part(
+        buffer,
+        x.saturating_add(2),
+        first_y,
+        line_end,
+        &row.label,
+        base.fg(palette.text).add_modifier(Modifier::BOLD),
+    );
+
+    // Zeile 2: Status des Masters, Zähler der Children, Wartezeit.
+    let status_y = rect.y.saturating_add(1);
+    let age = if row.attention_since == 0 {
+        String::new()
+    } else {
+        age_label(row.attention_since, now)
+    };
+    let age_width = display_width(&age);
+    put_text(
+        buffer,
+        right.saturating_sub(age_width),
+        status_y,
+        age_width,
+        &age,
+        base.fg(age_color(row.attention_since, now, palette)),
+    );
+    // Der eigene Status zählt hier, nicht der der Children.
+    let own = ChatRow {
+        children: Default::default(),
+        ..row.clone()
+    };
+    if let Some((symbol, style)) = chat_symbol(&own, now, palette) {
+        put_text(buffer, inner_x, status_y, 1, symbol, style.bg(background));
+    }
+    let counts_end = right.saturating_sub(age_width).saturating_sub(1);
+    let mut x = inner_x.saturating_add(2);
+    let parts = child_count_parts(&row.children, palette);
+    if parts.is_empty() {
+        put_part(
+            buffer,
+            x,
+            status_y,
+            counts_end,
+            "keine Children",
+            base.fg(palette.overlay0),
+        );
+    }
+    for (label, color) in parts {
+        x = put_part(buffer, x, status_y, counts_end, &label, base.fg(color));
+        x = x.saturating_add(1);
+    }
+
+    // Zeile 3: offene Rückfrage, sonst letzte Inbox-Nachricht, sonst letzte
+    // Nachricht.
+    let detail_y = rect.y.saturating_add(2);
+    let detail_width = right.saturating_sub(inner_x);
+    let (detail, style) = if row.awaiting_reply() {
+        (
+            format!(
+                "wartet auf Antwort: {}",
+                row.awaiting.as_deref().unwrap_or_default()
+            ),
+            base.fg(palette.yellow),
+        )
+    } else if row.stopped {
+        (
+            "gestoppt, enter startet den Master".to_owned(),
+            base.fg(palette.overlay0).add_modifier(Modifier::ITALIC),
+        )
+    } else if let Some(latest) = row.inbox_latest.as_deref() {
+        (latest.to_owned(), base.fg(palette.subtext0))
+    } else if let Some(message) = row.last_message.as_deref() {
+        (
+            message.to_owned(),
+            base.fg(palette.overlay1).add_modifier(Modifier::ITALIC),
+        )
+    } else {
+        return;
+    };
+    put_text(
+        buffer,
+        inner_x,
+        detail_y,
+        detail_width,
+        &truncate_end(&detail, usize::from(detail_width)),
+        style,
     );
 }
 

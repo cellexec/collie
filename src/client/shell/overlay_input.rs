@@ -490,6 +490,9 @@ impl ClientShellState {
         if self.route_snooze_key(key, outcome) {
             return;
         }
+        if self.route_telescope_key(key, outcome) {
+            return;
+        }
         if matches!(self.overlay, Some(ClientShellOverlay::Onboarding)) {
             if matches!(
                 key.code,
@@ -1022,8 +1025,24 @@ impl ClientShellState {
                     label: Some(trimmed.to_owned()),
                 },
             )),
-            ClientRenameTarget::ChatPrompt { pane_ids } => (!trimmed.is_empty()).then(|| {
+            ClientRenameTarget::ChatPrompt {
+                pane_ids,
+                report_workspace_id,
+            } => (!trimmed.is_empty()).then(|| {
                 self.sidebar_focus.marked.clear();
+                if let Some(workspace_id) = report_workspace_id {
+                    self.push_endpoint_method(
+                        crate::api::schema::Method::ChatReport(
+                            crate::api::schema::ChatReportParams {
+                                workspace_id: Some(workspace_id),
+                                caller_pane_id: None,
+                                text: trimmed.to_owned(),
+                                from_user: true,
+                            },
+                        ),
+                        outcome,
+                    );
+                }
                 crate::api::schema::Method::ChatPrompt(crate::api::schema::ChatPromptParams {
                     pane_ids,
                     text: trimmed.to_owned(),

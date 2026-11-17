@@ -715,6 +715,25 @@ impl ClientShellState {
                 occlusion.cover(rendered.area);
                 self.hits.context_menu_rows = rendered.menu_rows;
                 None
+            } else if let ClientShellOverlay::Telescope(telescope) = overlay {
+                let rendered = super::chat_telescope::render_chat_telescope(
+                    &mut composed,
+                    telescope,
+                    snapshot,
+                    &self.config,
+                )?;
+                occlusion.cover(rendered.area);
+                self.hits.telescope_rows = rendered.menu_rows;
+                None
+            } else if let ClientShellOverlay::MasterClose(dialog) = overlay {
+                let rendered = super::chat_telescope::render_master_close(
+                    &mut composed,
+                    dialog,
+                    &self.config.palette,
+                )?;
+                occlusion.cover(rendered.area);
+                self.hits.telescope_rows = rendered.menu_rows;
+                None
             } else if let ClientShellOverlay::GlobalMenu(menu) = overlay {
                 let rendered = render::render_global_menu(
                     &mut composed,
@@ -826,6 +845,7 @@ fn render_chat_overlay(
     // collie: Das Overlay liegt über der Chat-Leiste; deren Zeilen sind
     // verdeckt und dürfen keine Klicks mehr fangen.
     hits.agents.clear();
+    hits.master_counts.clear();
     let mut buffer = Buffer::empty(Rect::new(0, 0, frame.width, frame.height));
     render::sidebar::render_chat_overlay(
         &mut buffer,

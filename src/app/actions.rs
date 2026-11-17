@@ -407,7 +407,40 @@ impl AppState {
         if previous == AgentState::Blocked {
             ws.blocked_reason = None;
         }
+        // Ein Child meldet seinem Master, wenn es fertig ist oder blockiert.
+        let kind = match state {
+            AgentState::Blocked => Some(crate::workspace::ChatInboxKind::Blocked),
+            AgentState::Idle if previous == AgentState::Working => {
+                Some(crate::workspace::ChatInboxKind::Done)
+            }
+            _ => None,
+        };
+        if let (Some(kind), Some(parent)) = (kind, ws.chat.team.parent().map(str::to_owned)) {
+            let from = ws.id.clone();
+            if let Some(master) = self.workspaces.iter_mut().find(|ws| ws.id == parent) {
+                master
+                    .chat
+                    .team
+                    .push_inbox(crate::workspace::ChatInboxEntry {
+                        at: now,
+                        from,
+                        kind,
+                        text: None,
+                        delivered: false,
+                    });
+            }
+        }
         self.mark_session_dirty();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn track_chat_state_for_test(
+        &mut self,
+        ws_idx: usize,
+        previous: AgentState,
+        state: AgentState,
+    ) {
+        self.track_chat_state(ws_idx, previous, state);
     }
 
     /// collie: Der Nutzer hat den Space geöffnet.
@@ -1910,6 +1943,14 @@ impl AppState {
         change: &EffectiveStateChange,
     ) -> Option<AgentNotificationDelivery> {
         self.pending_agent_notifications.remove(&pane_id);
+        // collie: Children melden sich bei ihrem Master, nicht beim Nutzer.
+        if self
+            .workspaces
+            .get(ws_idx)
+            .is_some_and(|ws| ws.chat.team.parent().is_some())
+        {
+            return None;
+        }
 
         let is_active_tab = self.pane_is_in_active_tab(ws_idx, pane_id);
         let suppress_active_tab_notifications =

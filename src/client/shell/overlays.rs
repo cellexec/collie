@@ -83,7 +83,10 @@ pub(crate) fn render_client_overlay(
         ClientShellOverlay::Snooze(v) => {
             render_picker_overlay(b, " snooze ", &v.labels(), v.highlighted, p)
         }
-        ClientShellOverlay::ContextMenu(_) | ClientShellOverlay::GlobalMenu(_) => None,
+        ClientShellOverlay::ContextMenu(_)
+        | ClientShellOverlay::GlobalMenu(_)
+        | ClientShellOverlay::Telescope(_)
+        | ClientShellOverlay::MasterClose(_) => None,
     }
 }
 

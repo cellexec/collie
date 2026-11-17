@@ -316,6 +316,19 @@ pub(crate) fn spawn_server_signal_monitor(
     }
 }
 
+/// collie: Prozess-ID am anderen Ende eines lokalen Sockets.
+pub(crate) fn local_stream_peer_pid(stream: &crate::ipc::LocalStream) -> Option<u32> {
+    use std::os::fd::{AsFd as _, AsRawFd as _};
+
+    let crate::ipc::LocalStream::UdSocket(socket) = stream;
+    super::socket_peer_pid(socket.as_fd().as_raw_fd())
+}
+
+/// collie: Elternprozess einer Prozess-ID.
+pub(crate) fn parent_pid(pid: u32) -> Option<u32> {
+    super::process_name_and_parent(pid).map(|(_, parent)| parent)
+}
+
 /// Describes the process on the other end of a local socket, for logs.
 pub(crate) fn local_stream_peer_description(stream: &crate::ipc::LocalStream) -> Option<String> {
     use std::os::fd::{AsFd as _, AsRawFd as _};

@@ -16,6 +16,7 @@ pub(crate) fn render_tab_bar(
 ) {
     let palette = &config.palette;
     buffer.set_style(area, Style::default().bg(palette.panel_bg));
+    render_master_breadcrumb(buffer, area, snapshot, palette, hits);
     let tabs = snapshot
         .tabs
         .iter()
@@ -248,10 +249,70 @@ fn tab_bar_content_area(snapshot: &ClientShellSnapshot, area: Rect) -> Rect {
     let reserved = tab_bar_status_area(snapshot, area)
         .map(|status| status.width.saturating_add(1))
         .unwrap_or(0);
+    let breadcrumb = master_breadcrumb(snapshot)
+        .map(|(label, _)| display_width(&label).saturating_add(1))
+        .unwrap_or(0)
+        .min(area.width / 2);
     Rect {
-        width: area.width.saturating_sub(reserved),
+        x: area.x.saturating_add(breadcrumb),
+        width: area
+            .width
+            .saturating_sub(reserved)
+            .saturating_sub(breadcrumb),
         ..area
     }
+}
+
+/// collie: Breadcrumb eines offenen Childs, `󰆥 Master Chat › Titel `, und der
+/// Master-Space, zu dem ein Klick zurückführt.
+fn master_breadcrumb(snapshot: &ClientShellSnapshot) -> Option<(String, String)> {
+    let focused = snapshot.focused_workspace_id.as_deref()?;
+    let child = snapshot
+        .workspaces
+        .iter()
+        .find(|workspace| workspace.workspace_id == focused)?;
+    let parent = child.team.as_ref()?.parent_workspace_id.as_deref()?;
+    let master = snapshot
+        .workspaces
+        .iter()
+        .find(|workspace| workspace.workspace_id == parent)?;
+    Some((
+        format!(
+            " {} {} › {} ",
+            super::chat_cards::ICON_CROWN,
+            master.label,
+            child.label
+        ),
+        master.workspace_id.clone(),
+    ))
+}
+
+/// collie: Zeichnet den Breadcrumb links in die Tab-Leiste.
+fn render_master_breadcrumb(
+    buffer: &mut Buffer,
+    area: Rect,
+    snapshot: &ClientShellSnapshot,
+    palette: &Palette,
+    hits: &mut ShellHitMap,
+) {
+    hits.master_breadcrumb = None;
+    let Some((label, master)) = master_breadcrumb(snapshot) else {
+        return;
+    };
+    let width = display_width(&label).min(area.width / 2);
+    let rect = Rect::new(area.x, area.y, width, 1);
+    put_text(
+        buffer,
+        rect.x,
+        rect.y,
+        rect.width,
+        &label,
+        Style::default()
+            .fg(palette.yellow)
+            .bg(palette.surface0)
+            .add_modifier(Modifier::BOLD),
+    );
+    hits.master_breadcrumb = Some((rect, master));
 }
 
 fn render_tab_bar_status(

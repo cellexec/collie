@@ -196,9 +196,11 @@ impl App {
             if let Some(window) = params.context_window {
                 ws.chat.context_window = (window > 0).then_some(window);
             }
+            // Ein Master heißt fest `Master Chat`.
             let title = params
                 .title
                 .as_deref()
+                .filter(|_| !ws.chat.team.is_master())
                 .and_then(chat_text)
                 .filter(|title| ws.custom_name.as_deref() != Some(title));
             if let Some(title) = title {

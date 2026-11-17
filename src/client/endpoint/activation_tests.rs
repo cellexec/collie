@@ -159,6 +159,7 @@ fn workspace_focus_success(id: &str, workspace_id: &str) -> Vec<u8> {
                 context_tokens: None,
                 context_window: None,
                 working_spans: Vec::new(),
+                team: None,
             },
         },
     })

@@ -89,8 +89,26 @@ pub enum Method {
     WorkspaceSnooze(WorkspaceSnoozeParams),
     #[serde(rename = "chat.prompt")]
     ChatPrompt(ChatPromptParams),
-    #[serde(rename = "chat.orchestrate")]
-    ChatOrchestrate(ChatOrchestrateParams),
+    #[serde(rename = "chat.master_create")]
+    ChatMasterCreate(ChatMasterCreateParams),
+    #[serde(rename = "chat.promote")]
+    ChatPromote(ChatWorkspaceParams),
+    #[serde(rename = "chat.demote")]
+    ChatDemote(ChatWorkspaceParams),
+    #[serde(rename = "chat.adopt")]
+    ChatAdopt(ChatAdoptParams),
+    #[serde(rename = "chat.spawn")]
+    ChatSpawn(ChatSpawnParams),
+    #[serde(rename = "chat.stop")]
+    ChatStop(ChatWorkspaceParams),
+    #[serde(rename = "chat.resume")]
+    ChatResume(ChatWorkspaceParams),
+    #[serde(rename = "chat.close")]
+    ChatClose(ChatCloseParams),
+    #[serde(rename = "chat.report")]
+    ChatReport(ChatReportParams),
+    #[serde(rename = "chat.inbox")]
+    ChatInbox(ChatInboxParams),
     #[serde(rename = "workspace.move")]
     WorkspaceMove(WorkspaceMoveParams),
     #[serde(rename = "workspace.move_block")]

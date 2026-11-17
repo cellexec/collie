@@ -127,6 +127,7 @@ fn grouped_worktrees_render_parent_branch_and_indented_child() {
         context_tokens: None,
         context_window: None,
         working_spans: Vec::new(),
+        team: None,
     });
     state.set_snapshot(Box::new(snapshot));
     state.set_pane_surface(surface());

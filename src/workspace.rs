@@ -239,6 +239,112 @@ pub struct ChatRuntime {
     /// Abgeschlossene Arbeitsphasen des Agents in Tab 1 als `(start, ende)` in
     /// Unix-Millisekunden, höchstens [`WORKING_SPAN_WINDOW_MS`] alt.
     pub working_spans: Vec<(u64, u64)>,
+    /// Wann der Nutzer zuletzt in ein Pane dieses Space getippt hat.
+    pub last_user_input: Option<u64>,
+    /// Master-Chat-Beziehungen. Anders als der Rest wird das gespeichert,
+    /// siehe docs/specs/master-chat.md.
+    pub team: ChatTeam,
+}
+
+/// collie: Rolle eines Space im Master-Chat-Modell.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChatRole {
+    #[default]
+    None,
+    Master,
+    /// `parent` ist die interne ID des Master-Space.
+    Child {
+        parent: String,
+    },
+}
+
+/// collie: Art eines Inbox-Eintrags.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChatInboxKind {
+    Report,
+    Done,
+    Blocked,
+    User,
+    Restart,
+}
+
+impl ChatInboxKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Report => "report",
+            Self::Done => "done",
+            Self::Blocked => "blocked",
+            Self::User => "user",
+            Self::Restart => "restart",
+        }
+    }
+}
+
+/// collie: Nachricht an einen Master.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ChatInboxEntry {
+    /// Unix-Millisekunden.
+    pub at: u64,
+    /// Interne ID des Child-Space, leer bei Einträgen ohne Child.
+    pub from: String,
+    pub kind: ChatInboxKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default)]
+    pub delivered: bool,
+}
+
+/// Höchstens so viele Einträge hält eine Inbox; die ältesten zugestellten
+/// fallen zuerst heraus.
+pub const MAX_INBOX_ENTRIES: usize = 200;
+
+/// collie: Master-Chat-Fakten eines Space.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ChatTeam {
+    #[serde(default)]
+    pub role: ChatRole,
+    /// Auftrag des Masters an dieses Child.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assignment: Option<String>,
+    /// Inbox eines Masters.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inbox: Vec<ChatInboxEntry>,
+}
+
+impl ChatTeam {
+    pub fn is_master(&self) -> bool {
+        self.role == ChatRole::Master
+    }
+
+    pub fn parent(&self) -> Option<&str> {
+        match &self.role {
+            ChatRole::Child { parent } => Some(parent),
+            _ => None,
+        }
+    }
+
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// Hängt einen Eintrag an und hält die Inbox klein.
+    pub fn push_inbox(&mut self, entry: ChatInboxEntry) {
+        self.inbox.push(entry);
+        while self.inbox.len() > MAX_INBOX_ENTRIES {
+            let index = self
+                .inbox
+                .iter()
+                .position(|entry| entry.delivered)
+                .unwrap_or(0);
+            self.inbox.remove(index);
+        }
+    }
+
+    pub fn pending_inbox(&self) -> impl Iterator<Item = &ChatInboxEntry> {
+        self.inbox.iter().filter(|entry| !entry.delivered)
+    }
 }
 
 /// So weit reicht die Aktivitätskurve einer Chat-Karte zurück.
@@ -1510,6 +1616,27 @@ impl Workspace {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn chat_team_roundtrips_and_defaults() {
+        let team = ChatTeam {
+            role: ChatRole::Child {
+                parent: "w1".into(),
+            },
+            assignment: Some("Baue X".into()),
+            inbox: Vec::new(),
+        };
+        let json = serde_json::to_string(&team).unwrap();
+        assert_eq!(
+            json,
+            r#"{"role":{"child":{"parent":"w1"}},"assignment":"Baue X"}"#
+        );
+        assert_eq!(serde_json::from_str::<ChatTeam>(&json).unwrap(), team);
+        let master = serde_json::from_str::<ChatTeam>(r#"{"role":"master"}"#).unwrap();
+        assert!(master.is_master());
+        assert!(serde_json::from_str::<ChatTeam>("{}").unwrap().is_default());
+    }
+
     use super::*;
 
     #[test]

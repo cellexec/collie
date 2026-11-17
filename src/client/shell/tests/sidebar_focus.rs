@@ -704,7 +704,7 @@ fn chat_status_and_label_come_from_the_agent_in_the_first_tab() {
     snapshot.agents.push(side_agent);
     snapshot.agents[0].terminal_title_stripped = Some("fix login bug".into());
 
-    let rows = crate::client::shell::chats::chat_rows(&snapshot);
+    let rows = crate::client::shell::chats::all_chat_rows(&snapshot);
     let chat = rows
         .iter()
         .find(|row| row.workspace_id == "ws_1")
@@ -715,7 +715,7 @@ fn chat_status_and_label_come_from_the_agent_in_the_first_tab() {
 
     snapshot.workspaces[0].custom_label = true;
     snapshot.workspaces[0].label = "login".into();
-    let rows = crate::client::shell::chats::chat_rows(&snapshot);
+    let rows = crate::client::shell::chats::all_chat_rows(&snapshot);
     assert_eq!(rows[0].label, "login");
 }
 
@@ -1222,7 +1222,7 @@ fn x_marks_chats_and_p_prompts_all_marked_chats() {
 }
 
 #[test]
-fn esc_clears_marks_before_leaving_and_o_orchestrates_the_cursor_chat() {
+fn esc_clears_marks_before_leaving_and_o_promotes_the_cursor_chat() {
     let mut state = chat_overlay_state();
     focus_sidebar(&mut state);
     press(&mut state, b"x");
@@ -1234,7 +1234,114 @@ fn esc_clears_marks_before_leaving_and_o_orchestrates_the_cursor_chat() {
     let outcome = press(&mut state, b"O");
     assert!(matches!(
         methods(&outcome).as_slice(),
-        [Method::ChatOrchestrate(params)] if params.pane_ids == ["pane_1"]
+        [Method::ChatPromote(params)] if params.workspace_id.is_some()
     ));
-    assert_ne!(state.mode, ClientShellMode::Navigate);
+}
+
+/// collie: ws_2 ist ein Master, ws_1 sein Child.
+fn master_snapshot() -> ClientShellSnapshot {
+    let mut snapshot = agents_snapshot();
+    snapshot.workspaces[1].label = "Master Chat".into();
+    snapshot.workspaces[1].custom_label = true;
+    snapshot.workspaces[1].team = Some(crate::protocol::ClientShellChatTeam {
+        master: true,
+        parent_workspace_id: None,
+        assignment: None,
+        inbox_pending: 0,
+        inbox_latest: Some("Fix: Migration jetzt?".into()),
+    });
+    snapshot.workspaces[0].team = Some(crate::protocol::ClientShellChatTeam {
+        master: false,
+        parent_workspace_id: Some("ws_2".into()),
+        assignment: Some("Baue den Login".into()),
+        inbox_pending: 0,
+        inbox_latest: None,
+    });
+    snapshot
+}
+
+#[test]
+fn children_stay_out_of_the_list_and_masters_are_pinned_with_counts() {
+    let mut snapshot = master_snapshot();
+    let now = crate::workspace::unix_millis_now();
+    let rows = crate::client::shell::chats::visible_chat_rows(&snapshot, false, true, "", now);
+    let ids = rows
+        .iter()
+        .map(|row| (row.workspace_id.as_str(), row.nested))
+        .collect::<Vec<_>>();
+    // Der Master arbeitet und steht trotzdem in der Hauptliste; das offene
+    // Child steht eingerückt darunter.
+    assert_eq!(ids, [("ws_2", false), ("ws_1", true)]);
+    assert_eq!(rows[0].children.total, 1);
+    assert_eq!(rows[0].children.blocked, 1);
+    assert!(rows[0].needs_reply());
+
+    snapshot.workspaces[0].focused = false;
+    let rows = crate::client::shell::chats::visible_chat_rows(&snapshot, false, true, "", now);
+    assert_eq!(rows.len(), 1);
+    assert!(
+        crate::client::shell::chats::visible_chat_rows(&snapshot, true, true, "", now).is_empty()
+    );
+}
+
+#[test]
+fn m_opens_the_telescope_and_its_keys_act_on_children() {
+    let mut snapshot = master_snapshot();
+    snapshot.workspaces[0].focused = false;
+    let (mut state, rows) = agents_only_state_with(snapshot);
+    assert!(
+        rows.iter().any(|row| row.contains("Master Chat")),
+        "{rows:#?}"
+    );
+    assert_eq!(hit_panes(&state), ["pane_2"]);
+
+    focus_sidebar(&mut state);
+    press(&mut state, b"m");
+    assert!(matches!(
+        state.overlay,
+        Some(ClientShellOverlay::Telescope(_))
+    ));
+    let frame = state.compose(100, 28).expect("frame");
+    let rows = frame_rows(&frame);
+    assert!(
+        rows.iter().any(|row| row.contains("Baue den Login")),
+        "{rows:#?}"
+    );
+
+    let outcome = press(&mut state, b"x");
+    assert!(matches!(
+        methods(&outcome).as_slice(),
+        [Method::ChatStop(params)] if params.workspace_id.as_deref() == Some("ws_1")
+    ));
+
+    press(&mut state, b"d");
+    let outcome = press(&mut state, b"y");
+    assert!(matches!(
+        methods(&outcome).as_slice(),
+        [Method::ChatClose(params)] if params.workspace_id == "ws_1"
+    ));
+
+    press(&mut state, b"\r");
+    assert!(state.overlay.is_none());
+}
+
+#[test]
+fn closing_a_master_with_children_asks_what_happens_to_them() {
+    let mut snapshot = master_snapshot();
+    snapshot.workspaces[0].focused = false;
+    let (mut state, _) = agents_only_state_with(snapshot);
+    focus_sidebar(&mut state);
+    press(&mut state, b"d");
+    press(&mut state, b"d");
+    assert!(matches!(
+        state.overlay,
+        Some(ClientShellOverlay::MasterClose(_))
+    ));
+    let outcome = press(&mut state, b"r");
+    assert!(matches!(
+        methods(&outcome).as_slice(),
+        [Method::ChatClose(params)]
+            if params.workspace_id == "ws_2"
+                && params.children == crate::api::schema::ChatCloseChildren::Release
+    ));
 }

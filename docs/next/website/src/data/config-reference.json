@@ -1590,6 +1590,18 @@
       ]
     },
     {
+      "id": "master",
+      "title": "Master chats",
+      "keys": [
+        {
+          "key": "master.max_running_children",
+          "type": "integer",
+          "default": "6",
+          "description": "Running children a master chat may have at once. Stopped children do not count."
+        }
+      ]
+    },
+    {
       "id": "worktrees",
       "title": "Worktrees",
       "keys": [

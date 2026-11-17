@@ -22,6 +22,9 @@ use super::env::claude_dir;
 use super::file_ops::{make_executable, remove_file_if_exists};
 
 const CHAT_HOOK_INSTALL_NAME: &str = "collie-chat-hook.sh";
+/// Skill für Master Chats, siehe docs/specs/master-chat.md.
+const MASTER_SKILL_NAME: &str = "collie-master";
+const MASTER_SKILL_ASSET: &str = include_str!("../../scripts/collie/skills/collie-master/SKILL.md");
 const CHAT_HOOK_ASSET: &str = include_str!("../../scripts/collie/claude-chat-hook.sh");
 const CHAT_HOOK_TIMEOUT: u64 = 5;
 /// Hook-Event in Claude Code und das Argument, mit dem der Hook es auswertet.
@@ -41,6 +44,9 @@ pub(crate) fn install_for_claude() -> io::Result<PathBuf> {
     std::fs::write(&hook_path, CHAT_HOOK_ASSET)?;
     make_executable(&hook_path)?;
     update_settings(&dir.join("settings.json"), &hook_path, true)?;
+    let skill_dir = dir.join("skills").join(MASTER_SKILL_NAME);
+    std::fs::create_dir_all(&skill_dir)?;
+    std::fs::write(skill_dir.join("SKILL.md"), MASTER_SKILL_ASSET)?;
     Ok(hook_path)
 }
 
@@ -50,6 +56,10 @@ pub(crate) fn uninstall_for_claude() -> io::Result<bool> {
     let dir = claude_dir()?;
     let hook_path = dir.join("hooks").join(CHAT_HOOK_INSTALL_NAME);
     update_settings(&dir.join("settings.json"), &hook_path, false)?;
+    let skill_dir = dir.join("skills").join(MASTER_SKILL_NAME);
+    if remove_file_if_exists(&skill_dir.join("SKILL.md"))? {
+        let _ = std::fs::remove_dir(&skill_dir);
+    }
     remove_file_if_exists(&hook_path)
 }
 

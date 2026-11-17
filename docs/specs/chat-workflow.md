@@ -73,7 +73,7 @@ In der ausgefahrenen Chat-Sidebar:
 | --- | --- |
 | `x` | markiert die Karte unter dem Cursor oder hebt die Markierung auf, der Cursor rückt weiter |
 | `p` | Prompt an alle markierten Chats, ohne Markierung an den Chat unter dem Cursor |
-| `O` | startet einen Orchestrator für die markierten Chats |
+| `O` | macht Chats zum Master oder zu seinen Children, siehe `master-chat.md` |
 
 - Markierte Karten zeigen links oben ein grünes `✓`. Die Kopfzeile zeigt die Zahl.
   `space` bleibt die Leader-Taste der Sidebar.
@@ -83,11 +83,8 @@ In der ausgefahrenen Chat-Sidebar:
   dieser Chat geschlossen werden kann? Arbeite auf diesen Abschluss hin.`
   `enter` schickt den Text per neuer Methode `chat.prompt` an jeden Agent.
   Der Server tippt ihn wie `agent.prompt` und drückt nach 300 ms Enter.
-- `O` ruft die neue Methode `chat.orchestrate` mit den Pane-IDs auf. Der
-  Server legt einen Space `Orchestrator` im Home-Verzeichnis an und startet
-  dort `claude` mit einem Prompt. Der Prompt nennt jeden Chat mit Pane-ID,
-  Titel, Verzeichnis, Branch, Status und letzter Nachricht und erklärt die
-  CLI: `herdr pane read`, `herdr pane run`, `herdr agent`, `herdr --skill`.
+- `O` ersetzt den früheren Orchestrator (`chat.orchestrate`) durch Master
+  Chats. Verhalten und Methoden stehen in `master-chat.md`.
 
 ## 7. Suche über alle Chats
 

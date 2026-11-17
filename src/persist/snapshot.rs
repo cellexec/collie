@@ -83,6 +83,12 @@ pub struct WorkspaceSnapshot {
     /// collie: Grund, warum der Agent blockiert.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blocked_reason: Option<String>,
+    /// collie: Rolle, Auftrag und Inbox im Master-Chat-Modell.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::workspace::ChatTeam::is_default"
+    )]
+    pub chat_team: crate::workspace::ChatTeam,
     pub tabs: Vec<TabSnapshot>,
     #[serde(default)]
     pub active_tab: usize,
@@ -197,6 +203,7 @@ impl From<LegacyWorkspaceSnapshot> for WorkspaceSnapshot {
             attention_seen: None,
             last_message: None,
             blocked_reason: None,
+            chat_team: Default::default(),
             tabs: vec![tab],
             active_tab: 0,
         }
@@ -345,6 +352,7 @@ fn capture_workspace(
         attention_seen: (!ws.attention_seen).then_some(false),
         last_message: ws.last_message.clone(),
         blocked_reason: ws.blocked_reason.clone(),
+        chat_team: ws.chat.team.clone(),
         tabs,
         active_tab: ws.active_tab,
     }
@@ -768,6 +776,7 @@ mod tests {
                 attention_seen: Some(false),
                 last_message: Some("Soll ich committen?".into()),
                 blocked_reason: Some("Bash".into()),
+                chat_team: Default::default(),
                 tabs: vec![TabSnapshot {
                     custom_name: Some("api".to_string()),
                     layout: LayoutSnapshot::Split {
@@ -1496,6 +1505,7 @@ mod tests {
                 attention_seen: None,
                 last_message: None,
                 blocked_reason: None,
+                chat_team: Default::default(),
                 tabs: vec![TabSnapshot {
                     custom_name: None,
                     layout: LayoutSnapshot::Split {

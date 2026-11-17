@@ -1,6 +1,10 @@
 //! collie: Mehrere Chats auf einmal. `x` markiert einen Chat, `p` schickt
-//! einen Prompt an alle markierten, `O` startet einen Orchestrator für sie.
-//! Ohne Markierung gelten `p` und `O` für den Chat unter dem Cursor.
+//! einen Prompt an alle markierten. Ohne Markierung gilt `p` für den Chat
+//! unter dem Cursor.
+//!
+//! Master Chats (docs/specs/master-chat.md): `O` macht den Chat unter dem
+//! Cursor zum Master oder hängt die markierten Chats an einen Master, `M`
+//! startet einen neuen Master, `m` öffnet das Telescope eines Masters.
 
 use super::sidebar_focus::SidebarStep;
 use super::*;
@@ -23,11 +27,15 @@ impl ClientShellState {
             KeyCode::Char('p') if plain => self.open_chat_prompt(outcome),
             // Mit Kitty-Tastaturprotokoll kommt `O` als `o` mit Shift.
             KeyCode::Char('O') if plain || modifiers == KeyModifiers::SHIFT => {
-                self.orchestrate_chats(outcome)
+                self.make_master(outcome)
             }
-            KeyCode::Char('o') if modifiers == KeyModifiers::SHIFT => {
-                self.orchestrate_chats(outcome)
+            KeyCode::Char('o') if modifiers == KeyModifiers::SHIFT => self.make_master(outcome),
+            KeyCode::Char('M') if plain || modifiers == KeyModifiers::SHIFT => {
+                self.create_master(outcome)
             }
+            KeyCode::Char('m') if modifiers == KeyModifiers::SHIFT => self.create_master(outcome),
+            // `m` ohne Master unter dem Cursor bleibt das globale Menü.
+            KeyCode::Char('m') if plain => return self.open_cursor_telescope(outcome),
             _ => return false,
         }
         true
@@ -105,25 +113,90 @@ impl ClientShellState {
                 "prompt marked chats"
             },
             input: TextEditor::new(WRAP_UP_PROMPT, false),
-            target: ClientRenameTarget::ChatPrompt { pane_ids },
+            target: ClientRenameTarget::ChatPrompt {
+                pane_ids,
+                report_workspace_id: None,
+            },
         }));
         outcome.repaint = true;
     }
 
-    fn orchestrate_chats(&mut self, outcome: &mut ClientShellInput) {
-        let pane_ids = self.marked_chat_panes();
-        if pane_ids.is_empty() {
+    /// `O`: ohne Markierung wird der Chat unter dem Cursor zum Master. Mit
+    /// Markierung werden die markierten Chats Children des Masters unter dem
+    /// Cursor oder eines neuen Masters.
+    fn make_master(&mut self, outcome: &mut ClientShellInput) {
+        use crate::api::schema::{ChatAdoptParams, ChatMasterCreateParams, ChatWorkspaceParams};
+        let Some(cursor) = self
+            .local_sidebar_agent_cursor()
+            .and_then(|cursor| self.sidebar_chat_row(&cursor.pane_id))
+        else {
             return;
-        }
-        let method = crate::api::schema::Method::ChatOrchestrate(
-            crate::api::schema::ChatOrchestrateParams { pane_ids },
-        );
+        };
+        let marked = self
+            .sidebar_focus
+            .marked
+            .iter()
+            .filter(|mark| mark.endpoint_id == self.active_endpoint_id)
+            .filter_map(|mark| self.sidebar_chat_row(&mark.pane_id))
+            .filter(|row| !row.master && row.workspace_id != cursor.workspace_id)
+            .map(|row| row.workspace_id)
+            .collect::<Vec<_>>();
+        let method = if marked.is_empty() {
+            crate::api::schema::Method::ChatPromote(ChatWorkspaceParams {
+                workspace_id: Some(cursor.workspace_id),
+                caller_pane_id: None,
+            })
+        } else if cursor.master {
+            crate::api::schema::Method::ChatAdopt(ChatAdoptParams {
+                master_workspace_id: cursor.workspace_id,
+                workspace_ids: marked,
+            })
+        } else {
+            crate::api::schema::Method::ChatMasterCreate(ChatMasterCreateParams {
+                cwd: None,
+                focus: true,
+                adopt_workspace_ids: marked,
+            })
+        };
         if !self.chat_method_supported(&method, outcome) {
             return;
         }
         self.push_endpoint_method(method, outcome);
         self.sidebar_focus.marked.clear();
+        outcome.repaint = true;
+    }
+
+    /// `M`: neuer Master Chat im Home-Verzeichnis.
+    fn create_master(&mut self, outcome: &mut ClientShellInput) {
+        let method = crate::api::schema::Method::ChatMasterCreate(
+            crate::api::schema::ChatMasterCreateParams {
+                cwd: None,
+                focus: true,
+                adopt_workspace_ids: Vec::new(),
+            },
+        );
+        if !self.chat_method_supported(&method, outcome) {
+            return;
+        }
+        self.push_endpoint_method(method, outcome);
         self.leave_sidebar(false, outcome);
         outcome.repaint = true;
+    }
+
+    /// `m` auf einer Master-Karte öffnet sein Telescope.
+    fn open_cursor_telescope(&mut self, outcome: &mut ClientShellInput) -> bool {
+        let Some(row) = self
+            .local_sidebar_agent_cursor()
+            .and_then(|cursor| self.sidebar_chat_row(&cursor.pane_id))
+        else {
+            return false;
+        };
+        let (master, select) = match (row.master, row.parent) {
+            (true, _) => (row.workspace_id, None),
+            (false, Some(parent)) => (parent, Some(row.workspace_id)),
+            (false, None) => return false,
+        };
+        self.open_chat_telescope(master, select, outcome);
+        true
     }
 }

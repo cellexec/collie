@@ -39,11 +39,148 @@ pub struct ChatPromptParams {
     pub text: String,
 }
 
-/// collie: Starts an orchestrating agent in a new workspace that knows the
-/// chats in these panes.
+/// collie: Role of a workspace in the master chat model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ChatTeamRole {
+    Master,
+    Child,
+    #[serde(other)]
+    Unknown,
+}
+
+/// collie: Master chat facts of a workspace.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct ChatOrchestrateParams {
-    pub pane_ids: Vec<String>,
+pub struct ChatTeamInfo {
+    pub role: ChatTeamRole,
+    /// Master of a child workspace.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_workspace_id: Option<String>,
+    /// Task the master gave this child.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assignment: Option<String>,
+    /// Children of a master.
+    #[serde(default)]
+    pub child_count: usize,
+    /// Inbox entries of a master that are not delivered yet.
+    #[serde(default)]
+    pub inbox_pending: usize,
+    /// Latest inbox entry of a master, formatted as one line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inbox_latest: Option<String>,
+}
+
+/// collie: Optional workspace target; the caller's workspace when omitted.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ChatWorkspaceParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Pane of the caller, from `HERDR_PANE_ID`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caller_pane_id: Option<String>,
+}
+
+/// collie: Creates a new master chat.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ChatMasterCreateParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    #[serde(default)]
+    pub focus: bool,
+    /// Workspaces that become children of the new master.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub adopt_workspace_ids: Vec<String>,
+}
+
+/// collie: Attaches workspaces as children of a master.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ChatAdoptParams {
+    pub master_workspace_id: String,
+    pub workspace_ids: Vec<String>,
+}
+
+/// collie: Starts a child chat for a master.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ChatSpawnParams {
+    /// Master workspace; the caller's workspace when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub master_workspace_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caller_pane_id: Option<String>,
+    /// Existing, freshly created workspace to use, for example a worktree.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    #[serde(default)]
+    pub prompt: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
+    /// Only check whether the master may start another child.
+    #[serde(default, skip_serializing_if = "super::is_false")]
+    pub check_only: bool,
+}
+
+/// collie: What happens to the children when a master closes.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ChatCloseChildren {
+    #[default]
+    Close,
+    Release,
+}
+
+/// collie: Closes a chat; a master takes its children along or releases them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ChatCloseParams {
+    pub workspace_id: String,
+    #[serde(default)]
+    pub children: ChatCloseChildren,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caller_pane_id: Option<String>,
+}
+
+/// collie: Message to the inbox of a master.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ChatReportParams {
+    /// Child workspace the message is about; the caller's workspace when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caller_pane_id: Option<String>,
+    pub text: String,
+    /// The user wrote to the child directly.
+    #[serde(default, skip_serializing_if = "super::is_false")]
+    pub from_user: bool,
+}
+
+/// collie: Inbox of a master.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ChatInboxParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caller_pane_id: Option<String>,
+    /// Include delivered entries.
+    #[serde(default, skip_serializing_if = "super::is_false")]
+    pub all: bool,
+}
+
+/// collie: One inbox entry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ChatInboxEntryInfo {
+    pub at: u64,
+    /// Child workspace, empty for entries without a child.
+    pub workspace_id: String,
+    pub title: String,
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    pub delivered: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -129,6 +266,9 @@ pub struct WorkspaceInfo {
     /// minutes, as `[start, end]` in Unix milliseconds.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub working_spans: Vec<(u64, u64)>,
+    /// Master chat role, parent, assignment and inbox summary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team: Option<ChatTeamInfo>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]

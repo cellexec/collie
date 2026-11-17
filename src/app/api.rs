@@ -209,6 +209,11 @@ impl App {
 
         let mut worktree_restore_updates = Vec::new();
         if let AppEvent::PaneDied { pane_id, .. } = &ev {
+            // collie: `chat.stop` hat den Agent beendet; das Pane bleibt als
+            // gestoppter Chat stehen.
+            if self.stopping_chat_panes.remove(pane_id) {
+                return Vec::new();
+            }
             if self
                 .state
                 .popup_pane
@@ -1203,9 +1208,18 @@ impl App {
                 return self.handle_pane_report_chat(request.id, params);
             }
             Method::ChatPrompt(params) => return self.handle_chat_prompt(request.id, params),
-            Method::ChatOrchestrate(params) => {
-                return self.handle_chat_orchestrate(request.id, params);
+            Method::ChatMasterCreate(params) => {
+                return self.handle_chat_master_create(request.id, params);
             }
+            Method::ChatPromote(params) => return self.handle_chat_promote(request.id, params),
+            Method::ChatDemote(params) => return self.handle_chat_demote(request.id, params),
+            Method::ChatAdopt(params) => return self.handle_chat_adopt(request.id, params),
+            Method::ChatSpawn(params) => return self.handle_chat_spawn(request.id, params),
+            Method::ChatStop(params) => return self.handle_chat_stop(request.id, params),
+            Method::ChatResume(params) => return self.handle_chat_resume(request.id, params),
+            Method::ChatClose(params) => return self.handle_chat_close(request.id, params),
+            Method::ChatReport(params) => return self.handle_chat_report(request.id, params),
+            Method::ChatInbox(params) => return self.handle_chat_inbox(request.id, params),
             Method::PaneClearAgentAuthority(params) => {
                 return self.handle_pane_clear_agent_authority(request.id, params);
             }

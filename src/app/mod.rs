@@ -143,6 +143,19 @@ pub struct App {
     startup_per_agent_delay: Duration,
     /// collie: Gespeicherte Agents starten erst, wenn ihr Space aktiv wird.
     pub(crate) resume_agents_lazily: bool,
+    /// collie: Höchstzahl laufender Children eines Master Chats.
+    pub(crate) max_running_children: usize,
+    /// collie: Prozess-ID hinter der API-Anfrage, die gerade läuft.
+    pub(crate) api_caller_pid: Option<u32>,
+    /// collie: Nächste Prüfung, ob eine Master-Inbox zugestellt werden kann.
+    pub(crate) chat_inbox_deadline: Option<Instant>,
+    /// collie: Panes, deren Agent `chat.stop` gerade beendet. Ihr Ende
+    /// schließt das Pane nicht.
+    pub(crate) stopping_chat_panes: std::collections::HashSet<crate::layout::PaneId>,
+    /// collie: Spaces, deren gestoppter Agent trotz Lazy Resume starten soll.
+    pub(crate) chat_resume_workspaces: std::collections::HashSet<String>,
+    /// collie: Die Master wissen schon von Children, die ein Neustart gestoppt hat.
+    pub(crate) chat_restart_noted: bool,
     next_agent_resume_at: Option<Instant>,
     pub(crate) session_save_deadline: Option<Instant>,
     pub(crate) session_save_thread: Option<std::thread::JoinHandle<()>>,
@@ -658,6 +671,12 @@ impl App {
                 config.session.startup_per_agent_delay_ms.into(),
             ),
             resume_agents_lazily: config.session.resume_agents_lazily,
+            max_running_children: config.master.max_running_children,
+            api_caller_pid: None,
+            chat_inbox_deadline: None,
+            stopping_chat_panes: std::collections::HashSet::new(),
+            chat_resume_workspaces: std::collections::HashSet::new(),
+            chat_restart_noted: false,
             next_agent_resume_at: None,
             session_save_deadline: None,
             session_save_thread: None,
@@ -928,6 +947,9 @@ impl App {
 
         if !invalid_section("session") {
             self.resume_agents_lazily = config.session.resume_agents_lazily;
+        }
+        if !invalid_section("master") {
+            self.max_running_children = config.master.max_running_children;
         }
         if !invalid_section("session")
             && Duration::from_millis(config.session.startup_per_agent_delay_ms.into())

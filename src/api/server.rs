@@ -490,7 +490,9 @@ fn handle_connection_with_stop(
             let stop_caller = matches!(method_body, Method::ServerStop(_))
                 .then(|| crate::platform::local_stream_peer_description(&stream))
                 .flatten();
-            let response = handle_request(
+            // collie: Der Server erkennt Child-Chats am Prozess des Aufrufers.
+            let caller_pid = crate::platform::local_stream_peer_pid(&stream);
+            let response = handle_request_from(
                 Request {
                     id: request_id.clone(),
                     method: method_body,
@@ -500,6 +502,7 @@ fn handle_connection_with_stop(
                 server_stop,
                 stop_caller,
                 Some(response_write_rx),
+                caller_pid,
             );
             let result = write_text_line_allow_disconnect(&mut stream, &response);
             let _ = response_write_tx.send(());
@@ -548,6 +551,7 @@ fn finish_wait_response(
     result
 }
 
+#[cfg(test)]
 fn handle_request(
     request: Request,
     api_tx: &ApiRequestSender,
@@ -555,6 +559,26 @@ fn handle_request(
     server_stop: Option<&ServerStop>,
     stop_caller: Option<String>,
     response_write_complete: Option<std::sync::mpsc::Receiver<()>>,
+) -> String {
+    handle_request_from(
+        request,
+        api_tx,
+        capabilities,
+        server_stop,
+        stop_caller,
+        response_write_complete,
+        None,
+    )
+}
+
+fn handle_request_from(
+    request: Request,
+    api_tx: &ApiRequestSender,
+    capabilities: Option<ServerCapabilities>,
+    server_stop: Option<&ServerStop>,
+    stop_caller: Option<String>,
+    response_write_complete: Option<std::sync::mpsc::Receiver<()>>,
+    caller_pid: Option<u32>,
 ) -> String {
     if matches!(&request.method, Method::Ping(_)) {
         return serde_json::to_string(&SuccessResponse {
@@ -598,7 +622,14 @@ fn handle_request(
         );
     }
 
-    dispatch_to_app(request, api_tx, None, response_write_complete, None)
+    dispatch_to_app(
+        request,
+        api_tx,
+        None,
+        response_write_complete,
+        None,
+        caller_pid,
+    )
 }
 
 pub(crate) fn api_method_name(method: &Method) -> &'static str {
@@ -625,7 +656,16 @@ pub(crate) fn api_method_name(method: &Method) -> &'static str {
         Method::WorkspaceRename(_) => "workspace.rename",
         Method::WorkspaceSnooze(_) => "workspace.snooze",
         Method::ChatPrompt(_) => "chat.prompt",
-        Method::ChatOrchestrate(_) => "chat.orchestrate",
+        Method::ChatMasterCreate(_) => "chat.master_create",
+        Method::ChatPromote(_) => "chat.promote",
+        Method::ChatDemote(_) => "chat.demote",
+        Method::ChatAdopt(_) => "chat.adopt",
+        Method::ChatSpawn(_) => "chat.spawn",
+        Method::ChatStop(_) => "chat.stop",
+        Method::ChatResume(_) => "chat.resume",
+        Method::ChatClose(_) => "chat.close",
+        Method::ChatReport(_) => "chat.report",
+        Method::ChatInbox(_) => "chat.inbox",
         Method::WorkspaceMove(_) => "workspace.move",
         Method::WorkspaceMoveBlock(_) => "workspace.move_block",
         Method::WorkspaceReportMetadata(_) => "workspace.report_metadata",
@@ -1044,7 +1084,7 @@ pub(super) fn dispatch_to_app_with_timeout(
     api_tx: &ApiRequestSender,
     timeout: Option<Duration>,
 ) -> String {
-    dispatch_to_app(request, api_tx, timeout, None, None)
+    dispatch_to_app(request, api_tx, timeout, None, None, None)
 }
 
 pub(super) fn dispatch_to_app_with_caller_timeout(
@@ -1058,6 +1098,7 @@ pub(super) fn dispatch_to_app_with_caller_timeout(
         timeout,
         None,
         Some(("timeout", "timed out waiting for agent status")),
+        None,
     )
 }
 
@@ -1067,6 +1108,7 @@ fn dispatch_to_app(
     timeout: Option<Duration>,
     response_write_complete: Option<std::sync::mpsc::Receiver<()>>,
     timeout_response: Option<(&str, &str)>,
+    caller_pid: Option<u32>,
 ) -> String {
     let request_id = request.id.clone();
     let (respond_to, response_rx) = std::sync::mpsc::channel();
@@ -1074,6 +1116,7 @@ fn dispatch_to_app(
         request,
         respond_to,
         response_write_complete,
+        caller_pid,
     }) {
         return error_response_json(
             request_id,

@@ -113,6 +113,12 @@ pub(super) struct ShellHitMap {
     pub(super) sidebar_line: Rect,
     /// collie: Ausgefahrenes Chat-Overlay.
     pub(super) chat_overlay: Rect,
+    /// collie: `N Chats` auf Master-Karten, je mit der Workspace-ID des Masters.
+    pub(super) master_counts: Vec<(Rect, String)>,
+    /// collie: Zeilen des Telescope mit ihrem Index.
+    pub(super) telescope_rows: Vec<(Rect, usize)>,
+    /// collie: Breadcrumb eines offenen Childs, mit der Pane-ID seines Masters.
+    pub(super) master_breadcrumb: Option<(Rect, String)>,
     pub(super) new_workspace: Rect,
     pub(super) new_tab: Rect,
     pub(super) tab_scroll_left: Rect,
@@ -309,6 +315,7 @@ pub(super) enum ClientShellOverlayKind {
     Settings,
     AgentCommands,
     Snooze,
+    Telescope,
 }
 
 #[derive(Debug)]
@@ -335,6 +342,8 @@ pub(super) enum ClientRenameTarget {
     },
     /// collie: Prompt an die Agents dieser Panes.
     ChatPrompt {
+        /// collie: Der Prompt geht an ein Child; sein Master erfährt davon.
+        report_workspace_id: Option<String>,
         pane_ids: Vec<String>,
     },
 }
@@ -638,6 +647,10 @@ pub(super) enum ClientShellOverlay {
     Settings(ClientSettingsOverlay),
     AgentCommands(ClientAgentCommandsOverlay),
     Snooze(super::snooze::ClientSnoozeOverlay),
+    /// collie: Children eines Master Chats als Tabelle.
+    Telescope(super::chat_telescope::ClientChatTelescope),
+    /// collie: Was mit den Children passiert, wenn ihr Master schließt.
+    MasterClose(super::chat_telescope::ClientMasterCloseOverlay),
 }
 
 impl ClientShellOverlay {
@@ -658,6 +671,7 @@ impl ClientShellOverlay {
             Self::Settings(_) => ClientShellOverlayKind::Settings,
             Self::AgentCommands(_) => ClientShellOverlayKind::AgentCommands,
             Self::Snooze(_) => ClientShellOverlayKind::Snooze,
+            Self::Telescope(_) | Self::MasterClose(_) => ClientShellOverlayKind::Telescope,
         }
     }
 }
@@ -932,6 +946,8 @@ pub(crate) struct ClientShellState {
     /// collie: Die Maus steht auf der Chat-Linie; zu diesem Zeitpunkt fährt
     /// das Overlay aus.
     pub(super) chat_line_hover_deadline: Option<std::time::Instant>,
+    /// collie: Master, dessen Telescope zuletzt offen war.
+    pub(super) last_master_workspace: Option<String>,
     /// collie: Beginn des Pulses der Chat-Linie (Unix-Millisekunden).
     pub(super) chat_pulse_started: Option<u64>,
     /// collie: Jüngste `attention_since` der wartenden Chats beim letzten Tick.
@@ -1121,6 +1137,7 @@ impl ClientShellState {
                 super::chat_overlay::clamp_percent,
             ),
             chat_line_hover_deadline: None,
+            last_master_workspace: None,
             chat_pulse_started: None,
             chat_attention_latest: None,
             last_sidebar_divider_click: None,

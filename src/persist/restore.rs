@@ -438,7 +438,10 @@ fn restore_workspace(
             attention_seen: snap.attention_seen.unwrap_or(true),
             last_message: snap.last_message.clone(),
             blocked_reason: snap.blocked_reason.clone(),
-            chat: crate::workspace::ChatRuntime::default(),
+            chat: crate::workspace::ChatRuntime {
+                team: snap.chat_team.clone(),
+                ..Default::default()
+            },
             active_tab: snap.active_tab.min(tabs.len().saturating_sub(1)),
             tabs,
             #[cfg(test)]
@@ -1551,6 +1554,7 @@ mod tests {
                 attention_seen: None,
                 last_message: None,
                 blocked_reason: None,
+                chat_team: Default::default(),
                 tabs: vec![TabSnapshot {
                     custom_name: None,
                     layout: LayoutSnapshot::Pane(0),
@@ -1638,6 +1642,7 @@ mod tests {
                 attention_seen: None,
                 last_message: None,
                 blocked_reason: None,
+                chat_team: Default::default(),
                 tabs: vec![TabSnapshot {
                     custom_name: None,
                     layout: LayoutSnapshot::Split {
@@ -1757,6 +1762,7 @@ mod tests {
                 attention_seen: None,
                 last_message: None,
                 blocked_reason: None,
+                chat_team: Default::default(),
                 tabs: vec![
                     TabSnapshot {
                         custom_name: None,
@@ -1846,6 +1852,7 @@ mod tests {
             attention_seen: None,
             last_message: None,
             blocked_reason: None,
+            chat_team: Default::default(),
             tabs: vec![TabSnapshot {
                 custom_name: None,
                 layout: LayoutSnapshot::Split {
@@ -1891,6 +1898,7 @@ mod tests {
                 attention_seen: None,
                 last_message: None,
                 blocked_reason: None,
+                chat_team: Default::default(),
                 tabs: vec![TabSnapshot {
                     custom_name: None,
                     layout: LayoutSnapshot::Pane(0),
@@ -2253,6 +2261,7 @@ mod tests {
                 attention_seen: None,
                 last_message: None,
                 blocked_reason: None,
+                chat_team: Default::default(),
                 tabs: vec![TabSnapshot {
                     custom_name: None,
                     layout: LayoutSnapshot::Pane(0),

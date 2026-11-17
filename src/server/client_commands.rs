@@ -13,8 +13,15 @@ pub(crate) const MAX_ENDPOINT_REQUEST_ID_BYTES: usize = 128;
 const ENDPOINT_RESPONSE_CHUNK_BYTES: usize = 512 * 1024;
 
 const CLIENT_SHELL_METHODS: &[&str] = &[
-    "chat.orchestrate",
+    "chat.adopt",
+    "chat.close",
+    "chat.demote",
+    "chat.master_create",
+    "chat.promote",
     "chat.prompt",
+    "chat.report",
+    "chat.resume",
+    "chat.stop",
     "client_shell.surface.set",
     "command.invoke",
     "integration.install",
@@ -284,6 +291,41 @@ mod tests {
         digests
     }
 
+    const MASTER_CHAT_METHOD_DIGESTS: &[(&str, &str)] = &[
+        (
+            "chat.adopt",
+            "f40a6fd9a80b996fca555662da23c9150bb479c23003a2a2757ff6ea9aa8e093",
+        ),
+        (
+            "chat.close",
+            "b1dd728c3fbceb9f587972d7338f45f6cc645a45bb9e281a9e7a4f0f25742e07",
+        ),
+        (
+            "chat.demote",
+            "6ca84a3b8a44341329f5c8ca12ce2a2cba541e9b7fbe2a44aff9cf832d45fe6f",
+        ),
+        (
+            "chat.master_create",
+            "4856daf2aa7b478228ee2ca4c0f6f7160e03dba805b79a6ce07d0003d15ea567",
+        ),
+        (
+            "chat.promote",
+            "87be0b4b5b589cac68e0df0d82e2b7af297ab3e68e7623aa5b7e7803862cd329",
+        ),
+        (
+            "chat.report",
+            "5fc2d993883a497571e560a9a2f3fa44414e45859550dc506733d0083dad6029",
+        ),
+        (
+            "chat.resume",
+            "44296eea7a3af7226f13dd4a3155bf6eaea6e4d5c560494ad467cfabadd144a7",
+        ),
+        (
+            "chat.stop",
+            "1694b92f67469832c1483292ba382f0b5cd5935d4f792d516bff2ad0c55f6190",
+        ),
+    ];
+
     #[test]
     fn advertised_client_shell_method_shapes_stay_at_the_v1_contract() {
         let expected: BTreeMap<String, String> = serde_json::from_str(include_str!(concat!(
@@ -305,15 +347,16 @@ mod tests {
             actual.remove("pane.send_input").as_deref(),
             Some("b0984bc72d68f720d07555147e6a8f14d6f7cf75376e6a3da3a393ca8f2e29a7")
         );
-        // collie: chat.prompt und chat.orchestrate sind additive Methoden des Forks.
+        // collie: chat.prompt ist eine additive Methode des Forks.
         assert_eq!(
             actual.remove("chat.prompt").as_deref(),
             Some("ae7d84cd20313f1fc463d679e74873771e4f7a40f044d3266e80450d9779a112")
         );
-        assert_eq!(
-            actual.remove("chat.orchestrate").as_deref(),
-            Some("f0d52c9ed7fb751c34d24043c9eef3f336a5bc8050ad9f386126dfcc920562e9")
-        );
+        // collie: Master-Chat-Methoden, siehe docs/specs/master-chat.md.
+        for (method, digest) in MASTER_CHAT_METHOD_DIGESTS {
+            let actual_digest = actual.remove(*method);
+            assert_eq!(actual_digest.as_deref(), Some(*digest), "{method}");
+        }
         // collie: workspace.snooze ist eine additive Methode des Forks.
         assert_eq!(
             actual.remove("workspace.snooze").as_deref(),

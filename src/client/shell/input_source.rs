@@ -12,6 +12,8 @@ impl ClientShellState {
                     | ClientShellOverlay::ContextMenu(_)
                     | ClientShellOverlay::GlobalMenu(_)
                     | ClientShellOverlay::Snooze(_)
+                    | ClientShellOverlay::Telescope(_)
+                    | ClientShellOverlay::MasterClose(_)
             );
         }
         matches!(

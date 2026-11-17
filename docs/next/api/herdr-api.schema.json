@@ -79,6 +79,62 @@
           ],
           "type": "string"
         },
+        "ChatTeamInfo": {
+          "description": "collie: Master chat facts of a workspace.",
+          "properties": {
+            "assignment": {
+              "description": "Task the master gave this child.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "child_count": {
+              "default": 0,
+              "description": "Children of a master.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "inbox_latest": {
+              "description": "Latest inbox entry of a master, formatted as one line.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "inbox_pending": {
+              "default": 0,
+              "description": "Inbox entries of a master that are not delivered yet.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "parent_workspace_id": {
+              "description": "Master of a child workspace.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "role": {
+              "$ref": "#/schemas/event/$defs/ChatTeamRole"
+            }
+          },
+          "required": [
+            "role"
+          ],
+          "type": "object"
+        },
+        "ChatTeamRole": {
+          "description": "collie: Role of a workspace in the master chat model.",
+          "enum": [
+            "master",
+            "child",
+            "unknown"
+          ],
+          "type": "string"
+        },
         "EventData": {
           "oneOf": [
             {
@@ -1174,6 +1230,17 @@
               "minimum": 0,
               "type": "integer"
             },
+            "team": {
+              "anyOf": [
+                {
+                  "$ref": "#/schemas/event/$defs/ChatTeamInfo"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Master chat role, parent, assignment and inbox summary."
+            },
             "tokens": {
               "additionalProperties": {
                 "type": "string"
@@ -1796,10 +1863,13 @@
           ],
           "type": "object"
         },
-        "ChatOrchestrateParams": {
-          "description": "collie: Starts an orchestrating agent in a new workspace that knows the\nchats in these panes.",
+        "ChatAdoptParams": {
+          "description": "collie: Attaches workspaces as children of a master.",
           "properties": {
-            "pane_ids": {
+            "master_workspace_id": {
+              "type": "string"
+            },
+            "workspace_ids": {
               "items": {
                 "type": "string"
               },
@@ -1807,8 +1877,84 @@
             }
           },
           "required": [
-            "pane_ids"
+            "master_workspace_id",
+            "workspace_ids"
           ],
+          "type": "object"
+        },
+        "ChatCloseChildren": {
+          "description": "collie: What happens to the children when a master closes.",
+          "enum": [
+            "close",
+            "release"
+          ],
+          "type": "string"
+        },
+        "ChatCloseParams": {
+          "description": "collie: Closes a chat; a master takes its children along or releases them.",
+          "properties": {
+            "caller_pane_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "children": {
+              "$ref": "#/schemas/request/$defs/ChatCloseChildren",
+              "default": "close"
+            },
+            "workspace_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "workspace_id"
+          ],
+          "type": "object"
+        },
+        "ChatInboxParams": {
+          "description": "collie: Inbox of a master.",
+          "properties": {
+            "all": {
+              "description": "Include delivered entries.",
+              "type": "boolean"
+            },
+            "caller_pane_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "workspace_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "ChatMasterCreateParams": {
+          "description": "collie: Creates a new master chat.",
+          "properties": {
+            "adopt_workspace_ids": {
+              "description": "Workspaces that become children of the new master.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "cwd": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "focus": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
           "type": "object"
         },
         "ChatPromptParams": {
@@ -1828,6 +1974,106 @@
             "pane_ids",
             "text"
           ],
+          "type": "object"
+        },
+        "ChatReportParams": {
+          "description": "collie: Message to the inbox of a master.",
+          "properties": {
+            "caller_pane_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "from_user": {
+              "description": "The user wrote to the child directly.",
+              "type": "boolean"
+            },
+            "text": {
+              "type": "string"
+            },
+            "workspace_id": {
+              "description": "Child workspace the message is about; the caller's workspace when omitted.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "type": "object"
+        },
+        "ChatSpawnParams": {
+          "description": "collie: Starts a child chat for a master.",
+          "properties": {
+            "agent": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "caller_pane_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "check_only": {
+              "description": "Only check whether the master may start another child.",
+              "type": "boolean"
+            },
+            "cwd": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "master_workspace_id": {
+              "description": "Master workspace; the caller's workspace when omitted.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "prompt": {
+              "default": "",
+              "type": "string"
+            },
+            "title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "workspace_id": {
+              "description": "Existing, freshly created workspace to use, for example a worktree.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "ChatWorkspaceParams": {
+          "description": "collie: Optional workspace target; the caller's workspace when omitted.",
+          "properties": {
+            "caller_pane_id": {
+              "description": "Pane of the caller, from `HERDR_PANE_ID`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "workspace_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
           "type": "object"
         },
         "ClientShellSurfaceSetParams": {
@@ -5264,11 +5510,155 @@
         {
           "properties": {
             "method": {
-              "const": "chat.orchestrate",
+              "const": "chat.master_create",
               "type": "string"
             },
             "params": {
-              "$ref": "#/schemas/request/$defs/ChatOrchestrateParams"
+              "$ref": "#/schemas/request/$defs/ChatMasterCreateParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "chat.promote",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ChatWorkspaceParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "chat.demote",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ChatWorkspaceParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "chat.adopt",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ChatAdoptParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "chat.spawn",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ChatSpawnParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "chat.stop",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ChatWorkspaceParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "chat.resume",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ChatWorkspaceParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "chat.close",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ChatCloseParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "chat.report",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ChatReportParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "chat.inbox",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ChatInboxParams"
             }
           },
           "required": [
@@ -7064,6 +7454,99 @@
             "working",
             "blocked",
             "done",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "ChatInboxEntryInfo": {
+          "description": "collie: One inbox entry.",
+          "properties": {
+            "at": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "delivered": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "text": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "title": {
+              "type": "string"
+            },
+            "workspace_id": {
+              "description": "Child workspace, empty for entries without a child.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "at",
+            "workspace_id",
+            "title",
+            "kind",
+            "delivered"
+          ],
+          "type": "object"
+        },
+        "ChatTeamInfo": {
+          "description": "collie: Master chat facts of a workspace.",
+          "properties": {
+            "assignment": {
+              "description": "Task the master gave this child.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "child_count": {
+              "default": 0,
+              "description": "Children of a master.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "inbox_latest": {
+              "description": "Latest inbox entry of a master, formatted as one line.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "inbox_pending": {
+              "default": 0,
+              "description": "Inbox entries of a master that are not delivered yet.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "parent_workspace_id": {
+              "description": "Master of a child workspace.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "role": {
+              "$ref": "#/schemas/success_response/$defs/ChatTeamRole"
+            }
+          },
+          "required": [
+            "role"
+          ],
+          "type": "object"
+        },
+        "ChatTeamRole": {
+          "description": "collie: Role of a workspace in the master chat model.",
+          "enum": [
+            "master",
+            "child",
             "unknown"
           ],
           "type": "string"
@@ -9568,6 +10051,26 @@
               "type": "object"
             },
             {
+              "description": "collie: Inbox of a master chat.",
+              "properties": {
+                "entries": {
+                  "items": {
+                    "$ref": "#/schemas/success_response/$defs/ChatInboxEntryInfo"
+                  },
+                  "type": "array"
+                },
+                "type": {
+                  "const": "chat_inbox",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "entries"
+              ],
+              "type": "object"
+            },
+            {
               "properties": {
                 "source": {
                   "$ref": "#/schemas/success_response/$defs/WorktreeSourceInfo"
@@ -10964,6 +11467,17 @@
               "format": "uint",
               "minimum": 0,
               "type": "integer"
+            },
+            "team": {
+              "anyOf": [
+                {
+                  "$ref": "#/schemas/success_response/$defs/ChatTeamInfo"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Master chat role, parent, assignment and inbox summary."
             },
             "tokens": {
               "additionalProperties": {

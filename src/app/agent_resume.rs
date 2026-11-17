@@ -105,7 +105,11 @@ impl App {
         let mut pending = Vec::new();
         for (ws_idx, ws) in self.state.workspaces.iter().enumerate() {
             // collie: Ein gestoppter Chat startet erst, wenn sein Space aktiv ist.
-            if self.resume_agents_lazily && self.state.active != Some(ws_idx) {
+            // `chat.resume` startet ein Child, ohne dass sein Space aktiv ist.
+            if self.resume_agents_lazily
+                && self.state.active != Some(ws_idx)
+                && !self.chat_resume_workspaces.contains(&ws.id)
+            {
                 continue;
             }
             for (tab_idx, tab) in ws.tabs.iter().enumerate() {

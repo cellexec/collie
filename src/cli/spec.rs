@@ -725,6 +725,67 @@ fn chat_command() -> Command {
                 .arg(required("transcript", "TRANSCRIPT"))
                 .arg(required("line", "LINE")),
         )
+        .subcommand(
+            Command::new("master")
+                .about("Start a new master chat")
+                .arg(option("cwd", "DIR"))
+                .arg(flag("no-focus")),
+        )
+        .subcommand(
+            Command::new("promote")
+                .about("Make a chat the master chat")
+                .arg(optional("workspace", "WORKSPACE")),
+        )
+        .subcommand(
+            Command::new("demote")
+                .about("Turn a master chat back into a normal chat")
+                .arg(optional("workspace", "WORKSPACE")),
+        )
+        .subcommand(
+            Command::new("spawn")
+                .about("Start a child chat for the calling master chat")
+                .arg(option("prompt", "TEXT"))
+                .arg(option("cwd", "DIR"))
+                .arg(option("worktree", "BRANCH"))
+                .arg(option("base", "REF"))
+                .arg(option("title", "TEXT"))
+                .arg(option("agent", "NAME"))
+                .arg(option("master", "WORKSPACE")),
+        )
+        .subcommand(
+            Command::new("children")
+                .about("List the children of a master chat")
+                .arg(option("master", "WORKSPACE"))
+                .arg(flag("json")),
+        )
+        .subcommand(
+            Command::new("stop")
+                .about("Stop a chat's agent; the chat stays and can be resumed")
+                .arg(optional("workspace", "WORKSPACE")),
+        )
+        .subcommand(
+            Command::new("resume")
+                .about("Resume a stopped chat's agent")
+                .arg(optional("workspace", "WORKSPACE")),
+        )
+        .subcommand(
+            Command::new("close")
+                .about("Close a chat; a master closes its children too")
+                .arg(required("workspace", "WORKSPACE"))
+                .arg(flag("release-children")),
+        )
+        .subcommand(
+            Command::new("report")
+                .about("Send a message from a child chat to its master")
+                .arg(required("text", "TEXT")),
+        )
+        .subcommand(
+            Command::new("inbox")
+                .about("Show the inbox of a master chat")
+                .arg(option("master", "WORKSPACE"))
+                .arg(flag("all"))
+                .arg(flag("json")),
+        )
 }
 
 /// collie: Chat-Fakten für die Chat-Sidebar.
@@ -1044,6 +1105,10 @@ fn path_option(name: &'static str, value_name: &'static str) -> Arg {
 
 fn required(name: &'static str, value_name: &'static str) -> Arg {
     Arg::new(name).value_name(value_name).required(true)
+}
+
+fn optional(name: &'static str, value_name: &'static str) -> Arg {
+    Arg::new(name).value_name(value_name)
 }
 
 fn path_arg(name: &'static str, value_name: &'static str) -> Arg {

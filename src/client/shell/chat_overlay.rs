@@ -307,6 +307,17 @@ impl ClientShellState {
                 true
             }
             MouseEventKind::Down(MouseButton::Left) => {
+                // collie: `N Chats` auf einer Master-Karte öffnet das Telescope.
+                if let Some((_, master)) = self
+                    .hits
+                    .master_counts
+                    .iter()
+                    .find(|(rect, _)| super::contains(*rect, point))
+                    .cloned()
+                {
+                    self.open_chat_telescope(master, None, outcome);
+                    return true;
+                }
                 if let Some(cursor) = card {
                     self.sidebar_focus.agent_cursor = Some(cursor);
                     self.commit_sidebar(outcome);

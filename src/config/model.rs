@@ -285,6 +285,23 @@ impl Default for SessionConfig {
     }
 }
 
+/// collie: Master chats, see docs/specs/master-chat.md.
+#[derive(Debug, Deserialize)]
+#[serde(default)]
+pub struct MasterConfig {
+    /// Running children a master chat may have at once. Stopped children do
+    /// not count. Default: 6.
+    pub max_running_children: usize,
+}
+
+impl Default for MasterConfig {
+    fn default() -> Self {
+        Self {
+            max_running_children: 6,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ConfigReloadStatus {
@@ -319,6 +336,8 @@ pub struct Config {
     pub theme: ThemeConfig,
     pub terminal: TerminalConfig,
     pub session: SessionConfig,
+    /// collie: Master chats.
+    pub master: MasterConfig,
     pub server: ServerConfig,
     pub update: UpdateConfig,
     pub keys: KeysConfig,

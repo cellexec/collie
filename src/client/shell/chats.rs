@@ -51,6 +51,45 @@ pub(super) struct ChatRow {
     pub(super) context_window: Option<u64>,
     /// Abgeschlossene Arbeitsphasen der letzten 30 Minuten.
     pub(super) working_spans: Vec<(u64, u64)>,
+    /// Der Chat ist ein Master Chat.
+    pub(super) master: bool,
+    /// Master eines Child-Chats.
+    pub(super) parent: Option<String>,
+    /// Auftrag eines Child-Chats.
+    pub(super) assignment: Option<String>,
+    /// Letzter Inbox-Eintrag eines Masters.
+    pub(super) inbox_latest: Option<String>,
+    /// Children eines Masters nach Status.
+    pub(super) children: ChildCounts,
+    /// Ein offenes Child, das eingerückt unter seinem Master steht.
+    pub(super) nested: bool,
+}
+
+/// collie: Children eines Masters nach Status.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct ChildCounts {
+    pub(super) total: usize,
+    /// Blockiert oder wartet auf Antwort.
+    pub(super) blocked: usize,
+    pub(super) working: usize,
+    /// Fertig oder idle.
+    pub(super) done: usize,
+    pub(super) stopped: usize,
+}
+
+impl ChildCounts {
+    fn count(&mut self, row: &ChatRow) {
+        self.total += 1;
+        if row.stopped {
+            self.stopped += 1;
+        } else if row.needs_reply() {
+            self.blocked += 1;
+        } else if row.status == AgentStatus::Working {
+            self.working += 1;
+        } else {
+            self.done += 1;
+        }
+    }
 }
 
 impl ChatRow {
@@ -58,9 +97,10 @@ impl ChatRow {
         self.snoozed_until.is_some_and(|until| until > now)
     }
 
-    /// Versteckt sind laufende und gesnoozte Chats.
+    /// Versteckt sind laufende und gesnoozte Chats. Master stehen immer in
+    /// der Hauptliste, solange sie nicht gesnoozt sind.
     pub(super) fn hidden(&self, now: u64) -> bool {
-        self.status == AgentStatus::Working || self.snoozed(now)
+        (self.status == AgentStatus::Working && !self.master) || self.snoozed(now)
     }
 
     /// Der Agent wartet auf eine Antwort, etwa auf ein Formular. Solange er
@@ -71,17 +111,42 @@ impl ChatRow {
     }
 
     /// Der Chat braucht den Nutzer dringend: blockiert oder wartet auf Antwort.
+    /// Ein Master zählt auch, wenn eines seiner Children blockiert.
     pub(super) fn needs_reply(&self) -> bool {
-        self.status == AgentStatus::Blocked || self.awaiting_reply()
+        self.status == AgentStatus::Blocked || self.awaiting_reply() || self.children.blocked > 0
     }
 }
 
-/// Alle Chats eines Snapshots, unsortiert und ungefiltert.
-pub(super) fn chat_rows(snapshot: &ClientShellSnapshot) -> Vec<ChatRow> {
-    snapshot
+/// Alle Chats eines Snapshots samt Children. Master tragen die Zähler ihrer
+/// Children.
+pub(super) fn all_chat_rows(snapshot: &ClientShellSnapshot) -> Vec<ChatRow> {
+    let mut rows = snapshot
         .workspaces
         .iter()
         .filter_map(|workspace| chat_row(snapshot, workspace))
+        .collect::<Vec<_>>();
+    if rows.iter().any(|row| row.master) {
+        let mut counts = std::collections::HashMap::<String, ChildCounts>::new();
+        for row in &rows {
+            if let Some(parent) = row.parent.as_ref() {
+                counts.entry(parent.clone()).or_default().count(row);
+            }
+        }
+        for row in rows.iter_mut().filter(|row| row.master) {
+            row.children = counts.remove(&row.workspace_id).unwrap_or_default();
+        }
+    }
+    rows
+}
+
+/// Children eines Masters.
+pub(super) fn child_rows(
+    snapshot: &ClientShellSnapshot,
+    master_workspace_id: &str,
+) -> Vec<ChatRow> {
+    all_chat_rows(snapshot)
+        .into_iter()
+        .filter(|row| row.parent.as_deref() == Some(master_workspace_id))
         .collect()
 }
 
@@ -174,6 +239,21 @@ fn chat_row(snapshot: &ClientShellSnapshot, workspace: &ClientShellWorkspace) ->
         context_tokens: workspace.context_tokens,
         context_window: workspace.context_window,
         working_spans: workspace.working_spans.clone(),
+        master: workspace.team.as_ref().is_some_and(|team| team.master),
+        parent: workspace
+            .team
+            .as_ref()
+            .and_then(|team| team.parent_workspace_id.clone()),
+        assignment: workspace
+            .team
+            .as_ref()
+            .and_then(|team| team.assignment.clone()),
+        inbox_latest: workspace
+            .team
+            .as_ref()
+            .and_then(|team| team.inbox_latest.clone()),
+        children: ChildCounts::default(),
+        nested: false,
     })
 }
 
@@ -185,14 +265,32 @@ pub(super) fn visible_chat_rows(
     query: &str,
     now: u64,
 ) -> Vec<ChatRow> {
-    let mut rows = chat_rows(snapshot)
-        .into_iter()
+    let all = all_chat_rows(snapshot);
+    let mut rows = all
+        .iter()
+        .filter(|row| row.parent.is_none())
         .filter(|row| row.hidden(now) == show_hidden)
         .filter(|row| super::sidebar_focus::chat_matches_filter(row, query))
+        .cloned()
         .collect::<Vec<_>>();
     rows.sort_by_key(|row| row.attention_since);
     if newest_first {
         rows.reverse();
+    }
+    // Master stehen oben angepinnt.
+    rows.sort_by_key(|row| !row.master);
+    // Ein offenes Child steht eingerückt unter seinem Master, solange es offen ist.
+    if !show_hidden {
+        if let Some(child) = all.iter().find(|row| row.focused && row.parent.is_some()) {
+            if let Some(index) = rows
+                .iter()
+                .position(|row| Some(&row.workspace_id) == child.parent.as_ref())
+            {
+                let mut child = child.clone();
+                child.nested = true;
+                rows.insert(index + 1, child);
+            }
+        }
     }
     rows
 }
@@ -245,6 +343,13 @@ pub(super) fn chat_symbol(
 ) -> Option<(&'static str, Style)> {
     if row.stopped {
         return Some((SYMBOL_STOPPED, Style::default().fg(palette.overlay0)));
+    }
+    // Ein Master mit blockiertem Child zählt selbst als blockiert.
+    if row.children.blocked > 0 && row.status != AgentStatus::Blocked {
+        return Some((
+            "●",
+            Style::default().fg(status_color(AgentStatus::Blocked, palette)),
+        ));
     }
     if row.awaiting_reply() {
         return Some((
@@ -397,14 +502,19 @@ fn render_chat_row(buffer: &mut Buffer, rect: Rect, row: &ChatRow, now: u64, pal
     } else {
         Style::default().fg(palette.subtext0)
     };
-    put_text(
-        buffer,
-        label_x,
-        rect.y,
-        label_width,
-        &row.label,
-        label_style,
-    );
+    let label = if row.master {
+        format!(
+            "{} {} ({})",
+            super::chat_cards::ICON_CROWN,
+            row.label,
+            row.children.total
+        )
+    } else if row.nested {
+        format!("└ {}", row.label)
+    } else {
+        row.label.clone()
+    };
+    put_text(buffer, label_x, rect.y, label_width, &label, label_style);
     if let Some(remaining) = remaining {
         put_text(
             buffer,

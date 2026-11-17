@@ -106,6 +106,16 @@ pub(super) fn snapshot_with_completions(
                 context_tokens: workspace.context_tokens,
                 context_window: workspace.context_window,
                 working_spans: workspace.working_spans.clone(),
+                team: workspace
+                    .team
+                    .as_ref()
+                    .map(|team| protocol::ClientShellChatTeam {
+                        master: team.role == crate::api::schema::ChatTeamRole::Master,
+                        parent_workspace_id: team.parent_workspace_id.clone(),
+                        assignment: team.assignment.clone(),
+                        inbox_pending: team.inbox_pending,
+                        inbox_latest: team.inbox_latest.clone(),
+                    }),
             }
         })
         .collect();

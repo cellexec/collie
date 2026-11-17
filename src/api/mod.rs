@@ -32,7 +32,15 @@ pub(crate) fn request_changes_ui(request: &Request) -> bool {
             | Method::WorkspaceFocus(_)
             | Method::WorkspaceRename(_)
             | Method::WorkspaceSnooze(_)
-            | Method::ChatOrchestrate(_)
+            | Method::ChatMasterCreate(_)
+            | Method::ChatPromote(_)
+            | Method::ChatDemote(_)
+            | Method::ChatAdopt(_)
+            | Method::ChatSpawn(_)
+            | Method::ChatStop(_)
+            | Method::ChatResume(_)
+            | Method::ChatClose(_)
+            | Method::ChatReport(_)
             | Method::WorkspaceMove(_)
             | Method::WorkspaceMoveBlock(_)
             | Method::WorkspaceReportMetadata(_)
@@ -87,6 +95,8 @@ pub struct ApiRequestMessage {
     pub request: Request,
     pub respond_to: std::sync::mpsc::Sender<String>,
     pub response_write_complete: Option<std::sync::mpsc::Receiver<()>>,
+    /// collie: Prozess-ID des Aufrufers am lokalen Socket, falls bekannt.
+    pub caller_pid: Option<u32>,
 }
 
 pub type ApiRequestSender = mpsc::UnboundedSender<ApiRequestMessage>;

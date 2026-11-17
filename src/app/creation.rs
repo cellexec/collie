@@ -420,6 +420,7 @@ impl App {
             context_tokens: ws.chat.context_tokens,
             context_window: ws.chat.context_window,
             working_spans: ws.chat.working_spans.clone(),
+            team: self.chat_team_info(index),
         }
     }
 

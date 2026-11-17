@@ -732,6 +732,11 @@ impl ClientShellState {
                     return None;
                 }
                 self.mode = return_mode;
+                // collie: `prefix+m` öffnet das Telescope des Master Chats,
+                // solange die Taste nicht anders belegt ist.
+                if key.code == KeyCode::Char('m') && key.modifiers.is_empty() {
+                    self.open_focused_chat_telescope(outcome);
+                }
                 None
             }
             ClientShellMode::Navigate => {

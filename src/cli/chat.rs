@@ -29,7 +29,13 @@ pub(super) fn run_chat_command(args: &[String]) -> std::io::Result<i32> {
             print_chat_help();
             Ok(0)
         }
-        _ => {
+        Some(command) => {
+            super::chat_team::run_team_command(command, &args[1..]).unwrap_or_else(|| {
+                print_chat_help();
+                Ok(2)
+            })
+        }
+        None => {
             print_chat_help();
             Ok(2)
         }
@@ -40,6 +46,7 @@ fn print_chat_help() {
     eprintln!("herdr chat commands:");
     eprintln!("  herdr chat search [--print]");
     eprintln!("  herdr chat preview <transcript> <line>");
+    super::chat_team::print_team_help();
 }
 
 /// Eine Nachricht eines Transcripts.

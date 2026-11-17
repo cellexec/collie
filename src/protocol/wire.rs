@@ -1066,6 +1066,24 @@ pub struct ClientShellWorkspace {
     /// `(start, ende)` in Unix-Millisekunden.
     #[serde(default)]
     pub working_spans: Vec<(u64, u64)>,
+    /// collie: Master-Chat-Fakten, siehe docs/specs/master-chat.md.
+    #[serde(default)]
+    pub team: Option<ClientShellChatTeam>,
+}
+
+/// collie: Rolle eines Space im Master-Chat-Modell.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClientShellChatTeam {
+    /// Der Space ist ein Master; sonst ist er ein Child.
+    pub master: bool,
+    /// Master eines Childs.
+    pub parent_workspace_id: Option<String>,
+    /// Auftrag eines Childs.
+    pub assignment: Option<String>,
+    /// Offene Inbox-Einträge eines Masters.
+    pub inbox_pending: usize,
+    /// Letzter Inbox-Eintrag eines Masters als eine Zeile.
+    pub inbox_latest: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2875,6 +2893,7 @@ mod tests {
                 context_tokens: None,
                 context_window: None,
                 working_spans: Vec::new(),
+                team: None,
             }],
             tabs: vec![ClientShellTab {
                 tab_id: "w1:t1".into(),
