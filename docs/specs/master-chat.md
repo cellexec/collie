@@ -46,6 +46,10 @@ flowchart LR
 | `chat.report` | Nachricht eines Childs (oder des Nutzers) an die Inbox des Masters |
 | `chat.inbox` | Inbox eines Masters, offen oder vollständig |
 
+- Startet collie einen Agent für einen Master (Master selbst, `spawn`,
+  `resume`), beantwortet es 2 Minuten lang die Vertrauensfrage von Claude
+  Code (`Yes, I trust this folder`) selbst. Abschalten mit
+  `master.trust_child_folders = false`.
 - `chat.spawn` lehnt ab, wenn `master.max_running_children` (Default 6)
   laufende Children erreicht sind. Gestoppte Children zählen nicht.
 - Aus einem Child-Pane lehnt der Server schreibende Methoden ab, die auf

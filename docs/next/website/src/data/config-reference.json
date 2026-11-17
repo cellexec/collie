@@ -1598,6 +1598,12 @@
           "type": "integer",
           "default": "6",
           "description": "Running children a master chat may have at once. Stopped children do not count."
+        },
+        {
+          "key": "master.trust_child_folders",
+          "type": "boolean",
+          "default": "true",
+          "description": "Answer Claude Code's folder trust prompt for agents that master chats start, so children do not wait for the user."
         }
       ]
     },

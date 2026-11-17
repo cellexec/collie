@@ -241,6 +241,9 @@ pub struct ChatRuntime {
     pub working_spans: Vec<(u64, u64)>,
     /// Wann der Nutzer zuletzt in ein Pane dieses Space getippt hat.
     pub last_user_input: Option<u64>,
+    /// Bis wann collie die Vertrauensfrage eines frisch gestarteten Agents
+    /// selbst beantwortet (Unix-Millisekunden).
+    pub trust_watch_until: Option<u64>,
     /// Master-Chat-Beziehungen. Anders als der Rest wird das gespeichert,
     /// siehe docs/specs/master-chat.md.
     pub team: ChatTeam,

@@ -28,6 +28,10 @@ const INBOX_QUIET_MS: u64 = 5_000;
 const INBOX_TYPING_MS: u64 = 5_000;
 /// So oft prüft der Server eine wartende Inbox erneut.
 const INBOX_RETRY: Duration = Duration::from_secs(1);
+/// So lange nach dem Start beantwortet collie die Vertrauensfrage.
+const TRUST_WATCH_MS: u64 = 120_000;
+/// Text der Vertrauensfrage von Claude Code, an dem collie sie erkennt.
+const TRUST_PROMPT_MARKERS: [&str; 2] = ["Yes, I trust this folder", "Do you trust the files"];
 /// Höchstlänge eines Auftrags.
 const MAX_ASSIGNMENT_CHARS: usize = 4_000;
 /// Höchstlänge einer Report-Nachricht.
@@ -110,6 +114,7 @@ impl App {
             return encode_error(id, "workspace_not_found", "master vanished");
         };
         self.state.workspaces[index].chat.team.role = ChatRole::Master;
+        self.watch_trust_prompt(index);
         for workspace_id in params.adopt_workspace_ids {
             if let Some(child) = self.parse_workspace_id(&workspace_id) {
                 self.adopt_child(index, child);
@@ -152,6 +157,7 @@ impl App {
                     self.submit_to_pane(index, pane_id, MASTER_PROMPT);
                 } else if let Some(public) = self.public_pane_id(index, pane_id) {
                     self.type_chat_agent_command(&public, "claude", MASTER_PROMPT);
+                    self.watch_trust_prompt(index);
                 }
             }
             self.schedule_session_save();
@@ -306,6 +312,8 @@ impl App {
             parent: master_id.clone(),
         };
         ws.chat.team.assignment = Some(assignment.clone());
+        self.watch_trust_prompt(child);
+        let ws = &mut self.state.workspaces[child];
         match params.title {
             Some(title) => ws.set_custom_name(title),
             // Ohne Titel benennt der Chat-Hook das Child nach dem ersten Turn.
@@ -410,6 +418,7 @@ impl App {
         }
         self.chat_resume_workspaces
             .insert(self.state.workspaces[index].id.clone());
+        self.watch_trust_prompt(index);
         self.pending_agent_resume_deadline = Some(Instant::now());
         encode_success(
             id,
@@ -607,6 +616,9 @@ impl App {
         for workspace_id in stale {
             self.chat_resume_workspaces.remove(&workspace_id);
         }
+        if self.answer_trust_prompts(millis) {
+            waiting = true;
+        }
         if waiting {
             self.chat_inbox_deadline = Some(now + INBOX_RETRY);
         } else if self
@@ -619,6 +631,67 @@ impl App {
             self.chat_inbox_deadline = Some(now + INBOX_RETRY * 10);
         }
         changed
+    }
+
+    /// collie beantwortet die Vertrauensfrage eines Agents, den ein Master
+    /// gestartet hat. Das Verzeichnis hat der Master selbst gewählt.
+    fn watch_trust_prompt(&mut self, index: usize) {
+        if !self.trust_child_folders {
+            return;
+        }
+        if let Some(ws) = self.state.workspaces.get_mut(index) {
+            ws.chat.trust_watch_until = Some(crate::workspace::unix_millis_now() + TRUST_WATCH_MS);
+        }
+        self.chat_inbox_deadline = Some(Instant::now());
+    }
+
+    /// Sucht die Vertrauensfrage in beobachteten Panes und bestätigt sie.
+    /// Liefert, ob noch Panes beobachtet werden.
+    fn answer_trust_prompts(&mut self, millis: u64) -> bool {
+        let mut watching = false;
+        for index in 0..self.state.workspaces.len() {
+            let Some(until) = self.state.workspaces[index].chat.trust_watch_until else {
+                continue;
+            };
+            if millis > until {
+                self.state.workspaces[index].chat.trust_watch_until = None;
+                continue;
+            }
+            let Some(pane_id) = self.chat_agent_pane(index) else {
+                continue;
+            };
+            let Some(runtime) = self.lookup_runtime_sender(index, pane_id) else {
+                watching = true;
+                continue;
+            };
+            let text = runtime.visible_text();
+            if !TRUST_PROMPT_MARKERS
+                .iter()
+                .any(|marker| text.contains(marker))
+            {
+                watching = true;
+                continue;
+            }
+            // Die Auswahl steht auf „No, exit"; eine Zeile tiefer liegt „Yes".
+            match super::super::api_helpers::encode_api_input(
+                runtime,
+                "",
+                &["Down".to_owned(), "Enter".to_owned()],
+            ) {
+                Ok(bytes) => {
+                    if let Err(err) = runtime.try_send_bytes(Bytes::from(bytes)) {
+                        tracing::warn!(err = %err, "trust prompt not answered");
+                    }
+                }
+                Err(key) => tracing::warn!(key = %key, "trust prompt keys unsupported"),
+            }
+            tracing::info!(
+                workspace = %self.state.workspaces[index].id,
+                "answered the folder trust prompt of a chat agent"
+            );
+            self.state.workspaces[index].chat.trust_watch_until = None;
+        }
+        watching
     }
 
     /// `Some(true)`, wenn die Inbox jetzt zugestellt werden kann,

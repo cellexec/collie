@@ -292,12 +292,16 @@ pub struct MasterConfig {
     /// Running children a master chat may have at once. Stopped children do
     /// not count. Default: 6.
     pub max_running_children: usize,
+    /// Answer Claude Code's folder trust prompt for agents that master chats
+    /// start, so children do not wait for the user. Default: true.
+    pub trust_child_folders: bool,
 }
 
 impl Default for MasterConfig {
     fn default() -> Self {
         Self {
             max_running_children: 6,
+            trust_child_folders: true,
         }
     }
 }
