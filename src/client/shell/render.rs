@@ -165,6 +165,8 @@ pub(super) fn render_mode_bar(
                         (" new  ".to_owned(), base),
                         ("z".to_owned(), key),
                         (" snooze  ".to_owned(), base),
+                        ("[ ]".to_owned(), key),
+                        (" inbox  ".to_owned(), base),
                         ("x".to_owned(), key),
                         (" mark  ".to_owned(), base),
                         ("p".to_owned(), key),

@@ -1480,7 +1480,10 @@ fn the_chat_header_shows_the_global_inbox_counter_and_opens_it_on_click() {
     let mut state = chat_overlay_state_with(snapshot);
     focus_sidebar(&mut state);
     let rows = frame_rows(&state.compose(160, 28).expect("frame"));
-    assert!(rows.iter().any(|row| row.contains("󰇮 3 2")), "{rows:#?}");
+    assert!(
+        rows.iter().any(|row| row.contains("󰭹 chats │ 󰇮 inbox 3 2")),
+        "{rows:#?}"
+    );
     let counter = state.hits.user_inbox_counts[0];
     let outcome = mouse(
         &mut state,
@@ -1495,6 +1498,46 @@ fn the_chat_header_shows_the_global_inbox_counter_and_opens_it_on_click() {
         methods(&outcome).as_slice(),
         [Method::ChatUserInbox(params)] if params.all
     ));
+}
+
+#[test]
+fn brackets_switch_the_sheet_between_chats_and_inbox() {
+    let mut snapshot = master_snapshot();
+    snapshot.user_inbox = crate::protocol::ClientShellUserInbox {
+        important: 1,
+        revision: 1,
+        ..Default::default()
+    };
+    let mut state = chat_overlay_state_with(snapshot);
+    focus_sidebar(&mut state);
+    assert!(state.chat_overlay_open());
+
+    let outcome = press(&mut state, b"]");
+    assert!(matches!(
+        state.overlay,
+        Some(ClientShellOverlay::UserInbox(_))
+    ));
+    assert!(methods(&outcome)
+        .iter()
+        .any(|method| matches!(method, Method::ChatUserInbox(params) if params.all)));
+    let rows = frame_rows(&state.compose(160, 28).expect("frame"));
+    assert!(rows[0].starts_with(" 󰭹 chats │ 󰇮 inbox 1"), "{rows:#?}");
+
+    let outcome = press(&mut state, b"[");
+    assert!(state.overlay.is_none());
+    assert!(state.chat_overlay_open());
+    assert!(methods(&outcome).iter().any(|method| matches!(
+        method,
+        Method::ChatUserInboxAct(params)
+            if params.action == crate::api::schema::ChatUserInboxAction::Flush
+    )));
+
+    // Ein Klick auf `chats` im Inbox-Tab wechselt ebenfalls.
+    press(&mut state, b"]");
+    state.compose(160, 28).expect("frame");
+    mouse(&mut state, MouseEventKind::Down(MouseButton::Left), (2, 0));
+    assert!(state.overlay.is_none());
+    assert!(state.chat_overlay_open());
 }
 
 #[test]
@@ -1579,6 +1622,37 @@ fn a_form_runs_as_a_tab_in_the_inbox_space_and_the_inbox_returns_afterwards() {
         rows.iter().any(|row| row.contains("zurück in die Inbox")),
         "{rows:#?}"
     );
+
+    // Das angedockte Sheet hat beide Tabs: `chats` zeigt die Karten, ein
+    // Klick auf `inbox` holt die Liste zurück.
+    let dock = state.hits.inbox_dock_area;
+    mouse(
+        &mut state,
+        MouseEventKind::Down(MouseButton::Left),
+        (dock.x + 2, dock.y),
+    );
+    assert_eq!(
+        state.inbox_dock.as_ref().map(|dock| dock.tab),
+        Some(crate::client::shell::sheet_tabs::SheetTab::Chats)
+    );
+    let rows = frame_rows(&state.compose(160, 28).expect("frame"));
+    assert!(
+        rows.iter().any(|row| row.contains("Master Chat")),
+        "{rows:#?}"
+    );
+    assert!(!state.hits.agents.is_empty());
+    let inbox_tab =
+        crate::client::shell::sheet_tabs::sheet_tabs(dock.x, dock.y, &snapshot.user_inbox).inbox;
+    mouse(
+        &mut state,
+        MouseEventKind::Down(MouseButton::Left),
+        (inbox_tab.x + 1, dock.y),
+    );
+    assert_eq!(
+        state.inbox_dock.as_ref().map(|dock| dock.tab),
+        Some(crate::client::shell::sheet_tabs::SheetTab::Inbox)
+    );
+    assert!(state.overlay.is_none());
 
     // Der Server legt den Space mit dem Tab an und fokussiert ihn.
     let mut with_space = snapshot.clone();

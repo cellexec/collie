@@ -91,18 +91,20 @@ flowchart LR
 
 | Ort | Anzeige |
 | --- | --- |
-| Sidebar-Kopf neben `󰭹 chats` | `󰇮 3 2`: wichtig rot, optional grau; Klick öffnet die Inbox |
+| Kopfzeile des Sheets | zwei Tabs ` 󰭹 chats │ 󰇮 inbox 3 2`: wichtig rot, optional grau; der aktive Tab ist hell, ein Klick auf den anderen wechselt |
 | eingeklappte Sidebar (Leiste) | `󰇮 3 2` unter der Zahl der Chats; Master zeigen die Krone statt des Kürzels |
-| Inbox offen | fast volle Breite, links die Tabelle (Markierung, Status, Art, Chat, Titel, Alter; wichtig zuerst, neueste zuerst), rechts der Text als gesetztes Markdown; rechts bleibt ein Streifen frei, ein Klick dorthin schließt |
-| Aufgabe läuft | die Liste dockt links an, die Panes rücken nach rechts; Tastatur und Panes gehören dem Tab im Inbox-Space |
+| Inbox offen | dasselbe Sheet wie die Chats im Tab `inbox`, aber fast volle Breite, links die Tabelle (Markierung, Status, Art, Chat, Titel, Alter; wichtig zuerst, neueste zuerst), rechts der Text als gesetztes Markdown; rechts bleibt ein Streifen frei, ein Klick dorthin schließt |
+| Aufgabe läuft | das Sheet dockt links an, die Panes rücken nach rechts; Tastatur und Panes gehören dem Tab im Inbox-Space. Beide Tabs bleiben per Klick erreichbar; ein Klick auf einen Chat verlässt den Inbox-Space |
 | Aufgabe fertig | schließt sich ihr Tab, ist die Inbox wieder ganz offen; wechselst du in einen anderen Space, schließt sie |
 
 | Taste | Wirkung |
 | --- | --- |
-| `I` in der Sidebar, `prefix+i` | Inbox öffnen |
+| `I`, `[` oder `]` in den Chats, `prefix+i` | Inbox öffnen |
+| `[` oder `]` in der Inbox | zurück zu den Chats |
 | `j`/`k`, `g`/`G`, Mausrad | Cursor; beim Lesen scrollen |
 | `enter` | Nachricht lesen (Fokus auf den Text), Formular oder Wizard als Tab öffnen |
 | `prefix+i`, Klick auf die angedockte Liste | während einer Aufgabe zurück in die Inbox |
+| Klick auf `chats` im angedockten Sheet | Chat-Karten statt Liste; Klick auf eine Karte öffnet den Chat |
 | `space`, `m` | markieren; die erste Spalte zeigt dann eine Checkbox |
 | `d` `d` | markierte oder aktuelle Einträge erledigen; das erste `d` streicht sie rot durch |
 | `u` | letztes `dd` zurückholen |

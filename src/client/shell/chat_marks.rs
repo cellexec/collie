@@ -41,6 +41,8 @@ impl ClientShellState {
             KeyCode::Char('i') if modifiers == KeyModifiers::SHIFT => {
                 return self.open_cursor_user_inbox(outcome);
             }
+            // collie: `[` und `]` wechseln im Sheet zum Inbox-Tab.
+            KeyCode::Char('[' | ']') if plain => return self.open_cursor_user_inbox(outcome),
             // `m` ohne Master unter dem Cursor bleibt das globale Menü.
             KeyCode::Char('m') if plain => return self.open_cursor_telescope(outcome),
             _ => return false,

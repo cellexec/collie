@@ -277,7 +277,25 @@ impl ClientShellState {
                         buffer[(x, y)].reset();
                     }
                 }
-                if let Some(rendered) = super::user_inbox::render_inbox_dock(
+                // Die Sidebar darunter ist verdeckt; ihre Treffer gelten nicht.
+                self.hits.agents.clear();
+                self.hits.master_counts.clear();
+                self.hits.user_inbox_counts.clear();
+                self.hits.inbox_dock_rows.clear();
+                self.hits.inbox_dock_area = layout.sidebar;
+                if dock.tab == super::sheet_tabs::SheetTab::Chats {
+                    render::sidebar::render_chat_overlay(
+                        &mut buffer,
+                        layout.sidebar,
+                        snapshot,
+                        &self.config,
+                        self.sidebar_focus
+                            .render_view(self.mode, self.prefix_return_navigate),
+                        &self.active_endpoint_id,
+                        &mut self.agent_scroll,
+                        &mut self.hits,
+                    );
+                } else if let Some(rendered) = super::user_inbox::render_inbox_dock(
                     &mut buffer,
                     layout.sidebar,
                     &dock.inbox,

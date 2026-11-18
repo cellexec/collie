@@ -77,6 +77,10 @@ Darunter bleibt die Linie, auf dem Handy die mobile Kopfzeile.
   Teil des Panes bleibt verdeckt.
 - Keine Live-Vorschau: `j`/`k` bewegt nur den Cursor, erst `enter` wechselt
   den Chat. `esc` muss deshalb keinen Fokus zurücksetzen.
+- Die Kopfzeile zeigt zwei Tabs: ` 󰭹 chats │ 󰇮 inbox 3 2`. `[` oder `]`
+  und ein Klick auf `inbox` wechseln zur Inbox im selben Sheet
+  (docs/specs/user-inbox.md). Im Inbox-Tab wird das Sheet breiter, die
+  Kopfzeile bleibt an derselben Stelle.
 
 ## Ein- und Ausfahren
 
@@ -88,6 +92,7 @@ Darunter bleibt die Linie, auf dem Handy die mobile Kopfzeile.
 | `enter` | öffnet den Chat unter dem Cursor und fährt ein |
 | `esc` | löscht zuerst einen aktiven `/`-Filter, sonst fährt ein |
 | `i` | fährt ein, ohne etwas zu ändern |
+| `[`, `]`, Klick auf `inbox` | wechselt zum Inbox-Tab |
 | Klick in die Panes | fährt ein, dann läuft der normale Klick |
 | Klick auf eine Karte | öffnet den Chat und fährt ein |
 

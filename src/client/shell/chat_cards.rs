@@ -175,26 +175,19 @@ fn render_header(
     hits: &mut ShellHitMap,
 ) {
     let palette = &config.palette;
-    let title_style = Style::default()
-        .fg(if view.focused {
-            palette.accent
-        } else {
-            palette.text
-        })
-        .add_modifier(Modifier::BOLD);
-    let title = " 󰭹 chats";
-    put_text(buffer, area.x, area.y, area.width, title, title_style);
-    // collie: Zähler der globalen Nutzer-Inbox hinter dem Titel.
-    let mut title_end = area.x.saturating_add(display_width(title));
-    if let Some(badge) = super::user_inbox::inbox_badge(snapshot, palette) {
-        let width = super::user_inbox::badge_width(&badge);
-        let x = title_end.saturating_add(2);
-        if area.right().saturating_sub(x) > width + 10 {
-            super::user_inbox::put_spans(buffer, x, area.y, area.right(), &badge);
-            hits.user_inbox_counts.push(Rect::new(x, area.y, width, 1));
-            title_end = x.saturating_add(width);
-        }
-    }
+    // collie: Chats und Inbox als Tabs; ein Klick auf `inbox` wechselt.
+    let tabs = super::sheet_tabs::render_sheet_tabs(
+        buffer,
+        area.x,
+        area.y,
+        area.right(),
+        &snapshot.user_inbox,
+        super::sheet_tabs::SheetTab::Chats,
+        view.focused,
+        palette,
+    );
+    hits.user_inbox_counts.push(tabs.inbox);
+    let title_end = tabs.end;
 
     let sort_label = if config.chat_newest_first {
         " newest "

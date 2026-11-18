@@ -76,6 +76,8 @@ pub(super) struct ClientUserInbox {
 #[derive(Debug)]
 pub(super) struct InboxDock {
     pub(super) inbox: ClientUserInbox,
+    /// Sichtbarer Tab des angedockten Sheets.
+    pub(super) tab: super::sheet_tabs::SheetTab,
     /// Tabs des Inbox-Space beim letzten Blick; `None`, bis der neue Tab im
     /// Snapshot fokussiert ist.
     pub(super) space_tabs: Option<usize>,
@@ -255,27 +257,26 @@ fn sheet(buffer: &mut Buffer, rect: Rect, palette: &Palette) -> Option<Rect> {
     ))
 }
 
-/// Kopfzeile wie ` 󰭹 chats`, rechts die Zahl der Markierungen.
-fn render_title(buffer: &mut Buffer, rect: Rect, inbox: &ClientUserInbox, palette: &Palette) {
+/// Kopfzeile mit den Tabs Chats und Inbox, rechts die Zahl der
+/// Markierungen.
+fn render_title(
+    buffer: &mut Buffer,
+    rect: Rect,
+    inbox: &ClientUserInbox,
+    counts: &crate::protocol::ClientShellUserInbox,
+    focused: bool,
+    palette: &Palette,
+) {
     let base = Style::default().bg(palette.sidebar_bg);
-    let open = inbox.entries.iter().filter(|entry| pending(entry)).count();
-    let title = format!(" {ICON_INBOX} inbox");
-    let title_width = display_width(&title);
-    put_text(
+    super::sheet_tabs::render_sheet_tabs(
         buffer,
         rect.x,
         rect.y,
-        rect.width.saturating_sub(1),
-        &title,
-        base.fg(palette.accent).add_modifier(Modifier::BOLD),
-    );
-    put_text(
-        buffer,
-        rect.x.saturating_add(title_width),
-        rect.y,
-        rect.width.saturating_sub(title_width + 1),
-        &format!(" · {open} offen"),
-        base.fg(palette.overlay0),
+        rect.right().saturating_sub(1),
+        counts,
+        super::sheet_tabs::SheetTab::Inbox,
+        focused,
+        palette,
     );
     if !inbox.marked.is_empty() {
         let label = format!(" {ICON_CHECKED} {} markiert ", inbox.marked.len());
@@ -333,7 +334,10 @@ pub(super) fn render_user_inbox(
     let inner = sheet(buffer, rect, palette)?;
     let base = Style::default().bg(palette.sidebar_bg);
     let selected = selected_index(inbox);
-    render_title(buffer, rect, inbox, palette);
+    let counts = snapshot
+        .map(|snapshot| snapshot.user_inbox.clone())
+        .unwrap_or_default();
+    render_title(buffer, rect, inbox, &counts, true, palette);
 
     let footer_y = inner.bottom().saturating_sub(1);
     let footer = if inbox.pending_delete {
@@ -348,7 +352,7 @@ pub(super) fn render_user_inbox(
         )
     } else {
         (
-            "enter öffnen · space markieren · dd erledigt · u zurück · r Rückfrage · esc",
+            "enter öffnen · space markieren · dd erledigt · u zurück · r Rückfrage · [ ] chats · esc",
             base.fg(palette.overlay0),
         )
     };
@@ -426,7 +430,10 @@ pub(super) fn render_inbox_dock(
     let now = crate::workspace::unix_millis_now();
     let inner = sheet(buffer, area, palette)?;
     let base = Style::default().bg(palette.sidebar_bg);
-    render_title(buffer, area, inbox, palette);
+    let counts = snapshot
+        .map(|snapshot| snapshot.user_inbox.clone())
+        .unwrap_or_default();
+    render_title(buffer, area, inbox, &counts, false, palette);
     let footer_y = inner.bottom().saturating_sub(1);
     put_text(
         buffer,
@@ -734,34 +741,109 @@ impl ClientShellState {
         }
     }
 
-    /// Klick auf die angedockte Liste: die Inbox kommt nach vorn, mit dem
-    /// angeklickten Eintrag unter dem Cursor.
+    /// Maus auf dem angedockten Sheet. Die Tabs wechseln die Ansicht. Im
+    /// Inbox-Tab holt ein Klick die Inbox nach vorn, mit dem angeklickten
+    /// Eintrag unter dem Cursor. Im Chat-Tab öffnet ein Klick den Chat und
+    /// verlässt damit den Inbox-Space.
     pub(super) fn route_inbox_dock_mouse(
         &mut self,
         mouse: MouseEvent,
         outcome: &mut ClientShellInput,
     ) -> bool {
-        if self.inbox_dock.is_none() || self.overlay.is_some() {
+        if self.overlay.is_some() {
             return false;
         }
+        let Some(tab) = self.inbox_dock.as_ref().map(|dock| dock.tab) else {
+            return false;
+        };
         let point = (mouse.column, mouse.row);
-        if !super::contains(self.hits.inbox_dock_area, point) {
+        let area = self.hits.inbox_dock_area;
+        if !super::contains(area, point) {
             return false;
         }
-        if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
-            let hit = self
-                .hits
-                .inbox_dock_rows
-                .iter()
-                .find(|(rect, _)| super::contains(*rect, point))
-                .map(|(_, index)| *index);
-            if let (Some(index), Some(dock)) = (hit, self.inbox_dock.as_mut()) {
-                dock.inbox.selected = dock.inbox.entries.get(index).map(EntryKey::of);
-                dock.inbox.detail_scroll = 0;
+        let counts = self
+            .snapshot
+            .as_deref()
+            .map(|snapshot| snapshot.user_inbox.clone())
+            .unwrap_or_default();
+        let clicked_tab = super::sheet_tabs::sheet_tabs(area.x, area.y, &counts).hit(point);
+        let left = mouse.kind == MouseEventKind::Down(MouseButton::Left);
+        if left {
+            if let Some(next) = clicked_tab.filter(|next| *next != tab) {
+                if let Some(dock) = self.inbox_dock.as_mut() {
+                    dock.tab = next;
+                }
+                outcome.repaint = true;
+                return true;
             }
-            self.undock_user_inbox(true, outcome);
+        }
+        match tab {
+            super::sheet_tabs::SheetTab::Chats => {
+                self.route_docked_chats_mouse(mouse, point, outcome);
+            }
+            super::sheet_tabs::SheetTab::Inbox if left => {
+                let hit = self
+                    .hits
+                    .inbox_dock_rows
+                    .iter()
+                    .find(|(rect, _)| super::contains(*rect, point))
+                    .map(|(_, index)| *index);
+                if let (Some(index), Some(dock)) = (hit, self.inbox_dock.as_mut()) {
+                    dock.inbox.selected = dock.inbox.entries.get(index).map(EntryKey::of);
+                    dock.inbox.detail_scroll = 0;
+                }
+                self.undock_user_inbox(true, outcome);
+            }
+            super::sheet_tabs::SheetTab::Inbox => {}
         }
         true
+    }
+
+    /// Chat-Tab im angedockten Sheet: Klick öffnet den Chat, das Rad
+    /// scrollt die Karten.
+    fn route_docked_chats_mouse(
+        &mut self,
+        mouse: MouseEvent,
+        point: (u16, u16),
+        outcome: &mut ClientShellInput,
+    ) {
+        match mouse.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                let pane = self
+                    .hits
+                    .agents
+                    .iter()
+                    .find(|(rect, _)| super::contains(*rect, point))
+                    .map(|(_, pane_id)| pane_id.clone());
+                if let Some(pane_id) = pane {
+                    self.focus_or_activate(
+                        self.active_endpoint_id.clone(),
+                        ClientEndpointFocusTarget::Pane(pane_id),
+                        outcome,
+                    );
+                    outcome.repaint = true;
+                }
+            }
+            MouseEventKind::ScrollUp => {
+                self.agent_scroll = self.agent_scroll.saturating_sub(1);
+                outcome.repaint = true;
+            }
+            MouseEventKind::ScrollDown => {
+                self.agent_scroll = self
+                    .agent_scroll
+                    .saturating_add(1)
+                    .min(self.hits.agent_max_scroll);
+                outcome.repaint = true;
+            }
+            _ => {}
+        }
+    }
+
+    /// `[` oder `]` und der Klick auf `chats`: Die Inbox schließt, das
+    /// Sheet zeigt die Chats.
+    fn switch_user_inbox_to_chats(&mut self, outcome: &mut ClientShellInput) {
+        self.close_user_inbox(outcome);
+        self.open_chat_overlay(false, outcome);
     }
 
     fn request_user_inbox(&mut self, outcome: &mut ClientShellInput) {
@@ -959,6 +1041,7 @@ impl ClientShellState {
         inbox.pending_delete = false;
         self.inbox_dock = Some(InboxDock {
             inbox,
+            tab: super::sheet_tabs::SheetTab::Inbox,
             space_tabs: None,
             since: std::time::Instant::now(),
         });
@@ -1018,6 +1101,7 @@ impl ClientShellState {
         match code {
             KeyCode::Esc | KeyCode::Char('q') if inbox.reading => inbox.reading = false,
             KeyCode::Esc | KeyCode::Char('q') => self.close_user_inbox(outcome),
+            KeyCode::Char('[' | ']') if !ctrl => self.switch_user_inbox_to_chats(outcome),
             KeyCode::Down | KeyCode::Char('j') if inbox.reading => inbox.detail_scroll += 1,
             KeyCode::Up | KeyCode::Char('k') if inbox.reading => {
                 inbox.detail_scroll = inbox.detail_scroll.saturating_sub(1);
@@ -1116,6 +1200,20 @@ impl ClientShellState {
         };
         match mouse.kind {
             MouseEventKind::Down(MouseButton::Left) => {
+                let counts = self
+                    .snapshot
+                    .as_deref()
+                    .map(|snapshot| snapshot.user_inbox.clone())
+                    .unwrap_or_default();
+                if super::sheet_tabs::sheet_tabs(area.x, area.y, &counts).hit(point)
+                    == Some(super::sheet_tabs::SheetTab::Chats)
+                {
+                    self.switch_user_inbox_to_chats(outcome);
+                    return true;
+                }
+                let Some(ClientShellOverlay::UserInbox(inbox)) = self.overlay.as_mut() else {
+                    return false;
+                };
                 let Some(index) = hit else {
                     if !super::contains(area, point) {
                         self.close_user_inbox(outcome);
@@ -1276,7 +1374,7 @@ mod tests {
         assert!(text.contains("Child │ Status"), "{text}");
         assert!(text.contains("Login │ fertig"), "{text}");
         assert!(!text.contains("## Stand"), "{text}");
-        assert!(text.contains("dd erledigt · u zurück · r Rückfrage · esc"));
+        assert!(text.contains("dd erledigt · u zurück · r Rückfrage · [ ] chats · esc"));
 
         inbox.pending_delete = true;
         assert!(screen(&inbox).contains("jede andere Taste bricht ab"));
