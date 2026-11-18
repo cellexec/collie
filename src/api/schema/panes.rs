@@ -427,7 +427,7 @@ pub struct PaneReportChatParams {
     /// Size of the agent's context window in tokens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_window: Option<u64>,
-    /// Full text of the agent's latest reply, for the user inbox of a master.
+    /// Full text of the agent's latest reply, for the global user inbox.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub answer: Option<String>,
     /// Prompt that started the turn of `answer`.

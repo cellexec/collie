@@ -786,7 +786,7 @@ fn chat_command() -> Command {
         )
         .subcommand(
             Command::new("tell-user")
-                .about("Put a message, form or wizard into the user inbox of a master chat; - reads the text from stdin")
+                .about("Put a message, form or wizard from this chat into the global user inbox; - reads the text from stdin")
                 .arg(option("kind", "nachricht|formular|wizard"))
                 .arg(flag("optional"))
                 .arg(option("title", "TEXT"))
@@ -796,7 +796,7 @@ fn chat_command() -> Command {
         )
         .subcommand(
             Command::new("user-inbox")
-                .about("Show the user inbox of a master chat")
+                .about("Show the entries this chat put into the global user inbox")
                 .arg(option("master", "WORKSPACE"))
                 .arg(flag("json")),
         )

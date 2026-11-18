@@ -179,7 +179,7 @@ pub struct ChatInboxParams {
     pub all: bool,
 }
 
-/// collie: Message from a master chat to the user's inbox.
+/// collie: Message from any chat to the global user inbox.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ChatTellUserParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]

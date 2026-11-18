@@ -2079,7 +2079,7 @@
           "type": "object"
         },
         "ChatTellUserParams": {
-          "description": "collie: Message from a master chat to the user's inbox.",
+          "description": "collie: Message from any chat to the global user inbox.",
           "properties": {
             "caller_pane_id": {
               "type": [
@@ -3572,7 +3572,7 @@
           "description": "collie: Chat facts a hook reports for the agent in a workspace's first tab.\nAn omitted field stays unchanged; an empty string clears it.",
           "properties": {
             "answer": {
-              "description": "Full text of the agent's latest reply, for the user inbox of a master.",
+              "description": "Full text of the agent's latest reply, for the global user inbox.",
               "type": [
                 "string",
                 "null"
