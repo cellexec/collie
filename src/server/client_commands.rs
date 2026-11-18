@@ -329,11 +329,11 @@ mod tests {
         // collie: Nutzer-Inbox, siehe docs/specs/user-inbox.md.
         (
             "chat.user_inbox",
-            "e18b74de276f36014cf52b6dbb64cc7c426785f400a9f46018bc07866cf318e1",
+            "ceff4f4cff97fc0c3bb0598768ff4319a7185c648f172a401536ccb258b25ebf",
         ),
         (
             "chat.user_inbox_act",
-            "f80cb9455c49bf486c1c4a576d3cca3aadcdea3e44a27535aa1cc0f65a0196d8",
+            "c9cad8bb6cf149fd620bb1d0a9ad4d605b7bdba236a1a15ffa26ae9e44a683f6",
         ),
     ];
 

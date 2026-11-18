@@ -737,9 +737,9 @@ impl ClientShellState {
                 if key.code == KeyCode::Char('m') && key.modifiers.is_empty() {
                     self.open_focused_chat_telescope(outcome);
                 }
-                // collie: `prefix+i` öffnet die Nutzer-Inbox des Masters.
+                // collie: `prefix+i` öffnet die globale Nutzer-Inbox.
                 if key.code == KeyCode::Char('i') && key.modifiers.is_empty() {
-                    self.open_focused_user_inbox(outcome);
+                    self.open_user_inbox(outcome);
                 }
                 None
             }

@@ -59,20 +59,10 @@ pub(super) struct ChatRow {
     pub(super) assignment: Option<String>,
     /// Letzter Inbox-Eintrag eines Masters.
     pub(super) inbox_latest: Option<String>,
-    /// Nutzer-Inbox eines Masters: ungelesene oder offene Einträge.
-    pub(super) user_inbox: UserInboxCounts,
     /// Children eines Masters nach Status.
     pub(super) children: ChildCounts,
     /// Ein offenes Child, das eingerückt unter seinem Master steht.
     pub(super) nested: bool,
-}
-
-/// collie: Zähler der Nutzer-Inbox eines Masters.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) struct UserInboxCounts {
-    pub(super) important: usize,
-    pub(super) optional: usize,
-    pub(super) revision: u64,
 }
 
 /// collie: Children eines Masters nach Status.
@@ -262,15 +252,6 @@ fn chat_row(snapshot: &ClientShellSnapshot, workspace: &ClientShellWorkspace) ->
             .team
             .as_ref()
             .and_then(|team| team.inbox_latest.clone()),
-        user_inbox: workspace
-            .team
-            .as_ref()
-            .map(|team| UserInboxCounts {
-                important: team.user_inbox_important,
-                optional: team.user_inbox_optional,
-                revision: team.user_inbox_revision,
-            })
-            .unwrap_or_default(),
         children: ChildCounts::default(),
         nested: false,
     })
@@ -442,9 +423,19 @@ pub(super) fn render_chat_panel(
             .fg(palette.overlay0)
             .add_modifier(Modifier::BOLD),
     );
+    // collie: Zähler der globalen Nutzer-Inbox hinter dem Titel.
+    let mut title_end = area.x + 1 + display_width(title);
+    if let Some(badge) = super::user_inbox::inbox_badge(snapshot, palette) {
+        let width = super::user_inbox::badge_width(&badge);
+        if sort_rect.x.saturating_sub(title_end) > width + 2 {
+            let x = title_end.saturating_add(1);
+            super::user_inbox::put_spans(buffer, x, area.y, sort_rect.x, &badge);
+            hits.user_inbox_counts.push(Rect::new(x, area.y, width, 1));
+            title_end = x.saturating_add(width);
+        }
+    }
     if let Some(filter) = view.filter_label(super::sidebar_focus::SidebarSection::Agents) {
         let label = format!(" {filter} ");
-        let title_end = area.x + 1 + display_width(title);
         let available = sort_rect.x.saturating_sub(title_end + 1);
         if available > 2 {
             let width = display_width(&label).min(available);
@@ -506,24 +497,7 @@ fn render_chat_row(buffer: &mut Buffer, rect: Rect, row: &ChatRow, now: u64, pal
         .snoozed_until
         .filter(|_| snoozed)
         .map(|until| format!(" {}", snooze_remaining_label(until, now)));
-    // collie: Zähler der Nutzer-Inbox eines Masters, rechtsbündig.
-    let inbox = (row.master && row.user_inbox.important + row.user_inbox.optional > 0).then(|| {
-        let (count, color) = if row.user_inbox.important > 0 {
-            (row.user_inbox.important, palette.red)
-        } else {
-            (row.user_inbox.optional, palette.overlay0)
-        };
-        (
-            format!(" {}{count}", super::user_inbox::ICON_INBOX),
-            Style::default().fg(color).add_modifier(Modifier::BOLD),
-        )
-    });
-    let remaining = remaining.or_else(|| inbox.as_ref().map(|(label, _)| label.clone()));
-    let remaining_style = inbox
-        .as_ref()
-        .filter(|_| !snoozed)
-        .map(|(_, style)| *style)
-        .unwrap_or_else(|| Style::default().fg(palette.overlay0));
+    let remaining_style = Style::default().fg(palette.overlay0);
     let remaining_width = remaining.as_deref().map_or(0, display_width);
     let label_x = rect.x.saturating_add(3);
     let label_width = rect

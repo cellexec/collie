@@ -62,7 +62,9 @@ direkt beim Child. Sammle die übrigen.
 
 Was du dem Nutzer mitteilen willst, legst du in seine Inbox. Im Chat geht es
 zwischen den Inbox-Prompts der Children unter. Deine Antwort auf einen Prompt
-des Nutzers landet automatisch dort, alles andere legst du selbst ab:
+des Nutzers landet automatisch dort, alles andere legst du selbst ab. Die
+Inbox ist global: Sie zeigt die Einträge aller Chats, deine mit Krone und
+deinem Namen. Rückmeldungen zu deinen Einträgen kommen nur bei dir an.
 
 | Befehl | Wofür |
 | --- | --- |

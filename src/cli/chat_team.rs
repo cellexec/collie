@@ -475,6 +475,7 @@ fn user_inbox(args: &[String]) -> std::io::Result<i32> {
         Method::ChatUserInbox(ChatUserInboxParams {
             workspace_id: args.value("master"),
             caller_pane_id: caller(),
+            all: false,
         }),
     )?;
     if let Some(code) = failed(&response) {
@@ -563,6 +564,7 @@ fn user_inbox_result(args: &[String]) -> std::io::Result<i32> {
             ids: vec![id],
             exit_code,
             path,
+            all: false,
         }),
     )?;
     Ok(failed(&response).unwrap_or(0))

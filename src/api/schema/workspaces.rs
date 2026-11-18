@@ -200,13 +200,16 @@ pub struct ChatTellUserParams {
     pub path: Option<String>,
 }
 
-/// collie: User inbox of a master chat.
+/// collie: User inbox. One chat by default, with `all` every chat.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ChatUserInboxParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub caller_pane_id: Option<String>,
+    /// The global inbox: entries of every chat.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub all: bool,
 }
 
 /// collie: What the user did with user inbox entries.
@@ -248,6 +251,9 @@ pub struct ChatUserInboxActParams {
     /// Wizard log or follow-up question file.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    /// Answer with the global inbox; `flush` then covers every chat.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub all: bool,
 }
 
 /// collie: One user inbox entry.
@@ -264,6 +270,14 @@ pub struct UserInboxEntryInfo {
     pub path: Option<String>,
     pub read: bool,
     pub finished: bool,
+    /// Chat that wrote the entry; ids are unique per chat only.
+    #[serde(default)]
+    pub workspace_id: String,
+    /// Label of that chat.
+    #[serde(default)]
+    pub chat: String,
+    #[serde(default)]
+    pub master: bool,
 }
 
 /// collie: One inbox entry.

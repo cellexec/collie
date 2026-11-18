@@ -190,21 +190,9 @@ impl ClientShellState {
         outcome.repaint = true;
     }
 
-    /// `I` auf einer Master-Karte öffnet seine Nutzer-Inbox, auf einem Child
-    /// die seines Masters.
+    /// `I` in der Sidebar öffnet die globale Nutzer-Inbox.
     fn open_cursor_user_inbox(&mut self, outcome: &mut ClientShellInput) -> bool {
-        let Some(row) = self
-            .local_sidebar_agent_cursor()
-            .and_then(|cursor| self.sidebar_chat_row(&cursor.pane_id))
-        else {
-            return false;
-        };
-        let master = match (row.master, row.parent) {
-            (true, _) => row.workspace_id,
-            (false, Some(parent)) => parent,
-            (false, None) => return false,
-        };
-        self.open_user_inbox(master, outcome);
+        self.open_user_inbox(outcome);
         true
     }
 

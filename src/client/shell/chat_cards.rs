@@ -18,7 +18,6 @@ use super::chats::{
     chat_symbol, overlay_chat_rows, snooze_remaining_label, spinner_frame, ChatRow,
 };
 use super::render::{display_width, put_text};
-use super::user_inbox::ICON_INBOX;
 use super::*;
 use crate::api::schema::AgentStatus;
 use crate::ui::truncate_end;
@@ -99,7 +98,7 @@ pub(super) fn render_chat_cards(
     let selected = |row: &ChatRow| view.agent_selected(endpoint_id, &row.pane_id);
     let marked = |row: &ChatRow| view.agent_marked(endpoint_id, &row.pane_id);
 
-    render_header(buffer, area, config, &view, hits);
+    render_header(buffer, area, snapshot, config, &view, hits);
     let marks = main.iter().chain(&hidden).filter(|row| marked(row)).count();
     if marks > 0 {
         let label = format!("{ICON_MARKED} {marks} marked ");
@@ -170,6 +169,7 @@ pub(super) fn render_chat_cards(
 fn render_header(
     buffer: &mut Buffer,
     area: Rect,
+    snapshot: &ClientShellSnapshot,
     config: &ClientShellConfig,
     view: &super::sidebar_focus::SidebarRenderView<'_>,
     hits: &mut ShellHitMap,
@@ -184,6 +184,17 @@ fn render_header(
         .add_modifier(Modifier::BOLD);
     let title = " 󰭹 chats";
     put_text(buffer, area.x, area.y, area.width, title, title_style);
+    // collie: Zähler der globalen Nutzer-Inbox hinter dem Titel.
+    let mut title_end = area.x.saturating_add(display_width(title));
+    if let Some(badge) = super::user_inbox::inbox_badge(snapshot, palette) {
+        let width = super::user_inbox::badge_width(&badge);
+        let x = title_end.saturating_add(2);
+        if area.right().saturating_sub(x) > width + 10 {
+            super::user_inbox::put_spans(buffer, x, area.y, area.right(), &badge);
+            hits.user_inbox_counts.push(Rect::new(x, area.y, width, 1));
+            title_end = x.saturating_add(width);
+        }
+    }
 
     let sort_label = if config.chat_newest_first {
         " newest "
@@ -213,10 +224,7 @@ fn render_header(
 
     if let Some(filter) = view.filter_label(super::sidebar_focus::SidebarSection::Agents) {
         let label = format!(" {filter} ");
-        let start = area
-            .x
-            .saturating_add(display_width(title))
-            .saturating_add(1);
+        let start = title_end.saturating_add(1);
         let available = sort_rect.x.saturating_sub(start);
         put_text(
             buffer,
@@ -695,57 +703,7 @@ fn render_master_card(
     if let Some((symbol, style)) = chat_symbol(&own, now, palette) {
         put_text(buffer, inner_x, status_y, 1, symbol, style.bg(background));
     }
-    let mut counts_end = right.saturating_sub(age_width).saturating_sub(1);
-    // Nutzer-Inbox: wichtige Einträge hervorgehoben, optionale grau.
-    let inbox = &row.user_inbox;
-    if inbox.important + inbox.optional > 0 {
-        let mut parts = Vec::new();
-        if inbox.important > 0 {
-            parts.push((
-                format!("{}", inbox.important),
-                base.fg(palette.red).add_modifier(Modifier::BOLD),
-            ));
-        }
-        if inbox.optional > 0 {
-            parts.push((format!("{}", inbox.optional), base.fg(palette.overlay0)));
-        }
-        let icon_color = if inbox.important > 0 {
-            palette.red
-        } else {
-            palette.overlay0
-        };
-        let label_width = parts
-            .iter()
-            .map(|(label, _)| display_width(label) + 1)
-            .sum::<u16>()
-            + display_width(ICON_INBOX);
-        if counts_end.saturating_sub(inner_x) > label_width + 12 {
-            let start = counts_end.saturating_sub(label_width);
-            let mut x = put_part(
-                buffer,
-                start,
-                status_y,
-                counts_end,
-                ICON_INBOX,
-                base.fg(icon_color).add_modifier(Modifier::BOLD),
-            );
-            for (label, style) in parts {
-                x = put_part(
-                    buffer,
-                    x.saturating_add(1),
-                    status_y,
-                    counts_end,
-                    &label,
-                    style,
-                );
-            }
-            hits.user_inbox_counts.push((
-                Rect::new(start, status_y, label_width, 1),
-                row.workspace_id.clone(),
-            ));
-            counts_end = start.saturating_sub(1);
-        }
-    }
+    let counts_end = right.saturating_sub(age_width).saturating_sub(1);
     let mut x = inner_x.saturating_add(2);
     let parts = child_count_parts(&row.children, palette);
     if parts.is_empty() {

@@ -11,6 +11,7 @@ use ratatui::{
     style::{Modifier, Style},
 };
 
+use super::chat_cards::ICON_CROWN;
 use super::chat_visuals::{heat_color, repo_color, repo_initials};
 use super::chats::{chat_symbol, overlay_chat_rows, spinner_frame, ChatRow};
 use super::render::{display_width, put_text};
@@ -34,8 +35,12 @@ pub(super) fn chat_column_width(cols: u16) -> u16 {
     }
 }
 
-/// Kürzel eines Chats: aus dem Repo, sonst aus dem Titel.
+/// Kürzel eines Chats: aus dem Repo, sonst aus dem Titel. Ein Master
+/// zeigt seine Krone.
 fn chat_initials(row: &ChatRow) -> String {
+    if row.master {
+        return format!("{ICON_CROWN} ");
+    }
     let initials = row
         .repo
         .as_deref()
@@ -108,6 +113,14 @@ pub(super) fn render_chat_rail(
         Style::default().fg(border).add_modifier(Modifier::BOLD)
     };
     put_text(buffer, inner.x, inner.y, inner.width, &header, header_style);
+    // collie: Darunter der Zähler der globalen Nutzer-Inbox.
+    if let Some(badge) = super::user_inbox::inbox_badge(snapshot, palette) {
+        let x = inner.x.saturating_add(1);
+        let y = inner.y.saturating_add(1);
+        super::user_inbox::put_spans(buffer, x, y, inner.right(), &badge);
+        hits.user_inbox_counts
+            .push(Rect::new(x, y, inner.right().saturating_sub(x), 1));
+    }
 
     let body = Rect::new(
         inner.x,
@@ -247,10 +260,13 @@ fn render_hidden(
 /// laufende nur farbigen Text, damit oben ins Auge fällt, was wartet.
 fn put_chip(buffer: &mut Buffer, rect: Rect, row: &ChatRow, palette: &Palette, filled: bool) {
     let initials = chat_initials(row);
-    let hue = row
-        .repo
-        .as_deref()
-        .map_or(palette.overlay1, |repo| repo_color(repo, palette));
+    let hue = if row.master {
+        palette.yellow
+    } else {
+        row.repo
+            .as_deref()
+            .map_or(palette.overlay1, |repo| repo_color(repo, palette))
+    };
     let x = rect.x.saturating_add(3);
     let width = rect.right().saturating_sub(x);
     if filled {

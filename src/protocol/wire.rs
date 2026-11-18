@@ -948,6 +948,18 @@ pub struct ClientShellSnapshot {
     pub panes: Vec<ClientShellPane>,
     pub agents: Vec<ClientShellAgent>,
     pub commands: Vec<ClientShellCommand>,
+    /// collie: Zähler der globalen Nutzer-Inbox.
+    #[serde(default)]
+    pub user_inbox: ClientShellUserInbox,
+}
+
+/// collie: Offene Einträge der Nutzer-Inbox über alle Chats.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClientShellUserInbox {
+    pub important: usize,
+    pub optional: usize,
+    /// Ändert sich mit jeder Änderung an der Inbox eines Chats.
+    pub revision: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2932,6 +2944,11 @@ mod tests {
                 action: ClientShellCommandAction::Shell,
                 description: Some("deploy".into()),
             }],
+            user_inbox: ClientShellUserInbox {
+                important: 1,
+                optional: 2,
+                revision: 3,
+            },
         }));
         let encoded = bincode::serde::encode_to_vec(&msg, bincode::config::standard()).unwrap();
         let (decoded, _): (ServerMessage, _) =

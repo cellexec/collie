@@ -232,7 +232,18 @@ impl ClientShellState {
             .iter()
             .find(|(rect, _)| rail && super::contains(*rect, point))
             .map(|(_, pane_id)| pane_id.clone());
+        // collie: Der Inbox-Zähler auf der Leiste öffnet die Inbox.
+        let rail_inbox = rail
+            && self
+                .hits
+                .user_inbox_counts
+                .iter()
+                .any(|rect| super::contains(*rect, point));
         match mouse.kind {
+            MouseEventKind::Down(MouseButton::Left) if rail_inbox => {
+                self.open_user_inbox(outcome);
+                true
+            }
             MouseEventKind::Down(MouseButton::Left) if rail_chat.is_some() => {
                 if let Some(pane_id) = rail_chat {
                     self.focus_or_activate(
@@ -307,15 +318,14 @@ impl ClientShellState {
                 true
             }
             MouseEventKind::Down(MouseButton::Left) => {
-                // collie: Der Inbox-Zähler einer Master-Karte öffnet die Inbox.
-                if let Some((_, master)) = self
+                // collie: Der Inbox-Zähler in der Sidebar öffnet die Inbox.
+                if self
                     .hits
                     .user_inbox_counts
                     .iter()
-                    .find(|(rect, _)| super::contains(*rect, point))
-                    .cloned()
+                    .any(|rect| super::contains(*rect, point))
                 {
-                    self.open_user_inbox(master, outcome);
+                    self.open_user_inbox(outcome);
                     return true;
                 }
                 // collie: `N Chats` auf einer Master-Karte öffnet das Telescope.

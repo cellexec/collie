@@ -726,8 +726,12 @@ impl ClientShellState {
                 self.hits.telescope_rows = rendered.menu_rows;
                 None
             } else if let ClientShellOverlay::UserInbox(inbox) = overlay {
-                let rendered =
-                    super::user_inbox::render_user_inbox(&mut composed, inbox, &self.config)?;
+                let rendered = super::user_inbox::render_user_inbox(
+                    &mut composed,
+                    inbox,
+                    self.snapshot.as_deref(),
+                    &self.config,
+                )?;
                 occlusion.cover(rendered.area);
                 self.hits.telescope_rows = rendered.menu_rows;
                 self.hits.user_inbox_area = rendered.area;

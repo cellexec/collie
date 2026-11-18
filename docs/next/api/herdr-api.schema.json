@@ -2131,6 +2131,10 @@
             "action": {
               "$ref": "#/schemas/request/$defs/ChatUserInboxAction"
             },
+            "all": {
+              "description": "Answer with the global inbox; `flush` then covers every chat.",
+              "type": "boolean"
+            },
             "caller_pane_id": {
               "type": [
                 "string",
@@ -2222,8 +2226,12 @@
           ]
         },
         "ChatUserInboxParams": {
-          "description": "collie: User inbox of a master chat.",
+          "description": "collie: User inbox. One chat by default, with `all` every chat.",
           "properties": {
+            "all": {
+              "description": "The global inbox: entries of every chat.",
+              "type": "boolean"
+            },
             "caller_pane_id": {
               "type": [
                 "string",
@@ -11668,6 +11676,11 @@
               "minimum": 0,
               "type": "integer"
             },
+            "chat": {
+              "default": "",
+              "description": "Label of that chat.",
+              "type": "string"
+            },
             "finished": {
               "type": "boolean"
             },
@@ -11683,6 +11696,10 @@
               "description": "`antwort`, `nachricht`, `formular` or `wizard`.",
               "type": "string"
             },
+            "master": {
+              "default": false,
+              "type": "boolean"
+            },
             "path": {
               "type": [
                 "string",
@@ -11696,6 +11713,11 @@
               "type": "string"
             },
             "title": {
+              "type": "string"
+            },
+            "workspace_id": {
+              "default": "",
+              "description": "Chat that wrote the entry; ids are unique per chat only.",
               "type": "string"
             }
           },

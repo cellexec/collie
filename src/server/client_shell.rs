@@ -295,6 +295,14 @@ pub(super) fn snapshot_with_completions(
         panes,
         agents,
         commands: app.client_shell_command_manifest(),
+        user_inbox: {
+            let (important, optional, revision) = app.global_user_inbox();
+            protocol::ClientShellUserInbox {
+                important,
+                optional,
+                revision,
+            }
+        },
     };
     (shell, completions)
 }

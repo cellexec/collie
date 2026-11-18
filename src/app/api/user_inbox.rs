@@ -1,7 +1,9 @@
-//! collie: Nutzer-Inbox eines Master Chats, siehe docs/specs/user-inbox.md.
+//! collie: Nutzer-Inbox, siehe docs/specs/user-inbox.md.
 //!
-//! Der Master legt Nachrichten, Formulare und Wizard-Aufgaben für den Nutzer
-//! ab; Antworten auf Prompts des Nutzers landen automatisch dort. Was der
+//! Jeder Chat kann Nachrichten, Formulare und Wizard-Aufgaben für den Nutzer
+//! ablegen; Antworten eines Masters auf Prompts des Nutzers landen
+//! automatisch dort. Gespeichert wird je Chat, damit Rückmeldungen beim
+//! richtigen Agent ankommen; die TUI zeigt alle Chats als eine Inbox. Was der
 //! Nutzer damit macht, geht gebündelt als `[collie user]`-Prompt zurück.
 
 use std::path::{Path, PathBuf};
@@ -37,13 +39,13 @@ const MAX_REPLY_CHARS: usize = 4_000;
 const REPLY_FILE_HEADER: &str = "# Rückfrage zu: ";
 
 impl App {
-    /// `chat.tell_user`: Der Master legt etwas in die Nutzer-Inbox.
+    /// `chat.tell_user`: Ein Chat legt etwas in die Nutzer-Inbox.
     pub(super) fn handle_chat_tell_user(
         &mut self,
         id: String,
         params: ChatTellUserParams,
     ) -> String {
-        let master = match self.user_inbox_master(&id, params.workspace_id, params.caller_pane_id) {
+        let master = match self.user_inbox_chat(&id, params.workspace_id, params.caller_pane_id) {
             Ok(index) => index,
             Err(response) => return response,
         };
@@ -111,20 +113,24 @@ impl App {
             workspace = %self.state.workspaces[master].id,
             entry = entry_id,
             kind = kind.as_str(),
-            "master chat wrote to the user inbox"
+            "chat wrote to the user inbox"
         );
         self.schedule_session_save();
-        self.user_inbox_response(id, master)
+        self.user_inbox_response(id, Some(master))
     }
 
-    /// `chat.user_inbox`: Einträge, die der Nutzer noch nicht gelöscht hat.
+    /// `chat.user_inbox`: Einträge, die der Nutzer noch nicht gelöscht hat;
+    /// mit `all` die aller Chats.
     pub(super) fn handle_chat_user_inbox(
         &mut self,
         id: String,
         params: ChatUserInboxParams,
     ) -> String {
-        match self.user_inbox_master(&id, params.workspace_id, params.caller_pane_id) {
-            Ok(master) => self.user_inbox_response(id, master),
+        if params.all {
+            return self.user_inbox_response(id, None);
+        }
+        match self.user_inbox_chat(&id, params.workspace_id, params.caller_pane_id) {
+            Ok(master) => self.user_inbox_response(id, Some(master)),
             Err(response) => response,
         }
     }
@@ -135,7 +141,22 @@ impl App {
         id: String,
         params: ChatUserInboxActParams,
     ) -> String {
-        let master = match self.user_inbox_master(
+        let scope = |master: usize| (!params.all).then_some(master);
+        if params.all && params.action == ChatUserInboxAction::Flush {
+            for ws in &mut self.state.workspaces {
+                let team = &mut ws.chat.team;
+                if team.user_replies.iter().any(|reply| reply.held) {
+                    for reply in &mut team.user_replies {
+                        reply.held = false;
+                    }
+                    team.touch_user_inbox();
+                }
+            }
+            self.chat_inbox_deadline = Some(Instant::now());
+            self.schedule_session_save();
+            return self.user_inbox_response(id, None);
+        }
+        let master = match self.user_inbox_chat(
             &id,
             params.workspace_id.clone(),
             params.caller_pane_id.clone(),
@@ -187,7 +208,7 @@ impl App {
         self.state.workspaces[master].chat.team.touch_user_inbox();
         self.chat_inbox_deadline = Some(Instant::now());
         self.schedule_session_save();
-        self.user_inbox_response(id, master)
+        self.user_inbox_response(id, scope(master))
     }
 
     /// collie: Das Stop-Hook meldet die volle Antwort des Agents. Bei einem
@@ -237,7 +258,7 @@ impl App {
         let mut waiting = false;
         for master in 0..self.state.workspaces.len() {
             let team = &mut self.state.workspaces[master].chat.team;
-            if !team.is_master() || team.user_replies.is_empty() {
+            if team.user_replies.is_empty() {
                 continue;
             }
             for reply in &mut team.user_replies {
@@ -267,51 +288,76 @@ impl App {
         self.state
             .workspaces
             .iter()
-            .any(|ws| ws.chat.team.is_master() && !ws.chat.team.user_replies.is_empty())
+            .any(|ws| !ws.chat.team.user_replies.is_empty())
+    }
+
+    /// Zähler und Revision der globalen Inbox: `(wichtig, optional,
+    /// revision)`. Die Revision ändert sich mit jeder Änderung in einem Chat.
+    pub(crate) fn global_user_inbox(&self) -> (usize, usize, u64) {
+        self.state
+            .workspaces
+            .iter()
+            .fold((0, 0, 0u64), |(important, optional, revision), ws| {
+                let team = &ws.chat.team;
+                let (i, o) = team.user_inbox_counts();
+                (
+                    important + i,
+                    optional + o,
+                    revision
+                        .wrapping_mul(31)
+                        .wrapping_add(team.user_inbox_revision),
+                )
+            })
     }
 
     // ---- Hilfen -------------------------------------------------------------
 
-    fn user_inbox_master(
+    fn user_inbox_chat(
         &self,
         id: &str,
         workspace_id: Option<String>,
         caller_pane_id: Option<String>,
     ) -> Result<usize, String> {
-        let index = self.chat_target(
+        self.chat_target(
             id,
             &ChatWorkspaceParams {
                 workspace_id,
                 caller_pane_id,
             },
-        )?;
-        if !self.state.workspaces[index].chat.team.is_master() {
-            return Err(encode_error(
-                id.to_owned(),
-                "chat_not_master",
-                "only a master chat has a user inbox",
-            ));
-        }
-        Ok(index)
+        )
     }
 
-    fn user_inbox_response(&self, id: String, master: usize) -> String {
-        let user_inbox = self.state.workspaces[master]
-            .chat
-            .team
-            .user_inbox
+    /// Einträge eines Chats oder, mit `None`, aller Chats.
+    fn user_inbox_response(&self, id: String, chat: Option<usize>) -> String {
+        let user_inbox = self
+            .state
+            .workspaces
             .iter()
-            .filter(|entry| !entry.deleted)
-            .map(|entry| UserInboxEntryInfo {
-                id: entry.id,
-                at: entry.at,
-                kind: entry.kind.as_str().to_owned(),
-                important: entry.important,
-                title: entry.title.clone(),
-                text: entry.text.clone(),
-                path: entry.path.clone(),
-                read: entry.read,
-                finished: entry.finished,
+            .enumerate()
+            .filter(|(index, _)| chat.is_none_or(|chat| chat == *index))
+            .filter(|(_, ws)| ws.chat.team.user_inbox.iter().any(|entry| !entry.deleted))
+            .flat_map(|(index, ws)| {
+                let master = ws.chat.team.is_master();
+                let label = self.workspace_info(index).label;
+                ws.chat
+                    .team
+                    .user_inbox
+                    .iter()
+                    .filter(|entry| !entry.deleted)
+                    .map(move |entry| UserInboxEntryInfo {
+                        id: entry.id,
+                        at: entry.at,
+                        kind: entry.kind.as_str().to_owned(),
+                        important: entry.important,
+                        title: entry.title.clone(),
+                        text: entry.text.clone(),
+                        path: entry.path.clone(),
+                        read: entry.read,
+                        finished: entry.finished,
+                        workspace_id: ws.id.clone(),
+                        chat: label.clone(),
+                        master,
+                    })
             })
             .collect();
         encode_success(id, ResponseResult::ChatUserInbox { user_inbox })
@@ -462,9 +508,11 @@ impl App {
     ) -> Result<(), (&'static str, String)> {
         let entry = self.user_entry(master, id)?.clone();
         let path = entry.path.clone().unwrap_or_default();
+        // Erledigte Formulare verschwinden aus der Inbox.
         self.update_user_entries(master, &[entry.id], |entry| {
             entry.finished = true;
             entry.read = true;
+            entry.deleted = true;
         });
         self.push_user_reply(
             master,
@@ -489,9 +537,11 @@ impl App {
         // Ein fehlgeschlagener Wizard bleibt offen, damit der Nutzer ihn nach
         // einer Korrektur erneut starten kann.
         let succeeded = exit_code == 0;
+        // Ein durchgelaufener Wizard verschwindet aus der Inbox.
         self.update_user_entries(master, &[entry.id], |entry| {
             entry.finished = succeeded;
             entry.read = true;
+            entry.deleted = succeeded;
         });
         let outcome = if succeeded {
             "durchgelaufen (Exit-Code 0)".to_owned()
@@ -778,6 +828,7 @@ mod tests {
                 ids,
                 exit_code: None,
                 path: None,
+                all: false,
             }),
         )
     }
@@ -800,18 +851,35 @@ mod tests {
             tell(&mut app, "wizard", "x", Some("/does/not/exist".into()))["error"]["code"],
             "user_inbox_file_not_found"
         );
+        // Auch ein Chat ohne Team schreibt in die Inbox; die globale Inbox
+        // zeigt beide Chats.
         let plain = app.state.workspaces[1].id.clone();
-        let not_master = call(
+        let other = call(
             &mut app,
             Method::ChatTellUser(ChatTellUserParams {
-                workspace_id: Some(plain),
+                workspace_id: Some(plain.clone()),
                 kind: "nachricht".into(),
                 text: "x".into(),
                 ..Default::default()
             }),
         );
-        assert_eq!(not_master["error"]["code"], "chat_not_master");
+        assert_eq!(
+            other["result"]["user_inbox"][0]["workspace_id"],
+            plain.as_str()
+        );
         assert_eq!(app.chat_team_info(0).unwrap().user_inbox_important, 1);
+        let all = call(
+            &mut app,
+            Method::ChatUserInbox(ChatUserInboxParams {
+                all: true,
+                ..Default::default()
+            }),
+        );
+        let entries = all["result"]["user_inbox"].as_array().unwrap();
+        assert_eq!(entries.len(), 2);
+        assert!(entries.iter().any(|entry| entry["master"] == true));
+        assert!(entries.iter().any(|entry| entry["master"] == false));
+        assert_eq!(app.global_user_inbox().0 + app.global_user_inbox().1, 2);
     }
 
     #[test]
@@ -864,7 +932,7 @@ mod tests {
         assert!(team
             .user_inbox
             .iter()
-            .any(|entry| entry.id == 2 && entry.finished));
+            .any(|entry| entry.id == 2 && entry.finished && entry.deleted));
         assert!(team
             .user_replies
             .last()
@@ -894,15 +962,19 @@ mod tests {
                 ids: vec![1],
                 exit_code: Some(code),
                 path: None,
+                all: false,
             })
         };
         call(&mut app, result(2));
         assert!(!app.state.workspaces[0].chat.team.user_inbox[0].finished);
+        assert!(!app.state.workspaces[0].chat.team.user_inbox[0].deleted);
         assert!(app.state.workspaces[0].chat.team.user_replies[0]
             .text
             .contains("Exit-Code 2"));
-        call(&mut app, result(0));
+        // Ein durchgelaufener Wizard verschwindet.
+        let done = call(&mut app, result(0));
         assert!(app.state.workspaces[0].chat.team.user_inbox[0].finished);
+        assert_eq!(done["result"]["user_inbox"].as_array().unwrap().len(), 0);
         let _ = std::fs::remove_file(file);
     }
 

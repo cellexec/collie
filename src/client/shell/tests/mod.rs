@@ -75,6 +75,7 @@ pub(super) fn snapshot() -> ClientShellSnapshot {
         }],
         agents: Vec::new(),
         commands: Vec::new(),
+        user_inbox: Default::default(),
     }
 }
 

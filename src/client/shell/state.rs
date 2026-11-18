@@ -117,9 +117,8 @@ pub(super) struct ShellHitMap {
     pub(super) master_counts: Vec<(Rect, String)>,
     /// collie: Zeilen des Telescope mit ihrem Index.
     pub(super) telescope_rows: Vec<(Rect, usize)>,
-    /// collie: Zähler der Nutzer-Inbox auf Master-Karten, je mit der
-    /// Workspace-ID des Masters.
-    pub(super) user_inbox_counts: Vec<(Rect, String)>,
+    /// collie: Zähler der globalen Nutzer-Inbox in der Sidebar.
+    pub(super) user_inbox_counts: Vec<Rect>,
     /// collie: Fläche des Inbox-Overlays.
     pub(super) user_inbox_area: Rect,
     /// collie: Breadcrumb eines offenen Childs, mit der Pane-ID seines Masters.
@@ -688,9 +687,8 @@ impl ClientShellOverlay {
 #[derive(Debug)]
 pub(super) enum PendingEndpointKind {
     Generic,
-    /// collie: Einträge der Nutzer-Inbox eines Masters.
+    /// collie: Einträge der globalen Nutzer-Inbox.
     UserInbox {
-        workspace_id: String,
         revision: u64,
     },
     ProductAnnouncementDismiss {
