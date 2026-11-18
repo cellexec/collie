@@ -112,6 +112,16 @@ impl ClientShellState {
                     outcome.repaint = true;
                     return;
                 }
+                if action == crate::input::KeybindAction::ClosePane {
+                    if let Some(pane_id) = self
+                        .snapshot
+                        .as_deref()
+                        .and_then(|snapshot| snapshot.focused_pane_id.clone())
+                    {
+                        self.request_pane_close(pane_id, outcome);
+                    }
+                    return;
+                }
                 if action == crate::input::KeybindAction::CloseTab {
                     if let Some(tab_id) = self
                         .snapshot
@@ -652,9 +662,8 @@ impl ClientShellState {
                     Ok(crate::api::schema::ResponseResult::PaneSelection { text, .. })
                         if !text.is_empty() =>
                     {
-                        let repaint = self.show_copy_feedback(std::time::Instant::now());
                         (
-                            repaint,
+                            false,
                             vec![ClientShellAction::ClipboardWrite(text.into_bytes())],
                         )
                     }
@@ -1075,9 +1084,6 @@ impl ClientShellState {
                     env: Default::default(),
                 }))
             }
-            KeybindAction::ClosePane => Some(Method::PaneClose(PaneTarget {
-                pane_id: focused_pane.clone()?,
-            })),
             KeybindAction::CyclePaneNext | KeybindAction::CyclePanePrevious => {
                 let focused_tab = focused_tab?;
                 let panes = snapshot

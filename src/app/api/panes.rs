@@ -71,7 +71,7 @@ impl App {
         let default_shell = self.state.default_shell.clone();
         let scrollback_limit_bytes = self.state.pane_scrollback_limit_bytes;
         let host_terminal_theme = self.state.host_terminal_theme;
-        let host_terminal_appearance = self.state.host_terminal_appearance;
+        let host_terminal_appearance = self.pane_host_terminal_appearance();
         let previous_focus = self.state.current_pane_focus_target();
         let Some(ws) = self.state.workspaces.get_mut(ws_idx) else {
             return encode_error(id, "pane_not_found", "pane not found");
@@ -1946,6 +1946,9 @@ impl App {
             Ok(bytes) => bytes,
             Err(key) => return encode_error(id, "invalid_key", format!("unsupported key {key}")),
         };
+        if let Err(err) = runtime.validate_input_submission(&bytes) {
+            return encode_error(id, "pane_send_failed", err.to_string());
+        }
         if let Err(err) = runtime.try_send_bytes(Bytes::from(bytes)) {
             return encode_error(id, "pane_send_failed", err.to_string());
         }
