@@ -731,6 +731,13 @@ impl ClientShellState {
             occlusion.cover(bar);
         }
         if let Some(overlay) = self.overlay.as_ref() {
+            // collie: Hinter der Inbox liegen die Panes abgedunkelt wie
+            // hinter dem Chat-Sheet.
+            if matches!(overlay, ClientShellOverlay::UserInbox(_)) {
+                let backdrop = Backdrop::new(&self.config.palette, self.host_background);
+                backdrop.apply(&mut frame, Rect::new(0, 0, cols, rows));
+                frame.cursor = None;
+            }
             let mut composed = frame.to_ratatui_buffer()?;
             let cursor = if let ClientShellOverlay::ContextMenu(menu) = overlay {
                 let rendered =

@@ -12,7 +12,7 @@ use ratatui::{
 };
 
 use super::chat_cards::{age_color, age_label, ICON_CROWN};
-use super::chat_telescope::{frame, TelescopeRender};
+use super::chat_telescope::TelescopeRender;
 use super::markdown::{render_markdown, MdLine};
 use super::render::{display_width, put_text};
 use super::*;
@@ -230,25 +230,50 @@ pub(super) fn dock_width(cols: u16) -> u16 {
     (cols * 2 / 5).clamp(36, 72).min(cols.saturating_sub(20))
 }
 
-/// Titel und Markierungen im Rahmen.
+/// Fläche wie das Chat-Sheet von `prefix+w`: Sidebar-Hintergrund, rechts
+/// eine dünne Kante, kein Rahmen. Gibt die Innenfläche unter Kopfzeile und
+/// Leerzeile zurück.
+fn sheet(buffer: &mut Buffer, rect: Rect, palette: &Palette) -> Option<Rect> {
+    if rect.width < 8 || rect.height < 4 {
+        return None;
+    }
+    super::render::render_sidebar_background(buffer, rect, palette);
+    Some(Rect::new(
+        rect.x.saturating_add(1),
+        rect.y.saturating_add(2),
+        rect.width.saturating_sub(3),
+        rect.height.saturating_sub(2),
+    ))
+}
+
+/// Kopfzeile wie ` 󰭹 chats`, rechts die Zahl der Markierungen.
 fn render_title(buffer: &mut Buffer, rect: Rect, inbox: &ClientUserInbox, palette: &Palette) {
-    let base = Style::default().bg(palette.panel_bg);
+    let base = Style::default().bg(palette.sidebar_bg);
     let open = inbox.entries.iter().filter(|entry| pending(entry)).count();
-    let title = format!(" {ICON_INBOX} Inbox · {open} offen ");
+    let title = format!(" {ICON_INBOX} inbox");
+    let title_width = display_width(&title);
     put_text(
         buffer,
-        rect.x + 2,
+        rect.x,
         rect.y,
-        rect.width.saturating_sub(4),
+        rect.width.saturating_sub(1),
         &title,
-        base.fg(palette.yellow).add_modifier(Modifier::BOLD),
+        base.fg(palette.accent).add_modifier(Modifier::BOLD),
+    );
+    put_text(
+        buffer,
+        rect.x.saturating_add(title_width),
+        rect.y,
+        rect.width.saturating_sub(title_width + 1),
+        &format!(" · {open} offen"),
+        base.fg(palette.overlay0),
     );
     if !inbox.marked.is_empty() {
         let label = format!(" {ICON_CHECKED} {} markiert ", inbox.marked.len());
         let width = display_width(&label);
         put_text(
             buffer,
-            rect.right().saturating_sub(width + 2),
+            rect.right().saturating_sub(width + 1),
             rect.y,
             width,
             &label,
@@ -279,7 +304,7 @@ fn render_empty(
         inner.width,
         text,
         Style::default()
-            .bg(palette.panel_bg)
+            .bg(palette.sidebar_bg)
             .fg(palette.overlay0)
             .add_modifier(Modifier::ITALIC),
     );
@@ -296,8 +321,8 @@ pub(super) fn render_user_inbox(
     let palette = &config.palette;
     let now = crate::workspace::unix_millis_now();
     let rect = inbox_rect(buffer.area);
-    let inner = frame(buffer, rect, palette)?;
-    let base = Style::default().bg(palette.panel_bg);
+    let inner = sheet(buffer, rect, palette)?;
+    let base = Style::default().bg(palette.sidebar_bg);
     let selected = selected_index(inbox);
     render_title(buffer, rect, inbox, palette);
 
@@ -390,8 +415,8 @@ pub(super) fn render_inbox_dock(
 ) -> Option<TelescopeRender> {
     let palette = &config.palette;
     let now = crate::workspace::unix_millis_now();
-    let inner = frame(buffer, area, palette)?;
-    let base = Style::default().bg(palette.panel_bg);
+    let inner = sheet(buffer, area, palette)?;
+    let base = Style::default().bg(palette.sidebar_bg);
     render_title(buffer, area, inbox, palette);
     let footer_y = inner.bottom().saturating_sub(1);
     put_text(
@@ -452,7 +477,7 @@ fn render_table(
     palette: &Palette,
     menu_rows: &mut Vec<(Rect, usize)>,
 ) {
-    let base = Style::default().bg(palette.panel_bg);
+    let base = Style::default().bg(palette.sidebar_bg);
     let widths = columns(table.width);
     let headers = [
         "",
@@ -578,7 +603,7 @@ fn render_detail(
     if rect.height == 0 {
         return;
     }
-    let base = Style::default().bg(palette.panel_bg);
+    let base = Style::default().bg(palette.sidebar_bg);
     let mut header = format!("{} · {chat}", kind_label(&entry.kind));
     if let Some(path) = entry.path.as_deref() {
         header.push_str(" · ");
