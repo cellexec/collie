@@ -3,7 +3,8 @@
 
 use crate::api::schema::{
     ChatCloseChildren, ChatCloseParams, ChatInboxParams, ChatMasterCreateParams, ChatReportParams,
-    ChatSpawnParams, ChatWorkspaceParams, EmptyParams, Method, PaneCurrentParams, Request,
+    ChatSpawnParams, ChatTellUserParams, ChatUserInboxActParams, ChatUserInboxAction,
+    ChatUserInboxParams, ChatWorkspaceParams, EmptyParams, Method, PaneCurrentParams, Request,
     WorktreeCreateParams,
 };
 
@@ -19,6 +20,10 @@ pub(super) fn print_team_help() {
     eprintln!("  herdr chat close <WORKSPACE> [--release-children]");
     eprintln!("  herdr chat report <TEXT>");
     eprintln!("  herdr chat inbox [--all] [--json]");
+    eprintln!(
+        "  herdr chat tell-user [--kind nachricht|formular|wizard] [--optional] [--title TEXT] [--file PATH] <TEXT|->"
+    );
+    eprintln!("  herdr chat user-inbox [--master WORKSPACE] [--json]");
 }
 
 /// Führt einen Master-Chat-Befehl aus. `None`, wenn `command` keiner ist.
@@ -34,6 +39,9 @@ pub(super) fn run_team_command(command: &str, args: &[String]) -> Option<std::io
         "close" => close(args),
         "report" => report(args),
         "inbox" => inbox(args),
+        "tell-user" => tell_user(args),
+        "user-inbox" => user_inbox(args),
+        "user-inbox-result" => user_inbox_result(args),
         _ => return None,
     };
     Some(result)
@@ -422,6 +430,142 @@ fn inbox(args: &[String]) -> std::io::Result<i32> {
         );
     }
     Ok(0)
+}
+
+/// Der Master legt etwas in die Nutzer-Inbox. `-` liest den Text von stdin.
+fn tell_user(args: &[String]) -> std::io::Result<i32> {
+    let args = match Args::parse(args, &["kind", "title", "file", "master"]) {
+        Ok(args) => args,
+        Err(err) => return usage_error(err),
+    };
+    let mut text = args.positional.join(" ");
+    if text == "-" {
+        text.clear();
+        std::io::Read::read_to_string(&mut std::io::stdin(), &mut text)?;
+    }
+    let kind = args.value("kind").unwrap_or_else(|| "nachricht".to_owned());
+    // Der Server läuft in einem anderen Verzeichnis; relative Pfade gelten
+    // für den Aufrufer.
+    let path = match args.value("file").map(std::fs::canonicalize).transpose() {
+        Ok(path) => path.map(|path| path.to_string_lossy().into_owned()),
+        Err(err) => return usage_error(format!("--file: {err}")),
+    };
+    let response = request(
+        "tell-user",
+        Method::ChatTellUser(ChatTellUserParams {
+            workspace_id: args.value("master"),
+            caller_pane_id: caller(),
+            kind,
+            important: !args.flag("optional"),
+            title: args.value("title"),
+            text,
+            path,
+        }),
+    )?;
+    Ok(failed(&response).unwrap_or(0))
+}
+
+fn user_inbox(args: &[String]) -> std::io::Result<i32> {
+    let args = match Args::parse(args, &["master"]) {
+        Ok(args) => args,
+        Err(err) => return usage_error(err),
+    };
+    let response = request(
+        "user-inbox",
+        Method::ChatUserInbox(ChatUserInboxParams {
+            workspace_id: args.value("master"),
+            caller_pane_id: caller(),
+        }),
+    )?;
+    if let Some(code) = failed(&response) {
+        return Ok(code);
+    }
+    let entries = response
+        .pointer("/result/user_inbox")
+        .cloned()
+        .unwrap_or(serde_json::Value::Array(Vec::new()));
+    if args.flag("json") {
+        println!("{entries}");
+        return Ok(0);
+    }
+    for entry in entries.as_array().into_iter().flatten() {
+        let text = |key: &str| {
+            entry
+                .get(key)
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_owned()
+        };
+        let flag = |key: &str| {
+            entry
+                .get(key)
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+        };
+        let state = match text("kind").as_str() {
+            "formular" | "wizard" if flag("finished") => "erledigt",
+            "formular" | "wizard" => "offen",
+            _ if flag("read") => "gelesen",
+            _ => "neu",
+        };
+        println!(
+            "{}\t{}\t{}\t{}\t{}",
+            entry
+                .get("id")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or_default(),
+            text("kind"),
+            if flag("important") {
+                "wichtig"
+            } else {
+                "optional"
+            },
+            state,
+            text("title"),
+        );
+    }
+    Ok(0)
+}
+
+/// Intern: Panes, die collie für Formulare, Wizards und Rückfragen öffnet,
+/// melden damit ihr Ergebnis.
+fn user_inbox_result(args: &[String]) -> std::io::Result<i32> {
+    let args = match Args::parse(args, &["workspace", "exit", "reply"]) {
+        Ok(args) => args,
+        Err(err) => return usage_error(err),
+    };
+    let Some(id) = args
+        .positional
+        .first()
+        .and_then(|id| id.parse::<u64>().ok())
+    else {
+        return usage_error("herdr chat user-inbox-result needs an entry id");
+    };
+    let (action, exit_code, path) = if args.flag("answered") {
+        (ChatUserInboxAction::Answered, None, None)
+    } else if let Some(code) = args.value("exit") {
+        (
+            ChatUserInboxAction::WizardResult,
+            Some(code.trim().parse::<i32>().unwrap_or(-1)),
+            None,
+        )
+    } else if let Some(file) = args.value("reply") {
+        (ChatUserInboxAction::ReplyWritten, None, Some(file))
+    } else {
+        return usage_error("use --answered, --exit CODE or --reply FILE");
+    };
+    let response = request(
+        "user-inbox-result",
+        Method::ChatUserInboxAct(ChatUserInboxActParams {
+            workspace_id: args.value("workspace"),
+            caller_pane_id: caller(),
+            action,
+            ids: vec![id],
+            exit_code,
+            path,
+        }),
+    )?;
+    Ok(failed(&response).unwrap_or(0))
 }
 
 #[cfg(test)]

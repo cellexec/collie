@@ -214,6 +214,12 @@ impl App {
                     },
                 });
             }
+            self.record_master_answer(
+                index,
+                params.answer,
+                params.answer_prompt,
+                params.answer_key,
+            );
             self.schedule_session_save();
         }
         encode_success(

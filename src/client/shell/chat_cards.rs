@@ -18,6 +18,7 @@ use super::chats::{
     chat_symbol, overlay_chat_rows, snooze_remaining_label, spinner_frame, ChatRow,
 };
 use super::render::{display_width, put_text};
+use super::user_inbox::ICON_INBOX;
 use super::*;
 use crate::api::schema::AgentStatus;
 use crate::ui::truncate_end;
@@ -694,7 +695,57 @@ fn render_master_card(
     if let Some((symbol, style)) = chat_symbol(&own, now, palette) {
         put_text(buffer, inner_x, status_y, 1, symbol, style.bg(background));
     }
-    let counts_end = right.saturating_sub(age_width).saturating_sub(1);
+    let mut counts_end = right.saturating_sub(age_width).saturating_sub(1);
+    // Nutzer-Inbox: wichtige Einträge hervorgehoben, optionale grau.
+    let inbox = &row.user_inbox;
+    if inbox.important + inbox.optional > 0 {
+        let mut parts = Vec::new();
+        if inbox.important > 0 {
+            parts.push((
+                format!("{}", inbox.important),
+                base.fg(palette.red).add_modifier(Modifier::BOLD),
+            ));
+        }
+        if inbox.optional > 0 {
+            parts.push((format!("{}", inbox.optional), base.fg(palette.overlay0)));
+        }
+        let icon_color = if inbox.important > 0 {
+            palette.red
+        } else {
+            palette.overlay0
+        };
+        let label_width = parts
+            .iter()
+            .map(|(label, _)| display_width(label) + 1)
+            .sum::<u16>()
+            + display_width(ICON_INBOX);
+        if counts_end.saturating_sub(inner_x) > label_width + 12 {
+            let start = counts_end.saturating_sub(label_width);
+            let mut x = put_part(
+                buffer,
+                start,
+                status_y,
+                counts_end,
+                ICON_INBOX,
+                base.fg(icon_color).add_modifier(Modifier::BOLD),
+            );
+            for (label, style) in parts {
+                x = put_part(
+                    buffer,
+                    x.saturating_add(1),
+                    status_y,
+                    counts_end,
+                    &label,
+                    style,
+                );
+            }
+            hits.user_inbox_counts.push((
+                Rect::new(start, status_y, label_width, 1),
+                row.workspace_id.clone(),
+            ));
+            counts_end = start.saturating_sub(1);
+        }
+    }
     let mut x = inner_x.saturating_add(2);
     let parts = child_count_parts(&row.children, palette);
     if parts.is_empty() {

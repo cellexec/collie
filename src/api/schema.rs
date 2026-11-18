@@ -109,6 +109,12 @@ pub enum Method {
     ChatReport(ChatReportParams),
     #[serde(rename = "chat.inbox")]
     ChatInbox(ChatInboxParams),
+    #[serde(rename = "chat.tell_user")]
+    ChatTellUser(ChatTellUserParams),
+    #[serde(rename = "chat.user_inbox")]
+    ChatUserInbox(ChatUserInboxParams),
+    #[serde(rename = "chat.user_inbox_act")]
+    ChatUserInboxAct(ChatUserInboxActParams),
     #[serde(rename = "workspace.move")]
     WorkspaceMove(WorkspaceMoveParams),
     #[serde(rename = "workspace.move_block")]

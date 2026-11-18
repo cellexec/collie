@@ -784,6 +784,22 @@ fn chat_command() -> Command {
                 .arg(flag("all"))
                 .arg(flag("json")),
         )
+        .subcommand(
+            Command::new("tell-user")
+                .about("Put a message, form or wizard into the user inbox of a master chat; - reads the text from stdin")
+                .arg(option("kind", "nachricht|formular|wizard"))
+                .arg(flag("optional"))
+                .arg(option("title", "TEXT"))
+                .arg(option("file", "PATH"))
+                .arg(option("master", "WORKSPACE"))
+                .arg(required("text", "TEXT")),
+        )
+        .subcommand(
+            Command::new("user-inbox")
+                .about("Show the user inbox of a master chat")
+                .arg(option("master", "WORKSPACE"))
+                .arg(flag("json")),
+        )
 }
 
 /// collie: Chat-Fakten für die Chat-Sidebar.

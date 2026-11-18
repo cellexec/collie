@@ -1249,6 +1249,9 @@ fn master_snapshot() -> ClientShellSnapshot {
         assignment: None,
         inbox_pending: 0,
         inbox_latest: Some("Fix: Migration jetzt?".into()),
+        user_inbox_important: 0,
+        user_inbox_optional: 0,
+        user_inbox_revision: 0,
     });
     snapshot.workspaces[0].team = Some(crate::protocol::ClientShellChatTeam {
         master: false,
@@ -1256,6 +1259,9 @@ fn master_snapshot() -> ClientShellSnapshot {
         assignment: Some("Baue den Login".into()),
         inbox_pending: 0,
         inbox_latest: None,
+        user_inbox_important: 0,
+        user_inbox_optional: 0,
+        user_inbox_revision: 0,
     });
     snapshot
 }
@@ -1343,5 +1349,131 @@ fn closing_a_master_with_children_asks_what_happens_to_them() {
         [Method::ChatClose(params)]
             if params.workspace_id == "ws_2"
                 && params.children == crate::api::schema::ChatCloseChildren::Release
+    ));
+}
+
+fn endpoint_request_id(outcome: &ClientShellInput, method: &str) -> String {
+    outcome
+        .actions
+        .iter()
+        .find_map(|action| match action {
+            ClientShellAction::Endpoint { request, .. }
+                if crate::api::api_method_name(&request.method) == method =>
+            {
+                Some(request.id.clone())
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no {method} request"))
+}
+
+#[test]
+fn the_user_inbox_counter_opens_the_inbox_and_dd_reports_on_leave() {
+    let mut snapshot = master_snapshot();
+    snapshot.workspaces[0].focused = false;
+    if let Some(team) = snapshot.workspaces[1].team.as_mut() {
+        team.user_inbox_important = 2;
+        team.user_inbox_optional = 1;
+        team.user_inbox_revision = 7;
+    }
+    let (mut state, rows) = agents_only_state_with(snapshot);
+    // Die schmale Liste zeigt die wichtigen Einträge am Master.
+    assert!(
+        rows.iter()
+            .any(|row| row.contains("Master Chat (1)") && row.contains("󰇮2")),
+        "{rows:#?}"
+    );
+
+    focus_sidebar(&mut state);
+    let outcome = press(&mut state, b"I");
+    assert!(matches!(
+        state.overlay,
+        Some(ClientShellOverlay::UserInbox(_))
+    ));
+    let request = endpoint_request_id(&outcome, "chat.user_inbox");
+    let entry = |id: u64, important: bool| crate::api::schema::UserInboxEntryInfo {
+        id,
+        at: id,
+        kind: "nachricht".into(),
+        important,
+        title: format!("Eintrag {id}"),
+        text: format!("Text {id}"),
+        path: None,
+        read: false,
+        finished: false,
+    };
+    let (repaint, _) = state.handle_endpoint_result(
+        "boot-1",
+        &request,
+        Ok(crate::api::schema::ResponseResult::ChatUserInbox {
+            user_inbox: vec![entry(1, false), entry(2, true), entry(3, true)],
+        }),
+    );
+    assert!(repaint);
+    let frame = state.compose(100, 28).expect("frame");
+    let rows = frame_rows(&frame);
+    assert!(
+        rows.iter().any(|row| row.contains("Wichtig (2)")),
+        "{rows:#?}"
+    );
+
+    // Erster Eintrag ist der neueste wichtige (#3). `space` markiert ihn,
+    // dann `d d` erledigt alle markierten.
+    press(&mut state, b" ");
+    press(&mut state, b"d");
+    let outcome = press(&mut state, b"d");
+    assert!(matches!(
+        methods(&outcome).as_slice(),
+        [Method::ChatUserInboxAct(params)]
+            if params.action == crate::api::schema::ChatUserInboxAction::Done
+                && params.ids == [3]
+    ));
+    // Ein einzelnes `d` mit anderer Taste danach löscht nichts.
+    press(&mut state, b"d");
+    let outcome = press(&mut state, b"j");
+    assert!(methods(&outcome).is_empty());
+
+    let outcome = press(&mut state, b"u");
+    assert!(matches!(
+        methods(&outcome).as_slice(),
+        [Method::ChatUserInboxAct(params)]
+            if params.action == crate::api::schema::ChatUserInboxAction::Restore
+    ));
+
+    let outcome = press(&mut state, b"\x1b");
+    assert!(state.overlay.is_none());
+    assert!(matches!(
+        methods(&outcome).as_slice(),
+        [Method::ChatUserInboxAct(params)]
+            if params.action == crate::api::schema::ChatUserInboxAction::Flush
+    ));
+}
+
+#[test]
+fn a_master_card_shows_the_user_inbox_counter_and_opens_the_inbox_on_click() {
+    let mut snapshot = master_snapshot();
+    snapshot.workspaces[0].focused = false;
+    if let Some(team) = snapshot.workspaces[1].team.as_mut() {
+        team.user_inbox_important = 3;
+        team.user_inbox_optional = 2;
+    }
+    let mut state = chat_overlay_state_with(snapshot);
+    focus_sidebar(&mut state);
+    let rows = frame_rows(&state.compose(160, 28).expect("frame"));
+    assert!(rows.iter().any(|row| row.contains("󰇮 3 2")), "{rows:#?}");
+    let (counter, master) = state.hits.user_inbox_counts[0].clone();
+    assert_eq!(master, "ws_2");
+    let outcome = mouse(
+        &mut state,
+        MouseEventKind::Down(MouseButton::Left),
+        (counter.x, counter.y),
+    );
+    assert!(matches!(
+        state.overlay,
+        Some(ClientShellOverlay::UserInbox(_))
+    ));
+    assert!(matches!(
+        methods(&outcome).as_slice(),
+        [Method::ChatUserInbox(params)] if params.workspace_id.as_deref() == Some("ws_2")
     ));
 }

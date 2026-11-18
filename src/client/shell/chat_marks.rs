@@ -34,6 +34,13 @@ impl ClientShellState {
                 self.create_master(outcome)
             }
             KeyCode::Char('m') if modifiers == KeyModifiers::SHIFT => self.create_master(outcome),
+            // Mit Kitty-Tastaturprotokoll kommt `I` als `i` mit Shift.
+            KeyCode::Char('I') if plain || modifiers == KeyModifiers::SHIFT => {
+                return self.open_cursor_user_inbox(outcome);
+            }
+            KeyCode::Char('i') if modifiers == KeyModifiers::SHIFT => {
+                return self.open_cursor_user_inbox(outcome);
+            }
             // `m` ohne Master unter dem Cursor bleibt das globale Menü.
             KeyCode::Char('m') if plain => return self.open_cursor_telescope(outcome),
             _ => return false,
@@ -181,6 +188,24 @@ impl ClientShellState {
         self.push_endpoint_method(method, outcome);
         self.leave_sidebar(false, outcome);
         outcome.repaint = true;
+    }
+
+    /// `I` auf einer Master-Karte öffnet seine Nutzer-Inbox, auf einem Child
+    /// die seines Masters.
+    fn open_cursor_user_inbox(&mut self, outcome: &mut ClientShellInput) -> bool {
+        let Some(row) = self
+            .local_sidebar_agent_cursor()
+            .and_then(|cursor| self.sidebar_chat_row(&cursor.pane_id))
+        else {
+            return false;
+        };
+        let master = match (row.master, row.parent) {
+            (true, _) => row.workspace_id,
+            (false, Some(parent)) => parent,
+            (false, None) => return false,
+        };
+        self.open_user_inbox(master, outcome);
+        true
     }
 
     /// `m` auf einer Master-Karte öffnet sein Telescope.

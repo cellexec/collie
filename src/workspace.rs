@@ -314,7 +314,123 @@ pub struct ChatTeam {
     /// Inbox eines Masters.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub inbox: Vec<ChatInboxEntry>,
+    /// Nutzer-Inbox eines Masters, siehe docs/specs/user-inbox.md.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub user_inbox: Vec<UserInboxEntry>,
+    /// Nächste ID für die Nutzer-Inbox.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub user_inbox_next_id: u64,
+    /// Rückmeldungen des Nutzers, die noch an den Master gehen.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub user_replies: Vec<UserReply>,
+    /// Zählt Änderungen an der Nutzer-Inbox.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub user_inbox_revision: u64,
 }
+
+fn is_zero(value: &u64) -> bool {
+    *value == 0
+}
+
+/// collie: Art eines Eintrags in der Nutzer-Inbox.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UserInboxKind {
+    /// Antwort des Masters auf einen Prompt des Nutzers, automatisch.
+    Antwort,
+    Nachricht,
+    Formular,
+    Wizard,
+}
+
+impl UserInboxKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Antwort => "antwort",
+            Self::Nachricht => "nachricht",
+            Self::Formular => "formular",
+            Self::Wizard => "wizard",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "antwort" => Self::Antwort,
+            "nachricht" => Self::Nachricht,
+            "formular" => Self::Formular,
+            "wizard" => Self::Wizard,
+            _ => return None,
+        })
+    }
+
+    /// Formulare und Wizards sind Aufgaben, die offen bleiben, bis sie
+    /// erledigt sind. Antworten und Nachrichten liest man nur.
+    pub fn is_task(self) -> bool {
+        matches!(self, Self::Formular | Self::Wizard)
+    }
+}
+
+/// collie: Eintrag in der Nutzer-Inbox eines Masters.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct UserInboxEntry {
+    pub id: u64,
+    /// Unix-Millisekunden.
+    pub at: u64,
+    pub kind: UserInboxKind,
+    /// Wichtig oder optional.
+    #[serde(default)]
+    pub important: bool,
+    pub title: String,
+    #[serde(default)]
+    pub text: String,
+    /// Formular-Datei oder Wizard-Skript.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// Herkunft einer automatischen Antwort, damit ein Turn nur einen
+    /// Eintrag erzeugt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    /// Nachricht im Overlay geöffnet.
+    #[serde(default)]
+    pub read: bool,
+    /// Formular abgeschickt oder Wizard beendet.
+    #[serde(default)]
+    pub finished: bool,
+    /// Mit `dd` erledigt. Bleibt kurz erhalten, damit `u` ihn zurückholt.
+    #[serde(default)]
+    pub deleted: bool,
+}
+
+impl UserInboxEntry {
+    /// Zählt für den Zähler an der Master-Karte.
+    pub fn is_pending(&self) -> bool {
+        !self.deleted
+            && if self.kind.is_task() {
+                !self.finished
+            } else {
+                !self.read
+            }
+    }
+}
+
+/// collie: Rückmeldung des Nutzers an den Master.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct UserReply {
+    /// Unix-Millisekunden.
+    pub at: u64,
+    pub entry_id: u64,
+    pub text: String,
+    /// Hält die Zustellung zurück, bis der Nutzer das Overlay verlässt.
+    #[serde(default)]
+    pub held: bool,
+}
+
+/// Höchstens so viele gelöschte Einträge hält die Nutzer-Inbox für `u`.
+const MAX_DELETED_USER_INBOX: usize = 50;
+/// Höchstens so viele offene Einträge hält die Nutzer-Inbox.
+pub const MAX_USER_INBOX_ENTRIES: usize = 500;
+/// Höchstlänge eines Inbox-Texts.
+pub const MAX_USER_INBOX_TEXT: usize = 64_000;
 
 impl ChatTeam {
     pub fn is_master(&self) -> bool {
@@ -347,6 +463,80 @@ impl ChatTeam {
 
     pub fn pending_inbox(&self) -> impl Iterator<Item = &ChatInboxEntry> {
         self.inbox.iter().filter(|entry| !entry.delivered)
+    }
+
+    /// Legt einen Eintrag in die Nutzer-Inbox und liefert seine ID. Eine
+    /// automatische Antwort mit bekanntem `key` ersetzt den Text des
+    /// vorhandenen Eintrags, statt einen zweiten anzulegen.
+    pub fn push_user_inbox(&mut self, mut entry: UserInboxEntry) -> u64 {
+        entry.text = entry.text.chars().take(MAX_USER_INBOX_TEXT).collect();
+        if let Some(key) = entry.key.as_deref() {
+            if let Some(existing) = self
+                .user_inbox
+                .iter_mut()
+                .find(|existing| existing.key.as_deref() == Some(key))
+            {
+                let id = existing.id;
+                if existing.text != entry.text {
+                    existing.text = entry.text;
+                    existing.at = entry.at;
+                    existing.read = false;
+                    existing.deleted = false;
+                    self.touch_user_inbox();
+                }
+                return id;
+            }
+        }
+        self.user_inbox_next_id += 1;
+        entry.id = self.user_inbox_next_id;
+        let id = entry.id;
+        self.user_inbox.push(entry);
+        self.prune_user_inbox();
+        self.touch_user_inbox();
+        id
+    }
+
+    /// Wirft die ältesten gelöschten Einträge weg und hält die Inbox klein.
+    fn prune_user_inbox(&mut self) {
+        let deleted = self.user_inbox.iter().filter(|entry| entry.deleted).count();
+        let mut excess = deleted.saturating_sub(MAX_DELETED_USER_INBOX);
+        self.user_inbox.retain(|entry| {
+            if excess > 0 && entry.deleted {
+                excess -= 1;
+                return false;
+            }
+            true
+        });
+        let excess = self.user_inbox.len().saturating_sub(MAX_USER_INBOX_ENTRIES);
+        self.user_inbox.drain(..excess);
+    }
+
+    pub fn user_inbox_entry_mut(&mut self, id: u64) -> Option<&mut UserInboxEntry> {
+        self.user_inbox.iter_mut().find(|entry| entry.id == id)
+    }
+
+    /// Zähler für die Master-Karte: `(wichtig, optional)`.
+    pub fn user_inbox_counts(&self) -> (usize, usize) {
+        self.user_inbox
+            .iter()
+            .filter(|entry| entry.is_pending())
+            .fold((0, 0), |(important, optional), entry| {
+                if entry.important {
+                    (important + 1, optional)
+                } else {
+                    (important, optional + 1)
+                }
+            })
+    }
+
+    /// Merkt eine Änderung an der Nutzer-Inbox. Die TUI lädt die Einträge
+    /// neu, sobald sich die Revision ändert.
+    pub fn touch_user_inbox(&mut self) {
+        self.user_inbox_revision = self.user_inbox_revision.wrapping_add(1);
+    }
+
+    pub fn deliverable_user_replies(&self) -> impl Iterator<Item = &UserReply> {
+        self.user_replies.iter().filter(|reply| !reply.held)
     }
 }
 
@@ -1620,6 +1810,71 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
 
+    fn user_entry(kind: UserInboxKind, important: bool, key: Option<&str>) -> UserInboxEntry {
+        UserInboxEntry {
+            id: 0,
+            at: 1,
+            kind,
+            important,
+            title: "T".into(),
+            text: "Text".into(),
+            path: None,
+            key: key.map(str::to_owned),
+            read: false,
+            finished: false,
+            deleted: false,
+        }
+    }
+
+    #[test]
+    fn user_inbox_counts_unread_messages_and_open_tasks() {
+        let mut team = ChatTeam::default();
+        let message = team.push_user_inbox(user_entry(UserInboxKind::Nachricht, true, None));
+        let form = team.push_user_inbox(user_entry(UserInboxKind::Formular, false, None));
+        assert_eq!((message, form), (1, 2));
+        assert_eq!(team.user_inbox_counts(), (1, 1));
+        team.user_inbox_entry_mut(message).unwrap().read = true;
+        team.user_inbox_entry_mut(form).unwrap().read = true;
+        // Ein gelesenes Formular bleibt offen, bis es beantwortet ist.
+        assert_eq!(team.user_inbox_counts(), (0, 1));
+        team.user_inbox_entry_mut(form).unwrap().finished = true;
+        assert_eq!(team.user_inbox_counts(), (0, 0));
+    }
+
+    #[test]
+    fn a_keyed_answer_updates_its_entry_instead_of_adding_one() {
+        let mut team = ChatTeam::default();
+        let first = team.push_user_inbox(user_entry(UserInboxKind::Antwort, true, Some("u1")));
+        team.user_inbox_entry_mut(first).unwrap().read = true;
+        let revision = team.user_inbox_revision;
+        let mut again = user_entry(UserInboxKind::Antwort, true, Some("u1"));
+        again.text = "Neuer Text".into();
+        assert_eq!(team.push_user_inbox(again), first);
+        assert_eq!(team.user_inbox.len(), 1);
+        assert_eq!(team.user_inbox[0].text, "Neuer Text");
+        assert!(!team.user_inbox[0].read);
+        assert!(team.user_inbox_revision > revision);
+        // Derselbe Text ändert nichts.
+        let revision = team.user_inbox_revision;
+        let mut same = user_entry(UserInboxKind::Antwort, true, Some("u1"));
+        same.text = "Neuer Text".into();
+        team.push_user_inbox(same);
+        assert_eq!(team.user_inbox_revision, revision);
+    }
+
+    #[test]
+    fn deleted_user_entries_are_pruned_oldest_first() {
+        let mut team = ChatTeam::default();
+        for _ in 0..(MAX_DELETED_USER_INBOX + 5) {
+            let id = team.push_user_inbox(user_entry(UserInboxKind::Nachricht, true, None));
+            team.user_inbox_entry_mut(id).unwrap().deleted = true;
+        }
+        team.push_user_inbox(user_entry(UserInboxKind::Nachricht, true, None));
+        let deleted = team.user_inbox.iter().filter(|entry| entry.deleted).count();
+        assert_eq!(deleted, MAX_DELETED_USER_INBOX);
+        assert!(team.user_inbox.iter().all(|entry| entry.id > 5));
+    }
+
     #[test]
     fn chat_team_roundtrips_and_defaults() {
         let team = ChatTeam {
@@ -1627,7 +1882,7 @@ mod tests {
                 parent: "w1".into(),
             },
             assignment: Some("Baue X".into()),
-            inbox: Vec::new(),
+            ..Default::default()
         };
         let json = serde_json::to_string(&team).unwrap();
         assert_eq!(

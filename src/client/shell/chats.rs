@@ -59,10 +59,20 @@ pub(super) struct ChatRow {
     pub(super) assignment: Option<String>,
     /// Letzter Inbox-Eintrag eines Masters.
     pub(super) inbox_latest: Option<String>,
+    /// Nutzer-Inbox eines Masters: ungelesene oder offene Einträge.
+    pub(super) user_inbox: UserInboxCounts,
     /// Children eines Masters nach Status.
     pub(super) children: ChildCounts,
     /// Ein offenes Child, das eingerückt unter seinem Master steht.
     pub(super) nested: bool,
+}
+
+/// collie: Zähler der Nutzer-Inbox eines Masters.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct UserInboxCounts {
+    pub(super) important: usize,
+    pub(super) optional: usize,
+    pub(super) revision: u64,
 }
 
 /// collie: Children eines Masters nach Status.
@@ -252,6 +262,15 @@ fn chat_row(snapshot: &ClientShellSnapshot, workspace: &ClientShellWorkspace) ->
             .team
             .as_ref()
             .and_then(|team| team.inbox_latest.clone()),
+        user_inbox: workspace
+            .team
+            .as_ref()
+            .map(|team| UserInboxCounts {
+                important: team.user_inbox_important,
+                optional: team.user_inbox_optional,
+                revision: team.user_inbox_revision,
+            })
+            .unwrap_or_default(),
         children: ChildCounts::default(),
         nested: false,
     })
@@ -487,6 +506,24 @@ fn render_chat_row(buffer: &mut Buffer, rect: Rect, row: &ChatRow, now: u64, pal
         .snoozed_until
         .filter(|_| snoozed)
         .map(|until| format!(" {}", snooze_remaining_label(until, now)));
+    // collie: Zähler der Nutzer-Inbox eines Masters, rechtsbündig.
+    let inbox = (row.master && row.user_inbox.important + row.user_inbox.optional > 0).then(|| {
+        let (count, color) = if row.user_inbox.important > 0 {
+            (row.user_inbox.important, palette.red)
+        } else {
+            (row.user_inbox.optional, palette.overlay0)
+        };
+        (
+            format!(" {}{count}", super::user_inbox::ICON_INBOX),
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        )
+    });
+    let remaining = remaining.or_else(|| inbox.as_ref().map(|(label, _)| label.clone()));
+    let remaining_style = inbox
+        .as_ref()
+        .filter(|_| !snoozed)
+        .map(|(_, style)| *style)
+        .unwrap_or_else(|| Style::default().fg(palette.overlay0));
     let remaining_width = remaining.as_deref().map_or(0, display_width);
     let label_x = rect.x.saturating_add(3);
     let label_width = rect
@@ -522,7 +559,7 @@ fn render_chat_row(buffer: &mut Buffer, rect: Rect, row: &ChatRow, now: u64, pal
             rect.y,
             remaining_width,
             &remaining,
-            Style::default().fg(palette.overlay0),
+            remaining_style,
         );
     }
 }

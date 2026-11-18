@@ -11,6 +11,7 @@ pub(crate) mod plugins;
 pub(super) mod responses;
 mod session;
 mod tabs;
+mod user_inbox;
 mod workspaces;
 mod worktrees;
 
@@ -1220,6 +1221,13 @@ impl App {
             Method::ChatClose(params) => return self.handle_chat_close(request.id, params),
             Method::ChatReport(params) => return self.handle_chat_report(request.id, params),
             Method::ChatInbox(params) => return self.handle_chat_inbox(request.id, params),
+            Method::ChatTellUser(params) => return self.handle_chat_tell_user(request.id, params),
+            Method::ChatUserInbox(params) => {
+                return self.handle_chat_user_inbox(request.id, params);
+            }
+            Method::ChatUserInboxAct(params) => {
+                return self.handle_chat_user_inbox_act(request.id, params);
+            }
             Method::PaneClearAgentAuthority(params) => {
                 return self.handle_pane_clear_agent_authority(request.id, params);
             }

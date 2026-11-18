@@ -72,7 +72,12 @@ impl App {
     }
 
     /// Tippt einen Prompt in ein Pane und drückt danach Enter.
-    fn submit_to_pane(&self, ws_idx: usize, pane_id: crate::layout::PaneId, text: &str) -> bool {
+    pub(super) fn submit_to_pane(
+        &self,
+        ws_idx: usize,
+        pane_id: crate::layout::PaneId,
+        text: &str,
+    ) -> bool {
         let Some(runtime) = self.lookup_runtime_sender(ws_idx, pane_id) else {
             return false;
         };
@@ -594,16 +599,25 @@ impl App {
                 team.is_master() && team.pending_inbox().next().is_some()
             })
             .collect::<Vec<_>>();
+        let mut delivered = Vec::new();
         for master in masters {
             match self.inbox_ready(master, millis) {
                 Some(true) => {
-                    changed |= self.deliver_inbox(master);
+                    if self.deliver_inbox(master) {
+                        changed = true;
+                        delivered.push(master);
+                    }
                 }
                 Some(false) => waiting = true,
                 // Ein gestoppter Master staut die Inbox bis zum Resume.
                 None => {}
             }
         }
+        // Ein Master, der gerade die Child-Inbox bekommen hat, bekommt die
+        // Rückmeldungen des Nutzers erst beim nächsten Idle.
+        let (replies_changed, replies_waiting) = self.deliver_user_replies(millis, &delivered);
+        changed |= replies_changed;
+        waiting |= replies_waiting;
         let stale = self
             .chat_resume_workspaces
             .iter()
@@ -621,11 +635,12 @@ impl App {
         }
         if waiting {
             self.chat_inbox_deadline = Some(now + INBOX_RETRY);
-        } else if self
-            .state
-            .workspaces
-            .iter()
-            .any(|ws| ws.chat.team.is_master() && ws.chat.team.pending_inbox().next().is_some())
+        } else if self.has_user_replies()
+            || self
+                .state
+                .workspaces
+                .iter()
+                .any(|ws| ws.chat.team.is_master() && ws.chat.team.pending_inbox().next().is_some())
         {
             // Gestoppte Master prüfen wir selten.
             self.chat_inbox_deadline = Some(now + INBOX_RETRY * 10);
@@ -792,6 +807,9 @@ impl App {
                 assignment: None,
                 child_count: self.chat_children(index).len(),
                 inbox_pending: team.pending_inbox().count(),
+                user_inbox_important: team.user_inbox_counts().0,
+                user_inbox_optional: team.user_inbox_counts().1,
+                user_inbox_revision: team.user_inbox_revision,
                 inbox_latest: team
                     .inbox
                     .iter()
@@ -813,6 +831,9 @@ impl App {
                 child_count: 0,
                 inbox_pending: 0,
                 inbox_latest: None,
+                user_inbox_important: 0,
+                user_inbox_optional: 0,
+                user_inbox_revision: 0,
             }),
         }
     }
@@ -914,7 +935,7 @@ impl App {
     }
 
     /// Ein Agent läuft in Tab 1.
-    fn chat_agent_running(&self, index: usize) -> bool {
+    pub(super) fn chat_agent_running(&self, index: usize) -> bool {
         let Some(tab) = self
             .state
             .workspaces
@@ -938,7 +959,7 @@ impl App {
     }
 
     /// Arbeitsverzeichnis des Agents eines Space.
-    fn chat_cwd(&self, index: usize) -> Option<String> {
+    pub(super) fn chat_cwd(&self, index: usize) -> Option<String> {
         let ws = self.state.workspaces.get(index)?;
         ws.chat.cwd.clone().or_else(|| {
             let tab = ws.tabs.first()?;
@@ -1025,7 +1046,11 @@ impl App {
     }
 
     /// Ziel-Space aus Workspace-ID, Aufrufer-Pane oder Aufrufer-Prozess.
-    fn chat_target(&self, id: &str, params: &ChatWorkspaceParams) -> Result<usize, String> {
+    pub(super) fn chat_target(
+        &self,
+        id: &str,
+        params: &ChatWorkspaceParams,
+    ) -> Result<usize, String> {
         if let Some(workspace_id) = params.workspace_id.as_deref() {
             return self.parse_workspace_id(workspace_id).ok_or_else(|| {
                 encode_error(
@@ -1227,7 +1252,7 @@ fn inbox_prompt(lines: &[String]) -> String {
 }
 
 /// Ein Wort für die Shell, wenn nötig in einfachen Anführungszeichen.
-fn shell_word(value: &str) -> String {
+pub(super) fn shell_word(value: &str) -> String {
     if !value.is_empty()
         && value
             .bytes()

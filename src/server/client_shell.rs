@@ -115,6 +115,9 @@ pub(super) fn snapshot_with_completions(
                         assignment: team.assignment.clone(),
                         inbox_pending: team.inbox_pending,
                         inbox_latest: team.inbox_latest.clone(),
+                        user_inbox_important: team.user_inbox_important,
+                        user_inbox_optional: team.user_inbox_optional,
+                        user_inbox_revision: team.user_inbox_revision,
                     }),
             }
         })

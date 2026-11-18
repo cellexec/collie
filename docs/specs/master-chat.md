@@ -15,7 +15,7 @@ flowchart LR
   C1 -- herdr chat report --> I[(Inbox)]
   C2 -- Zustand: fertig, blockiert --> I
   I -- gebündelt, wenn Master idle --> M
-  M -- formular --> U
+  M -- Nutzer-Inbox, siehe user-inbox.md --> U
 ```
 
 ## Modell

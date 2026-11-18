@@ -1390,6 +1390,9 @@ impl ClientShellState {
         if self.route_telescope_mouse(mouse, outcome) {
             return;
         }
+        if self.route_user_inbox_mouse(mouse, outcome) {
+            return;
+        }
         if matches!(self.overlay, Some(ClientShellOverlay::GlobalMenu(_))) {
             let row_hit = self
                 .hits

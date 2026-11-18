@@ -68,6 +68,15 @@ pub struct ChatTeamInfo {
     /// Latest inbox entry of a master, formatted as one line.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inbox_latest: Option<String>,
+    /// Important user inbox entries that are unread or unfinished.
+    #[serde(default)]
+    pub user_inbox_important: usize,
+    /// Optional user inbox entries that are unread or unfinished.
+    #[serde(default)]
+    pub user_inbox_optional: usize,
+    /// Changes whenever the user inbox changes.
+    #[serde(default)]
+    pub user_inbox_revision: u64,
 }
 
 /// collie: Optional workspace target; the caller's workspace when omitted.
@@ -168,6 +177,93 @@ pub struct ChatInboxParams {
     /// Include delivered entries.
     #[serde(default, skip_serializing_if = "super::is_false")]
     pub all: bool,
+}
+
+/// collie: Message from a master chat to the user's inbox.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ChatTellUserParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caller_pane_id: Option<String>,
+    /// `nachricht`, `formular` or `wizard`.
+    pub kind: String,
+    /// Important entries are listed first and highlighted.
+    #[serde(default)]
+    pub important: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub text: String,
+    /// Form file or wizard script, required for `formular` and `wizard`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+/// collie: User inbox of a master chat.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ChatUserInboxParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caller_pane_id: Option<String>,
+}
+
+/// collie: What the user did with user inbox entries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ChatUserInboxAction {
+    /// Opened a message.
+    Read,
+    /// Deleted entries with `dd`; the master hears about each.
+    Done,
+    /// Undo of `done`.
+    Restore,
+    /// Open a form in nvim or run a wizard, in a pane next to the master.
+    Open,
+    /// Write a follow-up question to the master in nvim.
+    Reply,
+    /// A form was saved; sent by the pane that edited it.
+    Answered,
+    /// A wizard ended with `exit_code`; sent by the pane that ran it.
+    WizardResult,
+    /// A follow-up question was written to `path`.
+    ReplyWritten,
+    /// The user left the inbox: deliver held replies now.
+    Flush,
+}
+
+/// collie: Act on user inbox entries.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ChatUserInboxActParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caller_pane_id: Option<String>,
+    pub action: ChatUserInboxAction,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ids: Vec<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    /// Wizard log or follow-up question file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+/// collie: One user inbox entry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct UserInboxEntryInfo {
+    pub id: u64,
+    pub at: u64,
+    /// `antwort`, `nachricht`, `formular` or `wizard`.
+    pub kind: String,
+    pub important: bool,
+    pub title: String,
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    pub read: bool,
+    pub finished: bool,
 }
 
 /// collie: One inbox entry.

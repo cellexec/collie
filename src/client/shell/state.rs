@@ -117,6 +117,11 @@ pub(super) struct ShellHitMap {
     pub(super) master_counts: Vec<(Rect, String)>,
     /// collie: Zeilen des Telescope mit ihrem Index.
     pub(super) telescope_rows: Vec<(Rect, usize)>,
+    /// collie: Zähler der Nutzer-Inbox auf Master-Karten, je mit der
+    /// Workspace-ID des Masters.
+    pub(super) user_inbox_counts: Vec<(Rect, String)>,
+    /// collie: Fläche des Inbox-Overlays.
+    pub(super) user_inbox_area: Rect,
     /// collie: Breadcrumb eines offenen Childs, mit der Pane-ID seines Masters.
     pub(super) master_breadcrumb: Option<(Rect, String)>,
     pub(super) new_workspace: Rect,
@@ -651,6 +656,8 @@ pub(super) enum ClientShellOverlay {
     Telescope(super::chat_telescope::ClientChatTelescope),
     /// collie: Was mit den Children passiert, wenn ihr Master schließt.
     MasterClose(super::chat_telescope::ClientMasterCloseOverlay),
+    /// collie: Nutzer-Inbox eines Master Chats.
+    UserInbox(super::user_inbox::ClientUserInbox),
 }
 
 impl ClientShellOverlay {
@@ -671,7 +678,9 @@ impl ClientShellOverlay {
             Self::Settings(_) => ClientShellOverlayKind::Settings,
             Self::AgentCommands(_) => ClientShellOverlayKind::AgentCommands,
             Self::Snooze(_) => ClientShellOverlayKind::Snooze,
-            Self::Telescope(_) | Self::MasterClose(_) => ClientShellOverlayKind::Telescope,
+            Self::Telescope(_) | Self::MasterClose(_) | Self::UserInbox(_) => {
+                ClientShellOverlayKind::Telescope
+            }
         }
     }
 }
@@ -679,6 +688,11 @@ impl ClientShellOverlay {
 #[derive(Debug)]
 pub(super) enum PendingEndpointKind {
     Generic,
+    /// collie: Einträge der Nutzer-Inbox eines Masters.
+    UserInbox {
+        workspace_id: String,
+        revision: u64,
+    },
     ProductAnnouncementDismiss {
         version: String,
         id: String,

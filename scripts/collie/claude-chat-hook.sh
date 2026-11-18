@@ -270,15 +270,41 @@ def maybe_retitle(hook):
         os._exit(0)
 
 
+def last_prompt(path):
+    """Letzter Prompt des Nutzers im Transcript samt UUID. Lange Turns
+    bestehen fast nur aus Tool-Ausgaben, deshalb liest es notfalls weiter
+    zurück."""
+    for tail_bytes in TITLE_TAIL_BYTES:
+        for entry in reversed(transcript_entries(path, tail_bytes)):
+            if entry.get("type") != "user":
+                continue
+            text = message_text(entry)
+            if text:
+                return text, entry.get("uuid")
+    return None, None
+
+
 def on_stop(hook):
     path = hook.get("transcript_path")
     entries = transcript_entries(path) if isinstance(path, str) else []
     text = hook.get("last_assistant_message")
     if not isinstance(text, str) or not text.strip():
         text = last_assistant_text(entries)
+    params = {}
     line = last_line(text or "")
     if line:
-        send({"last_message": line})
+        params["last_message"] = line
+    # Für die Nutzer-Inbox eines Master Chats: volle Antwort und der Prompt,
+    # der sie ausgelöst hat. Der Server wertet das nur bei Mastern aus.
+    if text and text.strip() and isinstance(path, str):
+        prompt, uuid = last_prompt(path)
+        if prompt:
+            params["answer"] = text.strip()[:64000]
+            params["answer_prompt"] = prompt[:2000]
+            if isinstance(uuid, str) and uuid:
+                params["answer_key"] = uuid
+    if params:
+        send(params)
     maybe_retitle(hook)
 
 

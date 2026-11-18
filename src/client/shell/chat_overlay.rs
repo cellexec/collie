@@ -307,6 +307,17 @@ impl ClientShellState {
                 true
             }
             MouseEventKind::Down(MouseButton::Left) => {
+                // collie: Der Inbox-Zähler einer Master-Karte öffnet die Inbox.
+                if let Some((_, master)) = self
+                    .hits
+                    .user_inbox_counts
+                    .iter()
+                    .find(|(rect, _)| super::contains(*rect, point))
+                    .cloned()
+                {
+                    self.open_user_inbox(master, outcome);
+                    return true;
+                }
                 // collie: `N Chats` auf einer Master-Karte öffnet das Telescope.
                 if let Some((_, master)) = self
                     .hits

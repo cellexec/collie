@@ -86,7 +86,8 @@ pub(crate) fn render_client_overlay(
         ClientShellOverlay::ContextMenu(_)
         | ClientShellOverlay::GlobalMenu(_)
         | ClientShellOverlay::Telescope(_)
-        | ClientShellOverlay::MasterClose(_) => None,
+        | ClientShellOverlay::MasterClose(_)
+        | ClientShellOverlay::UserInbox(_) => None,
     }
 }
 

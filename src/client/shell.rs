@@ -11,6 +11,7 @@ mod chat_telescope;
 mod chat_visuals;
 mod chats;
 mod machine_diagnostics;
+mod user_inbox;
 mod workspace_navigation;
 use workspace_navigation::{PendingWorkspaceHighlight, WorkspaceNavigationTarget};
 mod composition;

@@ -22,6 +22,8 @@ const CLIENT_SHELL_METHODS: &[&str] = &[
     "chat.report",
     "chat.resume",
     "chat.stop",
+    "chat.user_inbox",
+    "chat.user_inbox_act",
     "client_shell.surface.set",
     "command.invoke",
     "integration.install",
@@ -323,6 +325,15 @@ mod tests {
         (
             "chat.stop",
             "1694b92f67469832c1483292ba382f0b5cd5935d4f792d516bff2ad0c55f6190",
+        ),
+        // collie: Nutzer-Inbox, siehe docs/specs/user-inbox.md.
+        (
+            "chat.user_inbox",
+            "e18b74de276f36014cf52b6dbb64cc7c426785f400a9f46018bc07866cf318e1",
+        ),
+        (
+            "chat.user_inbox_act",
+            "f80cb9455c49bf486c1c4a576d3cca3aadcdea3e44a27535aa1cc0f65a0196d8",
         ),
     ];
 

@@ -119,6 +119,27 @@
             },
             "role": {
               "$ref": "#/schemas/event/$defs/ChatTeamRole"
+            },
+            "user_inbox_important": {
+              "default": 0,
+              "description": "Important user inbox entries that are unread or unfinished.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "user_inbox_optional": {
+              "default": 0,
+              "description": "Optional user inbox entries that are unread or unfinished.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "user_inbox_revision": {
+              "default": 0,
+              "description": "Changes whenever the user inbox changes.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
             }
           },
           "required": [
@@ -2057,6 +2078,167 @@
           },
           "type": "object"
         },
+        "ChatTellUserParams": {
+          "description": "collie: Message from a master chat to the user's inbox.",
+          "properties": {
+            "caller_pane_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "important": {
+              "default": false,
+              "description": "Important entries are listed first and highlighted.",
+              "type": "boolean"
+            },
+            "kind": {
+              "description": "`nachricht`, `formular` or `wizard`.",
+              "type": "string"
+            },
+            "path": {
+              "description": "Form file or wizard script, required for `formular` and `wizard`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "text": {
+              "default": "",
+              "type": "string"
+            },
+            "title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "workspace_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        "ChatUserInboxActParams": {
+          "description": "collie: Act on user inbox entries.",
+          "properties": {
+            "action": {
+              "$ref": "#/schemas/request/$defs/ChatUserInboxAction"
+            },
+            "caller_pane_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "exit_code": {
+              "format": "int32",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "ids": {
+              "items": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "path": {
+              "description": "Wizard log or follow-up question file.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "workspace_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        "ChatUserInboxAction": {
+          "description": "collie: What the user did with user inbox entries.",
+          "oneOf": [
+            {
+              "const": "read",
+              "description": "Opened a message.",
+              "type": "string"
+            },
+            {
+              "const": "done",
+              "description": "Deleted entries with `dd`; the master hears about each.",
+              "type": "string"
+            },
+            {
+              "const": "restore",
+              "description": "Undo of `done`.",
+              "type": "string"
+            },
+            {
+              "const": "open",
+              "description": "Open a form in nvim or run a wizard, in a pane next to the master.",
+              "type": "string"
+            },
+            {
+              "const": "reply",
+              "description": "Write a follow-up question to the master in nvim.",
+              "type": "string"
+            },
+            {
+              "const": "answered",
+              "description": "A form was saved; sent by the pane that edited it.",
+              "type": "string"
+            },
+            {
+              "const": "wizard_result",
+              "description": "A wizard ended with `exit_code`; sent by the pane that ran it.",
+              "type": "string"
+            },
+            {
+              "const": "reply_written",
+              "description": "A follow-up question was written to `path`.",
+              "type": "string"
+            },
+            {
+              "const": "flush",
+              "description": "The user left the inbox: deliver held replies now.",
+              "type": "string"
+            }
+          ]
+        },
+        "ChatUserInboxParams": {
+          "description": "collie: User inbox of a master chat.",
+          "properties": {
+            "caller_pane_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "workspace_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
         "ChatWorkspaceParams": {
           "description": "collie: Optional workspace target; the caller's workspace when omitted.",
           "properties": {
@@ -3381,6 +3563,27 @@
         "PaneReportChatParams": {
           "description": "collie: Chat facts a hook reports for the agent in a workspace's first tab.\nAn omitted field stays unchanged; an empty string clears it.",
           "properties": {
+            "answer": {
+              "description": "Full text of the agent's latest reply, for the user inbox of a master.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "answer_key": {
+              "description": "Stable key of that prompt, so one turn creates one inbox entry.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "answer_prompt": {
+              "description": "Prompt that started the turn of `answer`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "awaiting": {
               "description": "What the agent waits for, for example `Formular: 7 Fragen`. Cleared\nwhen the agent starts working again.",
               "type": [
@@ -5670,6 +5873,54 @@
         {
           "properties": {
             "method": {
+              "const": "chat.tell_user",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ChatTellUserParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "chat.user_inbox",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ChatUserInboxParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "chat.user_inbox_act",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ChatUserInboxActParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
               "const": "workspace.move",
               "type": "string"
             },
@@ -7535,6 +7786,27 @@
             },
             "role": {
               "$ref": "#/schemas/success_response/$defs/ChatTeamRole"
+            },
+            "user_inbox_important": {
+              "default": 0,
+              "description": "Important user inbox entries that are unread or unfinished.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "user_inbox_optional": {
+              "default": 0,
+              "description": "Optional user inbox entries that are unread or unfinished.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "user_inbox_revision": {
+              "default": 0,
+              "description": "Changes whenever the user inbox changes.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
             }
           },
           "required": [
@@ -10071,6 +10343,26 @@
               "type": "object"
             },
             {
+              "description": "collie: User inbox of a master chat.",
+              "properties": {
+                "type": {
+                  "const": "chat_user_inbox",
+                  "type": "string"
+                },
+                "user_inbox": {
+                  "items": {
+                    "$ref": "#/schemas/success_response/$defs/UserInboxEntryInfo"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "type",
+                "user_inbox"
+              ],
+              "type": "object"
+            },
+            {
               "properties": {
                 "source": {
                   "$ref": "#/schemas/success_response/$defs/WorktreeSourceInfo"
@@ -11365,6 +11657,57 @@
             "focused",
             "pane_count",
             "agent_status"
+          ],
+          "type": "object"
+        },
+        "UserInboxEntryInfo": {
+          "description": "collie: One user inbox entry.",
+          "properties": {
+            "at": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "finished": {
+              "type": "boolean"
+            },
+            "id": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "important": {
+              "type": "boolean"
+            },
+            "kind": {
+              "description": "`antwort`, `nachricht`, `formular` or `wizard`.",
+              "type": "string"
+            },
+            "path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "read": {
+              "type": "boolean"
+            },
+            "text": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "at",
+            "kind",
+            "important",
+            "title",
+            "text",
+            "read",
+            "finished"
           ],
           "type": "object"
         },

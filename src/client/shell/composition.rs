@@ -725,6 +725,13 @@ impl ClientShellState {
                 occlusion.cover(rendered.area);
                 self.hits.telescope_rows = rendered.menu_rows;
                 None
+            } else if let ClientShellOverlay::UserInbox(inbox) = overlay {
+                let rendered =
+                    super::user_inbox::render_user_inbox(&mut composed, inbox, &self.config)?;
+                occlusion.cover(rendered.area);
+                self.hits.telescope_rows = rendered.menu_rows;
+                self.hits.user_inbox_area = rendered.area;
+                None
             } else if let ClientShellOverlay::MasterClose(dialog) = overlay {
                 let rendered = super::chat_telescope::render_master_close(
                     &mut composed,
@@ -846,6 +853,7 @@ fn render_chat_overlay(
     // verdeckt und dürfen keine Klicks mehr fangen.
     hits.agents.clear();
     hits.master_counts.clear();
+    hits.user_inbox_counts.clear();
     let mut buffer = Buffer::empty(Rect::new(0, 0, frame.width, frame.height));
     render::sidebar::render_chat_overlay(
         &mut buffer,

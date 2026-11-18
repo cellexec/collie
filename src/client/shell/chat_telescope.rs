@@ -108,7 +108,7 @@ fn selected_index(rows: &[ChatRow], telescope: &ClientChatTelescope) -> usize {
         .unwrap_or(0)
 }
 
-fn telescope_rect(screen: Rect) -> Rect {
+pub(super) fn telescope_rect(screen: Rect) -> Rect {
     let width = (u32::from(screen.width) * u32::from(TELESCOPE_PERCENT) / 100) as u16;
     let height = (u32::from(screen.height) * u32::from(TELESCOPE_PERCENT) / 100) as u16;
     Rect::new(
@@ -120,7 +120,7 @@ fn telescope_rect(screen: Rect) -> Rect {
 }
 
 /// Rahmen mit Hintergrund; gibt die Innenfläche zurück.
-fn frame(buffer: &mut Buffer, rect: Rect, palette: &Palette) -> Option<Rect> {
+pub(super) fn frame(buffer: &mut Buffer, rect: Rect, palette: &Palette) -> Option<Rect> {
     if rect.width < 4 || rect.height < 4 {
         return None;
     }

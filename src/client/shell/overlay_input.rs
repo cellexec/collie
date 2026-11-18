@@ -493,6 +493,9 @@ impl ClientShellState {
         if self.route_telescope_key(key, outcome) {
             return;
         }
+        if self.route_user_inbox_key(key, outcome) {
+            return;
+        }
         if matches!(self.overlay, Some(ClientShellOverlay::Onboarding)) {
             if matches!(
                 key.code,

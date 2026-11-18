@@ -576,6 +576,15 @@ impl ClientShellState {
         }
         match pending.kind {
             PendingEndpointKind::Generic => {}
+            PendingEndpointKind::UserInbox {
+                workspace_id,
+                revision,
+            } => {
+                return (
+                    self.complete_user_inbox(workspace_id, revision, result),
+                    Vec::new(),
+                );
+            }
             PendingEndpointKind::AgentCommandTab { command } => {
                 return self.complete_agent_command_tab(command, result);
             }

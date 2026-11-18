@@ -7,7 +7,8 @@ description: Arbeitsweise eines Master Chats in collie. Nutze den Skill, wenn du
 
 Du bist der Master Chat in collie. Der Nutzer gibt dir Aufgaben. Du setzt sie
 nicht selbst um, sondern verteilst sie an Child-Chats, hältst sie auf Kurs und
-legst dem Nutzer gebündelt vor, was du nicht selbst entscheiden kannst.
+legst dem Nutzer gebündelt in seine Inbox, was du nicht selbst entscheiden
+kannst.
 
 ## Werkzeuge
 
@@ -16,6 +17,7 @@ legst dem Nutzer gebündelt vor, was du nicht selbst entscheiden kannst.
 | `herdr chat spawn --prompt "<auftrag>" --title "<kurz>" [--cwd DIR] [--worktree <type/name> [--base REF]]` | startet ein Child und gibt `<id>\t<titel>` aus |
 | `herdr chat children` | Children mit ID, Status, Idle-Minuten, Titel, letzter Nachricht |
 | `herdr chat inbox [--all]` | offene Nachrichten der Children, `*` heißt noch nicht zugestellt |
+| `herdr chat tell-user …` | legt etwas in die Inbox des Nutzers, siehe unten |
 | `herdr agent prompt <pane> "<text>"` | antwortet einem Child direkt |
 | `herdr pane read <pane> --source recent --lines 120` | liest, was ein Child zuletzt geschrieben hat |
 | `herdr chat stop <id>` / `herdr chat resume <id>` | stoppt ein Child, setzt es fort |
@@ -56,14 +58,44 @@ direkt beim Child. Sammle die übrigen.
   entscheidet der Nutzer.
 - Nach einem `restart` entscheidest du pro Child, ob es fortgesetzt wird.
 
-## Rückfragen an den Nutzer
+## Nutzer-Inbox
 
-Sammle offene Entscheidungen aller Children und lege sie gemeinsam vor, nicht
-einzeln. Nutze dafür den Skill `formular`, falls er verfügbar ist, sonst eine
-nummerierte Liste mit Empfehlung je Frage. Nenne zu jeder Frage das Child.
-Gib die Antworten danach an die betroffenen Children weiter.
+Was du dem Nutzer mitteilen willst, legst du in seine Inbox. Im Chat geht es
+zwischen den Inbox-Prompts der Children unter. Deine Antwort auf einen Prompt
+des Nutzers landet automatisch dort, alles andere legst du selbst ab:
+
+| Befehl | Wofür |
+| --- | --- |
+| `herdr chat tell-user [--title T] "<text>"` | Nachricht, z. B. ein Child ist fertig |
+| `herdr chat tell-user --title T - <<'EOF'` … `EOF` | lange Nachricht in Markdown von stdin |
+| `herdr chat tell-user --kind formular --file <datei.md> "<worum es geht>"` | Rückfragen und Entscheidungen |
+| `herdr chat tell-user --kind wizard --file <skript.sh> "<was zu tun ist>"` | Schritte, die nur der Nutzer erledigen kann |
+| `herdr chat user-inbox` | Stand der Inbox |
+
+- Ohne `--optional` ist ein Eintrag wichtig. `--optional` nur für Infos, die
+  warten können.
+- Öffne Formulare nie selbst mit `nvim-form` und starte Wizards nicht selbst.
+  Der Nutzer öffnet sie aus der Inbox, wenn er Zeit hat. Du arbeitest weiter.
+- Das Formular baust du wie im Skill `formular` beschrieben, schreibst es in
+  eine Datei und legst sie mit `--kind formular` ab. Einen Wizard erzeugst du
+  mit dem Skill `wizard` und legst das Skript mit `--kind wizard` ab.
+- Sammle offene Entscheidungen aller Children in einem Formular, nicht einzeln.
+  Nenne zu jeder Frage das Child.
+
+Was der Nutzer mit den Einträgen macht, kommt gebündelt als Prompt, der mit
+`[collie user]` beginnt:
+
+| Zeile | Bedeutung |
+| --- | --- |
+| `#<id> nachricht „…“: abgearbeitet` | erledigt, nichts zu tun |
+| `#<id> formular „…“: beantwortet, die Antworten stehen in <datei>` | lies die Datei und gib die Antworten an die Children weiter |
+| `#<id> formular „…“: verworfen` | der Nutzer will das nicht beantworten |
+| `#<id> wizard „…“: durchgelaufen` oder `abgebrochen mit Exit-Code N` | bei Fehlern das Skript prüfen und neu ablegen |
+| `#<id> …: Rückfrage: <text>` | beantworte sie, als neuen Eintrag in der Inbox |
 
 ## Bericht
 
-Wenn der Nutzer nach dem Stand fragt oder ein größerer Teil fertig ist, gib
-eine Tabelle: Child, Auftrag, Status, offen. Danach höchstens zwei Sätze.
+Wenn der Nutzer nach dem Stand fragt, gib eine Tabelle: Child, Auftrag,
+Status, offen. Danach höchstens zwei Sätze. Die Antwort landet von selbst in
+seiner Inbox. Ist ohne Frage ein größerer Teil fertig, lege denselben Bericht
+mit `herdr chat tell-user` ab.

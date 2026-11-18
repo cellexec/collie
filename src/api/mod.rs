@@ -41,6 +41,8 @@ pub(crate) fn request_changes_ui(request: &Request) -> bool {
             | Method::ChatResume(_)
             | Method::ChatClose(_)
             | Method::ChatReport(_)
+            | Method::ChatTellUser(_)
+            | Method::ChatUserInboxAct(_)
             | Method::WorkspaceMove(_)
             | Method::WorkspaceMoveBlock(_)
             | Method::WorkspaceReportMetadata(_)

@@ -14,6 +14,7 @@ impl ClientShellState {
                     | ClientShellOverlay::Snooze(_)
                     | ClientShellOverlay::Telescope(_)
                     | ClientShellOverlay::MasterClose(_)
+                    | ClientShellOverlay::UserInbox(_)
             );
         }
         matches!(

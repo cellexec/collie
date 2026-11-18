@@ -18,7 +18,7 @@ use super::plugins::{
 use super::server::ServerCapabilities;
 use super::session::SessionSnapshot;
 use super::tabs::TabInfo;
-use super::workspaces::{ChatInboxEntryInfo, WorkspaceInfo};
+use super::workspaces::{ChatInboxEntryInfo, UserInboxEntryInfo, WorkspaceInfo};
 use super::worktrees::{WorktreeInfo, WorktreeSourceInfo};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -65,6 +65,10 @@ pub enum ResponseResult {
     /// collie: Inbox of a master chat.
     ChatInbox {
         entries: Vec<ChatInboxEntryInfo>,
+    },
+    /// collie: User inbox of a master chat.
+    ChatUserInbox {
+        user_inbox: Vec<UserInboxEntryInfo>,
     },
     WorktreeList {
         source: WorktreeSourceInfo,

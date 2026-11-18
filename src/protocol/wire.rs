@@ -1084,6 +1084,15 @@ pub struct ClientShellChatTeam {
     pub inbox_pending: usize,
     /// Letzter Inbox-Eintrag eines Masters als eine Zeile.
     pub inbox_latest: Option<String>,
+    /// Ungelesene oder offene wichtige Einträge der Nutzer-Inbox.
+    #[serde(default)]
+    pub user_inbox_important: usize,
+    /// Ungelesene oder offene optionale Einträge der Nutzer-Inbox.
+    #[serde(default)]
+    pub user_inbox_optional: usize,
+    /// Ändert sich mit jeder Änderung an der Nutzer-Inbox.
+    #[serde(default)]
+    pub user_inbox_revision: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
