@@ -87,6 +87,16 @@ flowchart LR
 - Bekommt ein Master im selben Durchlauf seine Child-Inbox, folgen die
   Rückmeldungen beim nächsten Idle.
 
+## Tagesübersicht
+
+| Punkt | Verhalten |
+| --- | --- |
+| Wann | werktags ab `master.daily_digest` (Ortszeit, Standard `08:00`); leer oder `off` schaltet ab. Einmal je Tag, auch nach einem Neustart: der Tag steht in `digest_day` des Chats, der sie bekam |
+| Inhalt | Liste in drei Abschnitten: blockiert, wartet auf dich (ungelesen, nicht gesnoozt), fertig geworden seit dem Termin des letzten Werktags; montags also seit Freitag |
+| Mit laufendem Master | der Server schickt dem Master `[collie digest] <Titel>` mit der Liste; sobald er idle ist und der Nutzer 5 s nicht getippt hat. Der Master legt eine Zusammenfassung mit `tell-user` ab |
+| Ohne Master | der Server legt die Liste als wichtige Nachricht `Tagesübersicht Mi 18.11.` beim ersten Master oder beim ersten Chat ab |
+| Master zu lange beschäftigt | nach 2 Stunden oder wenn sein Agent nicht mehr läuft, kommt die Liste ohne Zusammenfassung |
+
 ## TUI
 
 | Ort | Anzeige |

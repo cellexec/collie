@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 mod agent_view;
 mod agents;
 mod chats;
+mod daily_digest;
 mod env;
 mod integrations;
 mod layouts;

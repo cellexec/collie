@@ -295,6 +295,9 @@ pub struct MasterConfig {
     /// Answer Claude Code's folder trust prompt for agents that master chats
     /// start, so children do not wait for the user. Default: true.
     pub trust_child_folders: bool,
+    /// Weekday time (`HH:MM`, local) of the daily digest in the user inbox.
+    /// Empty or `off` disables it. Default: `08:00`.
+    pub daily_digest: String,
 }
 
 impl Default for MasterConfig {
@@ -302,6 +305,7 @@ impl Default for MasterConfig {
         Self {
             max_running_children: 6,
             trust_child_folders: true,
+            daily_digest: "08:00".to_owned(),
         }
     }
 }

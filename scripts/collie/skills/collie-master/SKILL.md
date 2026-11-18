@@ -95,6 +95,13 @@ Was der Nutzer mit den Einträgen macht, kommt gebündelt als Prompt, der mit
 | `#<id> wizard „…“: durchgelaufen` oder `abgebrochen mit Exit-Code N` | bei Fehlern das Skript prüfen und neu ablegen |
 | `#<id> …: Rückfrage: <text>` | beantworte sie, als neuen Eintrag in der Inbox |
 
+Werktags um 08:00 (`master.daily_digest`) kommt ein Prompt, der mit
+`[collie digest]` beginnt. Er enthält die Tagesübersicht als Liste: was
+blockiert ist, was auf den Nutzer wartet und was seit der letzten Übersicht
+fertig wurde. Fasse sie in wenigen Sätzen zusammen, sag, womit der Nutzer
+anfangen sollte, und lege das mit dem Befehl aus dem Prompt in die Inbox.
+Antworte sonst nichts.
+
 ## Bericht
 
 Wenn der Nutzer nach dem Stand fragt, gib eine Tabelle: Child, Auftrag,

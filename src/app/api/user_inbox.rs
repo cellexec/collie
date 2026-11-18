@@ -721,7 +721,7 @@ impl App {
         Ok(())
     }
 
-    fn user_replies_ready(&self, master: usize, last: u64, millis: u64) -> Option<bool> {
+    pub(super) fn user_replies_ready(&self, master: usize, last: u64, millis: u64) -> Option<bool> {
         if self.stopped_chat_agent(master).is_some() || !self.chat_agent_running(master) {
             return None;
         }
