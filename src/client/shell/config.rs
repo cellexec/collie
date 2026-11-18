@@ -403,6 +403,7 @@ impl ClientShellConfig {
         tab_count: usize,
         sidebar_width: u16,
         chat_line: bool,
+        inbox_dock: Option<u16>,
     ) -> ClientShellLayout {
         if cols <= self.mobile_width_threshold {
             let header_height = rows.min(2);
@@ -416,7 +417,10 @@ impl ClientShellConfig {
 
         // collie: Das Chat-Overlay belegt eingeklappt wie ausgefahren nur die
         // Chat-Spalte: auf breiten Terminals die Leiste, sonst die Linie.
-        let sidebar_width = if chat_line {
+        // collie: Läuft eine Aufgabe der Inbox, steht links ihre Liste.
+        let sidebar_width = if let Some(width) = inbox_dock {
+            width
+        } else if chat_line {
             super::chat_rail::chat_column_width(cols)
         } else if sidebar_collapsed {
             match self.sidebar_collapsed_mode {
@@ -485,6 +489,7 @@ impl ClientShellConfig {
                 0,
                 sidebar_width,
                 self.sidebar_overlay && self.sidebar_agents_only,
+                None,
             )
             .pane_surface;
         ClientSurfaceSize {

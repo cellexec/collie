@@ -12,7 +12,7 @@ use ratatui::{
 };
 
 use super::chat_cards::{age_color, age_label, ICON_CROWN};
-use super::chat_telescope::{frame, telescope_rect, TelescopeRender};
+use super::chat_telescope::{frame, TelescopeRender};
 use super::markdown::{render_markdown, MdLine};
 use super::render::{display_width, put_text};
 use super::*;
@@ -23,8 +23,8 @@ use crate::ui::truncate_end;
 pub(super) const ICON_INBOX: &str = "󰇮";
 /// Markierte Einträge in der ersten Spalte.
 const ICON_CHECKED: &str = "󰄲";
-/// Zeilen für den Text unter der Tabelle, mindestens.
-const MIN_DETAIL_LINES: u16 = 8;
+/// Freier Streifen rechts der offenen Inbox; ein Klick dorthin schließt.
+const BACKDROP_COLS: u16 = 6;
 
 /// Einträge sind nur je Chat eindeutig.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,7 +67,23 @@ pub(super) struct ClientUserInbox {
     pub(super) reading: bool,
     pub(super) detail_scroll: usize,
     pub(super) scroll: usize,
+    /// Pane, aus dem die Inbox geöffnet wurde; `esc` kehrt dorthin zurück.
+    pub(super) origin_pane: Option<String>,
 }
+
+/// collie: Die Inbox-Liste links, während eine Aufgabe als Tab im
+/// Inbox-Space läuft. Tastatur und Panes gehören der Aufgabe.
+#[derive(Debug)]
+pub(super) struct InboxDock {
+    pub(super) inbox: ClientUserInbox,
+    /// Tabs des Inbox-Space beim letzten Blick; `None`, bis der neue Tab im
+    /// Snapshot fokussiert ist.
+    pub(super) space_tabs: Option<usize>,
+    pub(super) since: std::time::Instant,
+}
+
+/// So lange wartet die Dock-Ansicht auf den neuen Tab, bevor sie aufgibt.
+const DOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 
 impl ClientUserInbox {
     fn new(revision: u64) -> Self {
@@ -83,6 +99,7 @@ impl ClientUserInbox {
             reading: false,
             detail_scroll: 0,
             scroll: 0,
+            origin_pane: None,
         }
     }
 
@@ -138,7 +155,7 @@ fn kind_label(kind: &str) -> &'static str {
 /// Zähler der globalen Inbox für die Sidebar: Symbol, wichtige rot,
 /// optionale grau. `None`, wenn nichts offen ist.
 pub(super) fn inbox_badge(snapshot: &ClientShellSnapshot, palette: &Palette) -> Option<MdLine> {
-    let counts = snapshot.user_inbox;
+    let counts = &snapshot.user_inbox;
     if counts.important + counts.optional == 0 {
         return None;
     }
@@ -188,27 +205,34 @@ pub(super) fn badge_width(spans: &MdLine) -> u16 {
 }
 
 /// Spaltenbreiten: Markierung, Status, Art, Chat, Titel, Alter.
+/// Schmal steht die Art nur als Symbol da.
 fn columns(width: u16) -> [u16; 6] {
-    let fixed = 2 + 2 + 11 + 5;
-    let flex = width.saturating_sub(fixed + 5);
-    let chat = (flex / 4).clamp(8, 22);
+    let kind = if width >= 64 { 11 } else { 1 };
+    let fixed = 1 + 1 + kind + 5 + 5;
+    let flex = width.saturating_sub(fixed);
+    let chat = (flex / 3).clamp(6, 22);
     let title = flex.saturating_sub(chat);
-    [1, 1, 11, chat, title, 5]
+    [1, 1, kind, chat, title, 5]
 }
 
-pub(super) fn render_user_inbox(
-    buffer: &mut Buffer,
-    inbox: &ClientUserInbox,
-    snapshot: Option<&ClientShellSnapshot>,
-    config: &ClientShellConfig,
-) -> Option<TelescopeRender> {
-    let palette = &config.palette;
-    let now = crate::workspace::unix_millis_now();
-    let rect = telescope_rect(buffer.area);
-    let inner = frame(buffer, rect, palette)?;
-    let base = Style::default().bg(palette.panel_bg);
-    let selected = selected_index(inbox);
+/// Fläche der offenen Inbox: volle Höhe, fast volle Breite. Rechts bleibt
+/// ein Streifen frei; ein Klick dorthin schließt.
+pub(super) fn inbox_rect(screen: Rect) -> Rect {
+    let width = screen
+        .width
+        .saturating_sub(BACKDROP_COLS)
+        .max(screen.width.min(40));
+    Rect::new(screen.x, screen.y, width, screen.height)
+}
 
+/// Breite der angedockten Liste, während eine Aufgabe läuft.
+pub(super) fn dock_width(cols: u16) -> u16 {
+    (cols * 2 / 5).clamp(36, 72).min(cols.saturating_sub(20))
+}
+
+/// Titel und Markierungen im Rahmen.
+fn render_title(buffer: &mut Buffer, rect: Rect, inbox: &ClientUserInbox, palette: &Palette) {
+    let base = Style::default().bg(palette.panel_bg);
     let open = inbox.entries.iter().filter(|entry| pending(entry)).count();
     let title = format!(" {ICON_INBOX} Inbox · {open} offen ");
     put_text(
@@ -231,6 +255,51 @@ pub(super) fn render_user_inbox(
             base.fg(palette.green),
         );
     }
+}
+
+/// Leere Inbox oder Ladehinweis; `true`, wenn er gezeichnet wurde.
+fn render_empty(
+    buffer: &mut Buffer,
+    inner: Rect,
+    inbox: &ClientUserInbox,
+    palette: &Palette,
+) -> bool {
+    if inbox.loaded && !inbox.entries.is_empty() {
+        return false;
+    }
+    let text = if inbox.loaded {
+        "Nichts in der Inbox. Chats legen Einträge mit `herdr chat tell-user` ab."
+    } else {
+        "lädt …"
+    };
+    put_text(
+        buffer,
+        inner.x,
+        inner.y.saturating_add(1),
+        inner.width,
+        text,
+        Style::default()
+            .bg(palette.panel_bg)
+            .fg(palette.overlay0)
+            .add_modifier(Modifier::ITALIC),
+    );
+    true
+}
+
+/// Die offene Inbox: links die Tabelle, rechts der Lesebereich.
+pub(super) fn render_user_inbox(
+    buffer: &mut Buffer,
+    inbox: &ClientUserInbox,
+    snapshot: Option<&ClientShellSnapshot>,
+    config: &ClientShellConfig,
+) -> Option<TelescopeRender> {
+    let palette = &config.palette;
+    let now = crate::workspace::unix_millis_now();
+    let rect = inbox_rect(buffer.area);
+    let inner = frame(buffer, rect, palette)?;
+    let base = Style::default().bg(palette.panel_bg);
+    let selected = selected_index(inbox);
+    render_title(buffer, rect, inbox, palette);
 
     let footer_y = inner.bottom().saturating_sub(1);
     let footer = if inbox.pending_delete {
@@ -240,7 +309,7 @@ pub(super) fn render_user_inbox(
         )
     } else if inbox.reading {
         (
-            "j/k scrollen · enter/esc zur Tabelle · r Rückfrage · dd erledigt",
+            "j/k scrollen · esc zur Tabelle · r Rückfrage · dd erledigt",
             base.fg(palette.overlay0),
         )
     } else {
@@ -252,63 +321,48 @@ pub(super) fn render_user_inbox(
     put_text(buffer, inner.x, footer_y, inner.width, footer.0, footer.1);
 
     let mut menu_rows = Vec::new();
-    if !inbox.loaded || inbox.entries.is_empty() {
-        let text = if inbox.loaded {
-            "Nichts in der Inbox. Chats legen Einträge mit `herdr chat tell-user` ab."
-        } else {
-            "lädt …"
-        };
-        put_text(
-            buffer,
-            inner.x,
-            inner.y.saturating_add(1),
-            inner.width,
-            text,
-            base.fg(palette.overlay0).add_modifier(Modifier::ITALIC),
-        );
+    let body = Rect::new(
+        inner.x,
+        inner.y,
+        inner.width,
+        footer_y.saturating_sub(1).saturating_sub(inner.y),
+    );
+    if render_empty(buffer, body, inbox, palette) {
         return Some(TelescopeRender {
             area: rect,
             menu_rows,
         });
     }
 
-    // Tabelle oben, Text unten. Beim Lesen füllt der Text alles.
-    let body_bottom = footer_y.saturating_sub(1);
-    let table_height = if inbox.reading {
-        0
+    // Links die Tabelle, rechts der Text des gewählten Eintrags.
+    let table_width = (body.width * 9 / 20).clamp(40.min(body.width), body.width);
+    let table = Rect::new(body.x, body.y, table_width, body.height);
+    render_table(
+        buffer,
+        table,
+        inbox,
+        selected,
+        snapshot,
+        now,
+        palette,
+        &mut menu_rows,
+    );
+    let divider_x = table.right().saturating_add(1);
+    let divider = if inbox.reading {
+        palette.accent
     } else {
-        let wanted = inbox.entries.len() as u16 + 1;
-        let room = body_bottom.saturating_sub(inner.y);
-        wanted.min(room.saturating_sub(MIN_DETAIL_LINES + 1).max(room / 3))
+        palette.surface1
     };
-    let table = Rect::new(inner.x, inner.y, inner.width, table_height);
-    if table.height > 1 {
-        render_table(
-            buffer,
-            table,
-            inbox,
-            selected,
-            snapshot,
-            now,
-            palette,
-            &mut menu_rows,
-        );
+    for y in body.y..body.bottom() {
+        put_text(buffer, divider_x, y, 1, "│", base.fg(divider));
     }
-
-    let detail_top = if inbox.reading {
-        inner.y
-    } else {
-        for x in inner.x..inner.right() {
-            put_text(buffer, x, table.bottom(), 1, "─", base.fg(palette.surface1));
-        }
-        table.bottom().saturating_add(1)
-    };
+    let detail_x = divider_x.saturating_add(2);
     if let Some(entry) = inbox.entries.get(selected) {
         let detail = Rect::new(
-            inner.x,
-            detail_top,
-            inner.width,
-            body_bottom.saturating_sub(detail_top),
+            detail_x,
+            body.y,
+            body.right().saturating_sub(detail_x),
+            body.height,
         );
         render_detail(
             buffer,
@@ -324,6 +378,50 @@ pub(super) fn render_user_inbox(
         area: rect,
         menu_rows,
     })
+}
+
+/// Die angedockte Liste, während eine Aufgabe im Inbox-Space läuft.
+pub(super) fn render_inbox_dock(
+    buffer: &mut Buffer,
+    area: Rect,
+    inbox: &ClientUserInbox,
+    snapshot: Option<&ClientShellSnapshot>,
+    config: &ClientShellConfig,
+) -> Option<TelescopeRender> {
+    let palette = &config.palette;
+    let now = crate::workspace::unix_millis_now();
+    let inner = frame(buffer, area, palette)?;
+    let base = Style::default().bg(palette.panel_bg);
+    render_title(buffer, area, inbox, palette);
+    let footer_y = inner.bottom().saturating_sub(1);
+    put_text(
+        buffer,
+        inner.x,
+        footer_y,
+        inner.width,
+        "prefix+i oder Klick: zurück in die Inbox",
+        base.fg(palette.overlay0),
+    );
+    let mut menu_rows = Vec::new();
+    let body = Rect::new(
+        inner.x,
+        inner.y,
+        inner.width,
+        footer_y.saturating_sub(1).saturating_sub(inner.y),
+    );
+    if !render_empty(buffer, body, inbox, palette) {
+        render_table(
+            buffer,
+            body,
+            inbox,
+            selected_index(inbox),
+            snapshot,
+            now,
+            palette,
+            &mut menu_rows,
+        );
+    }
+    Some(TelescopeRender { area, menu_rows })
 }
 
 /// Name des Chats aus dem Snapshot, sonst aus dem Eintrag.
@@ -356,7 +454,14 @@ fn render_table(
 ) {
     let base = Style::default().bg(palette.panel_bg);
     let widths = columns(table.width);
-    let headers = ["", "", "Art", "Chat", "Titel", "Alter"];
+    let headers = [
+        "",
+        "",
+        if widths[2] > 1 { "Art" } else { "" },
+        "Chat",
+        "Titel",
+        "Alter",
+    ];
     let mut x = table.x;
     for (header, width) in headers.iter().zip(widths) {
         put_text(
@@ -427,12 +532,12 @@ fn render_table(
             ("●", palette.accent)
         };
         cell(buffer, 1, dot, row_style.fg(dot_color));
-        cell(
-            buffer,
-            2,
-            &format!("{} {}", kind_symbol(&entry.kind), kind_label(&entry.kind)),
-            row_style.fg(palette.subtext0),
-        );
+        let kind = if widths[2] > 1 {
+            format!("{} {}", kind_symbol(&entry.kind), kind_label(&entry.kind))
+        } else {
+            kind_symbol(&entry.kind).to_owned()
+        };
+        cell(buffer, 2, &kind, row_style.fg(palette.subtext0));
         let chat_color = if entry.master {
             palette.yellow
         } else {
@@ -543,23 +648,86 @@ fn by_chat(keys: &[EntryKey]) -> Vec<(String, Vec<u64>)> {
 }
 
 impl ClientShellState {
-    /// Öffnet die globale Nutzer-Inbox und lädt ihre Einträge.
+    /// Öffnet die globale Nutzer-Inbox und lädt ihre Einträge. Ist sie
+    /// angedockt, kommt sie wieder ganz nach vorn.
     pub(super) fn open_user_inbox(&mut self, outcome: &mut ClientShellInput) {
-        let Some(revision) = self
-            .snapshot
-            .as_deref()
-            .map(|snapshot| snapshot.user_inbox.revision)
-        else {
+        if self.inbox_dock.is_some() {
+            self.undock_user_inbox(true, outcome);
+            return;
+        }
+        let Some(snapshot) = self.snapshot.as_deref() else {
             return;
         };
+        let revision = snapshot.user_inbox.revision;
+        let in_space = snapshot.user_inbox.space_workspace_id.is_some()
+            && snapshot.focused_workspace_id == snapshot.user_inbox.space_workspace_id;
+        let origin_pane = (!in_space).then(|| self.focused_pane_id()).flatten();
         if self.mode == ClientShellMode::Navigate {
             self.leave_sidebar(false, outcome);
         }
-        self.overlay = Some(ClientShellOverlay::UserInbox(ClientUserInbox::new(
-            revision,
-        )));
+        let mut inbox = ClientUserInbox::new(revision);
+        inbox.origin_pane = origin_pane;
+        self.overlay = Some(ClientShellOverlay::UserInbox(inbox));
         self.request_user_inbox(outcome);
         outcome.repaint = true;
+    }
+
+    /// Die Inbox, ob offen oder angedockt.
+    fn user_inbox_mut(&mut self) -> Option<&mut ClientUserInbox> {
+        match self.overlay.as_mut() {
+            Some(ClientShellOverlay::UserInbox(inbox)) => Some(inbox),
+            _ => self.inbox_dock.as_mut().map(|dock| &mut dock.inbox),
+        }
+    }
+
+    /// Dockt die Inbox ab: `back` holt sie ganz nach vorn, sonst schließt
+    /// sie, und zurückgehaltene Rückmeldungen gehen raus.
+    fn undock_user_inbox(&mut self, back: bool, outcome: &mut ClientShellInput) {
+        let Some(dock) = self.inbox_dock.take() else {
+            return;
+        };
+        self.invalidate_pane_surface();
+        outcome.resize = true;
+        outcome.repaint = true;
+        if back {
+            if self.mode == ClientShellMode::Navigate {
+                self.leave_sidebar(false, outcome);
+            }
+            self.overlay = Some(ClientShellOverlay::UserInbox(dock.inbox));
+            self.request_user_inbox(outcome);
+        } else {
+            self.push_user_inbox_act(None, ChatUserInboxAction::Flush, Vec::new(), outcome);
+        }
+    }
+
+    /// Klick auf die angedockte Liste: die Inbox kommt nach vorn, mit dem
+    /// angeklickten Eintrag unter dem Cursor.
+    pub(super) fn route_inbox_dock_mouse(
+        &mut self,
+        mouse: MouseEvent,
+        outcome: &mut ClientShellInput,
+    ) -> bool {
+        if self.inbox_dock.is_none() || self.overlay.is_some() {
+            return false;
+        }
+        let point = (mouse.column, mouse.row);
+        if !super::contains(self.hits.inbox_dock_area, point) {
+            return false;
+        }
+        if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
+            let hit = self
+                .hits
+                .inbox_dock_rows
+                .iter()
+                .find(|(rect, _)| super::contains(*rect, point))
+                .map(|(_, index)| *index);
+            if let (Some(index), Some(dock)) = (hit, self.inbox_dock.as_mut()) {
+                dock.inbox.selected = dock.inbox.entries.get(index).map(EntryKey::of);
+                dock.inbox.detail_scroll = 0;
+            }
+            self.undock_user_inbox(true, outcome);
+        }
+        true
     }
 
     fn request_user_inbox(&mut self, outcome: &mut ClientShellInput) {
@@ -567,7 +735,7 @@ impl ClientShellState {
             .snapshot
             .as_deref()
             .map(|snapshot| snapshot.user_inbox.revision);
-        let Some(ClientShellOverlay::UserInbox(inbox)) = self.overlay.as_mut() else {
+        let Some(inbox) = self.user_inbox_mut() else {
             return;
         };
         let revision = revision.unwrap_or(inbox.revision);
@@ -636,7 +804,7 @@ impl ClientShellState {
         else {
             return false;
         };
-        let Some(ClientShellOverlay::UserInbox(inbox)) = self.overlay.as_mut() else {
+        let Some(inbox) = self.user_inbox_mut() else {
             return false;
         };
         sort_entries(&mut user_inbox);
@@ -670,9 +838,7 @@ impl ClientShellState {
     /// Lädt die Inbox neu, wenn sich die Revision im Snapshot geändert hat,
     /// etwa weil ein Chat etwas abgelegt hat.
     pub(crate) fn tick_user_inbox(&mut self, outcome: &mut ClientShellInput) {
-        let Some(ClientShellOverlay::UserInbox(inbox)) = self.overlay.as_ref() else {
-            return;
-        };
+        self.tick_inbox_dock(outcome);
         let Some(current) = self
             .snapshot
             .as_deref()
@@ -680,45 +846,91 @@ impl ClientShellState {
         else {
             return;
         };
+        let Some(inbox) = self.user_inbox_mut() else {
+            return;
+        };
         if current != inbox.revision && inbox.requested != Some(current) {
             self.request_user_inbox(outcome);
+        }
+    }
+
+    /// Folgt der laufenden Aufgabe: Schließt sich ihr Tab, kommt die Inbox
+    /// zurück. Wechselt der Nutzer woandershin, schließt sie.
+    fn tick_inbox_dock(&mut self, outcome: &mut ClientShellInput) {
+        let Some(snapshot) = self.snapshot.as_deref() else {
+            return;
+        };
+        let Some(dock) = self.inbox_dock.as_mut() else {
+            return;
+        };
+        let space = snapshot.user_inbox.space_workspace_id.as_deref();
+        let tabs = space.map_or(0, |space| {
+            snapshot
+                .tabs
+                .iter()
+                .filter(|tab| tab.workspace_id == space)
+                .count()
+        });
+        let focused = space.is_some() && snapshot.focused_workspace_id.as_deref() == space;
+        match dock.space_tabs {
+            None if focused && tabs > 0 => dock.space_tabs = Some(tabs),
+            None if dock.since.elapsed() > DOCK_WAIT => self.undock_user_inbox(true, outcome),
+            None => {}
+            // Ein Tab weniger: die Aufgabe ist fertig.
+            Some(known) if tabs < known => self.undock_user_inbox(true, outcome),
+            Some(_) if !focused => self.undock_user_inbox(false, outcome),
+            Some(known) if tabs > known => dock.space_tabs = Some(tabs),
+            Some(_) => {}
         }
     }
 
     /// Schließt das Overlay. Zurückgehaltene Rückmeldungen gehen jetzt an
     /// die Chats.
     fn close_user_inbox(&mut self, outcome: &mut ClientShellInput) {
-        if !matches!(self.overlay, Some(ClientShellOverlay::UserInbox(_))) {
+        let Some(ClientShellOverlay::UserInbox(inbox)) = self.overlay.take() else {
             return;
-        }
-        self.overlay = None;
+        };
         self.push_user_inbox_act(None, ChatUserInboxAction::Flush, Vec::new(), outcome);
         outcome.repaint = true;
+        // Zurück dorthin, wo die Inbox geöffnet wurde.
+        let origin = inbox.origin_pane.filter(|pane| {
+            self.snapshot
+                .as_deref()
+                .is_some_and(|snapshot| snapshot.panes.iter().any(|known| &known.pane_id == pane))
+        });
+        if let Some(pane) = origin {
+            if self.focused_pane_id().as_deref() != Some(pane.as_str()) {
+                self.focus_or_activate(
+                    self.active_endpoint_id.clone(),
+                    ClientEndpointFocusTarget::Pane(pane),
+                    outcome,
+                );
+            }
+        }
     }
 
-    /// Formular, Wizard oder Rückfrage öffnen ein Pane neben dem Chat des
-    /// Eintrags. Das Overlay schließt und der Chat kommt nach vorn.
+    /// Formular, Wizard oder Rückfrage laufen als Tab im Inbox-Space. Die
+    /// Inbox dockt links an, bis der Tab sich schließt.
     fn open_user_inbox_pane(
         &mut self,
         action: ChatUserInboxAction,
         key: EntryKey,
         outcome: &mut ClientShellInput,
     ) {
-        let pane = self.snapshot.as_deref().and_then(|snapshot| {
-            super::chats::all_chat_rows(snapshot)
-                .into_iter()
-                .find(|row| row.workspace_id == key.workspace_id)
-                .map(|row| row.pane_id)
-        });
         self.act_on_user_inbox(action, std::slice::from_ref(&key), outcome);
-        self.close_user_inbox(outcome);
-        if let Some(pane) = pane {
-            self.focus_or_activate(
-                self.active_endpoint_id.clone(),
-                ClientEndpointFocusTarget::Pane(pane),
-                outcome,
-            );
-        }
+        let Some(ClientShellOverlay::UserInbox(mut inbox)) = self.overlay.take() else {
+            return;
+        };
+        inbox.reading = false;
+        inbox.pending_delete = false;
+        self.inbox_dock = Some(InboxDock {
+            inbox,
+            space_tabs: None,
+            since: std::time::Instant::now(),
+        });
+        self.invalidate_pane_surface();
+        outcome.resize = true;
+        outcome.repaint = true;
     }
 
     pub(super) fn route_user_inbox_key(
@@ -888,7 +1100,15 @@ impl ClientShellState {
             }
             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
                 let down = mouse.kind == MouseEventKind::ScrollDown;
-                if inbox.reading {
+                // Rechts der Tabelle scrollt das Rad den Text.
+                let table_right = self
+                    .hits
+                    .telescope_rows
+                    .iter()
+                    .map(|(rect, _)| rect.right())
+                    .max()
+                    .unwrap_or(0);
+                if inbox.reading || point.0 > table_right {
                     inbox.detail_scroll = if down {
                         inbox.detail_scroll + 3
                     } else {
@@ -943,7 +1163,7 @@ mod tests {
 
     fn screen(inbox: &ClientUserInbox) -> String {
         let config = ClientShellConfig::from_config(&crate::config::Config::default());
-        let mut buffer = Buffer::empty(Rect::new(0, 0, 100, 30));
+        let mut buffer = Buffer::empty(Rect::new(0, 0, 160, 30));
         render_user_inbox(&mut buffer, inbox, None, &config).expect("rendered");
         (0..buffer.area.height)
             .map(|y| {
@@ -958,7 +1178,7 @@ mod tests {
     }
 
     #[test]
-    fn overlay_is_a_table_with_rendered_markdown_below() {
+    fn overlay_is_a_table_with_rendered_markdown_beside_it() {
         let mut answer = entry(1, true, 2);
         answer.kind = "antwort".into();
         answer.title = "Was ist seit gestern passiert?".into();
@@ -1010,8 +1230,13 @@ mod tests {
         inbox.pending_delete = false;
         inbox.reading = true;
         let reading = screen(&inbox);
-        assert!(!reading.contains("Titel"));
+        // Die Tabelle bleibt sichtbar, der Text daneben hat den Fokus.
+        assert!(reading.contains("Titel"));
         assert!(reading.contains("Stand"));
+        assert!(reading.contains("esc zur Tabelle"));
+        // Rechts bleibt der Streifen zum Schließen frei.
+        let first = reading.lines().next().unwrap_or_default();
+        assert!(display_width(first) <= 160 - BACKDROP_COLS, "{first}");
     }
 
     #[test]

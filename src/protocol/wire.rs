@@ -954,12 +954,14 @@ pub struct ClientShellSnapshot {
 }
 
 /// collie: Offene Einträge der Nutzer-Inbox über alle Chats.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClientShellUserInbox {
     pub important: usize,
     pub optional: usize,
     /// Ändert sich mit jeder Änderung an der Inbox eines Chats.
     pub revision: u64,
+    /// Space, in dem Formulare, Wizards und Rückfragen als Tabs laufen.
+    pub space_workspace_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2948,6 +2950,7 @@ mod tests {
                 important: 1,
                 optional: 2,
                 revision: 3,
+                space_workspace_id: Some("ws_9".into()),
             },
         }));
         let encoded = bincode::serde::encode_to_vec(&msg, bincode::config::standard()).unwrap();

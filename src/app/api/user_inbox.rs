@@ -11,11 +11,10 @@ use std::time::Instant;
 
 use crate::api::schema::{
     ChatTellUserParams, ChatUserInboxActParams, ChatUserInboxAction, ChatUserInboxParams,
-    ChatWorkspaceParams, PaneRenameParams, PaneSendInputParams, PaneSplitParams, ResponseResult,
-    SplitDirection, UserInboxEntryInfo,
+    ChatWorkspaceParams, PaneSendInputParams, ResponseResult, TabCreateParams, UserInboxEntryInfo,
 };
 use crate::app::App;
-use crate::workspace::{UserInboxEntry, UserInboxKind, UserReply};
+use crate::workspace::{UserInboxEntry, UserInboxKind, UserInboxTask, UserReply};
 
 use super::chats::shell_word;
 use super::responses::{encode_error, encode_success};
@@ -473,7 +472,7 @@ impl App {
                 ));
             }
         };
-        self.run_in_master_pane(master, &command, &entry.title)?;
+        self.run_in_inbox_tab(master, entry.id, false, &command, &entry.title)?;
         self.update_user_entries(master, &[entry.id], |entry| entry.read = true);
         Ok(())
     }
@@ -497,7 +496,13 @@ impl App {
             id = entry.id,
             ws = shell_word(&workspace),
         );
-        self.run_in_master_pane(master, &command, "Rückfrage")
+        self.run_in_inbox_tab(
+            master,
+            entry.id,
+            true,
+            &command,
+            &format!("Rückfrage: {}", entry.title),
+        )
     }
 
     fn note_form_answered(
@@ -598,49 +603,100 @@ impl App {
             });
     }
 
-    /// Teilt das Agent-Pane des Masters und tippt dort einen Befehl ein.
-    fn run_in_master_pane(
+    /// Index des Inbox-Space, falls es ihn gibt.
+    pub(crate) fn user_inbox_space(&self) -> Option<usize> {
+        self.state
+            .workspaces
+            .iter()
+            .position(|ws| ws.chat.team.user_inbox_space)
+    }
+
+    /// Offene Aufgabe zu einem Eintrag, deren Tab noch lebt.
+    fn user_inbox_task_tab(
+        &self,
+        chat_id: &str,
+        entry_id: u64,
+        reply: bool,
+    ) -> Option<(usize, usize)> {
+        let space = self.user_inbox_space()?;
+        let task = self.state.workspaces[space]
+            .chat
+            .team
+            .user_inbox_tasks
+            .iter()
+            .find(|task| {
+                task.workspace_id == chat_id && task.entry_id == entry_id && task.reply == reply
+            })?;
+        self.parse_tab_id(&task.tab_id)
+            .filter(|(ws, _)| *ws == space)
+    }
+
+    /// Startet einen Befehl in einem neuen Tab des Inbox-Space und holt den
+    /// Tab nach vorn. Läuft die Aufgabe schon, springt er zu ihrem Tab.
+    fn run_in_inbox_tab(
         &mut self,
-        master: usize,
+        chat: usize,
+        entry_id: u64,
+        reply: bool,
         command: &str,
         label: &str,
     ) -> Result<(), (&'static str, String)> {
-        let failed = |message: &str| ("user_inbox_pane_failed", message.to_owned());
-        let agent = self
-            .chat_agent_pane(master)
-            .and_then(|pane| self.public_pane_id(master, pane))
-            .ok_or_else(|| failed("master has no pane"))?;
-        let split = self.handle_pane_split(
-            "user-inbox:split".into(),
-            PaneSplitParams {
-                workspace_id: None,
-                target_pane_id: Some(agent),
-                direction: SplitDirection::Right,
-                ratio: Some(0.5),
-                cwd: self.chat_cwd(master),
-                focus: true,
-                right_click: Default::default(),
-                env: Default::default(),
-            },
-        );
-        let pane = serde_json::from_str::<serde_json::Value>(&split)
-            .ok()
-            .and_then(|response| {
-                Some(
-                    response
-                        .pointer("/result/pane/pane_id")?
-                        .as_str()?
-                        .to_owned(),
-                )
-            })
-            .ok_or_else(|| failed("could not split the master pane"))?;
-        self.handle_pane_rename(
-            "user-inbox:rename".into(),
-            PaneRenameParams {
-                pane_id: pane.clone(),
-                label: Some(label.chars().take(40).collect()),
-            },
-        );
+        let failed = |message: &str| ("user_inbox_tab_failed", message.to_owned());
+        let chat_id = self.state.workspaces[chat].id.clone();
+        if let Some((space, tab)) = self.user_inbox_task_tab(&chat_id, entry_id, reply) {
+            self.state.switch_workspace_tab(space, tab);
+            self.state.mode = crate::app::Mode::Terminal;
+            return Ok(());
+        }
+        let cwd = self
+            .chat_cwd(chat)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| self.resolve_new_terminal_cwd(None));
+        let label: String = label.chars().take(40).collect();
+        let (space, tab) = match self.user_inbox_space() {
+            Some(space) => {
+                let response = self.handle_tab_create(
+                    "user-inbox:tab".into(),
+                    TabCreateParams {
+                        workspace_id: Some(self.state.workspaces[space].id.clone()),
+                        cwd: Some(cwd.to_string_lossy().into_owned()),
+                        focus: false,
+                        label: Some(label.clone()),
+                        env: Default::default(),
+                    },
+                );
+                let tab_id = serde_json::from_str::<serde_json::Value>(&response)
+                    .ok()
+                    .and_then(|response| {
+                        Some(response.pointer("/result/tab/tab_id")?.as_str()?.to_owned())
+                    })
+                    .ok_or_else(|| failed("could not open a tab in the inbox space"))?;
+                self.parse_tab_id(&tab_id)
+                    .ok_or_else(|| failed("new inbox tab disappeared"))?
+            }
+            None => {
+                let space = self
+                    .create_workspace_with_launch_env(cwd, false, Vec::new())
+                    .map_err(|err| ("user_inbox_tab_failed", err.to_string()))?;
+                let ws = &mut self.state.workspaces[space];
+                ws.set_custom_name("Inbox".to_owned());
+                ws.chat.team.user_inbox_space = true;
+                if let Some(tab) = ws.tabs.first_mut() {
+                    tab.set_custom_name(label.clone());
+                }
+                self.emit_workspace_open_events(space);
+                (space, 0)
+            }
+        };
+        let tab_id = self
+            .public_tab_id(space, tab)
+            .ok_or_else(|| failed("inbox tab has no id"))?;
+        let pane = self.state.workspaces[space]
+            .tabs
+            .get(tab)
+            .map(|tab| tab.root_pane)
+            .and_then(|pane| self.public_pane_id(space, pane))
+            .ok_or_else(|| failed("inbox tab has no pane"))?;
         self.handle_pane_send_input(
             "user-inbox:run".into(),
             PaneSendInputParams {
@@ -649,6 +705,19 @@ impl App {
                 keys: vec!["Enter".into()],
             },
         );
+        let team = &mut self.state.workspaces[space].chat.team;
+        team.user_inbox_tasks.retain(|task| {
+            !(task.workspace_id == chat_id && task.entry_id == entry_id && task.reply == reply)
+        });
+        team.user_inbox_tasks.push(UserInboxTask {
+            workspace_id: chat_id,
+            entry_id,
+            reply,
+            tab_id,
+        });
+        self.state.switch_workspace_tab(space, tab);
+        self.state.mode = crate::app::Mode::Terminal;
+        self.schedule_session_save();
         Ok(())
     }
 
@@ -1030,5 +1099,47 @@ mod tests {
         let prompt = user_reply_prompt(&["- #1 nachricht „A“: abgearbeitet".into()]);
         assert!(prompt.starts_with(COLLIE_PROMPT_PREFIX));
         assert!(prompt.ends_with("abgearbeitet"));
+    }
+
+    // Die Tabs brauchen eine Shell, die offen bleibt; `cat` wartet auf
+    // Eingabe.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn forms_run_as_tabs_in_one_inbox_space() {
+        let mut app = test_app();
+        app.state.default_shell = "/bin/cat".into();
+        app.state.shell_mode = crate::config::ShellModeConfig::NonLogin;
+        app.state.ensure_test_terminals();
+        let file = std::env::temp_dir().join(format!("collie-space-{}.md", std::process::id()));
+        std::fs::write(&file, "# F\n").unwrap();
+        let path = Some(file.to_string_lossy().into_owned());
+        tell(&mut app, "formular", "Erstes", path.clone());
+        tell(&mut app, "formular", "Zweites", path);
+
+        let opened = act(&mut app, ChatUserInboxAction::Open, vec![1]);
+        assert!(opened.get("error").is_none(), "{opened}");
+        let space = app.user_inbox_space().expect("inbox space");
+        assert_eq!(app.state.active, Some(space));
+        assert_eq!(app.state.workspaces[space].tabs.len(), 1);
+        assert_eq!(app.workspace_info(space).label, "Inbox");
+        // Der Chat bekommt kein zusätzliches Pane.
+        assert_eq!(app.state.workspaces[0].tabs[0].layout.pane_count(), 1);
+
+        // Nochmal `enter` springt zum offenen Tab, ein anderes Formular
+        // bekommt einen eigenen.
+        app.state.active = Some(0);
+        act(&mut app, ChatUserInboxAction::Open, vec![1]);
+        assert_eq!(app.state.active, Some(space));
+        assert_eq!(app.state.workspaces[space].tabs.len(), 1);
+        let second = act(&mut app, ChatUserInboxAction::Open, vec![2]);
+        assert!(second.get("error").is_none(), "{second}");
+        assert_eq!(app.state.workspaces[space].tabs.len(), 2);
+        assert_eq!(
+            app.state.workspaces[space].chat.team.user_inbox_tasks.len(),
+            2
+        );
+        let (important, _, _) = app.global_user_inbox();
+        assert_eq!(important, 2);
+        let _ = std::fs::remove_file(file);
     }
 }

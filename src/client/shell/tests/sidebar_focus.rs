@@ -1375,6 +1375,7 @@ fn the_global_user_inbox_opens_with_i_and_dd_reports_per_chat_on_leave() {
         important: 2,
         optional: 1,
         revision: 7,
+        ..Default::default()
     };
     let (mut state, rows) = agents_only_state_with(snapshot);
     // Die schmale Liste zeigt den globalen Zähler im Kopf.
@@ -1422,7 +1423,7 @@ fn the_global_user_inbox_opens_with_i_and_dd_reports_per_chat_on_leave() {
         }),
     );
     assert!(repaint);
-    let frame = state.compose(100, 28).expect("frame");
+    let frame = state.compose(160, 28).expect("frame");
     let rows = frame_rows(&frame);
     assert!(
         rows.iter()
@@ -1474,6 +1475,7 @@ fn the_chat_header_shows_the_global_inbox_counter_and_opens_it_on_click() {
         important: 3,
         optional: 2,
         revision: 1,
+        ..Default::default()
     };
     let mut state = chat_overlay_state_with(snapshot);
     focus_sidebar(&mut state);
@@ -1502,6 +1504,7 @@ fn the_chat_rail_shows_the_crown_for_masters_and_the_inbox_counter() {
         important: 1,
         optional: 0,
         revision: 1,
+        ..Default::default()
     };
     let mut state = chat_overlay_state_with(snapshot);
     let rows = frame_rows(&state.compose(160, 28).expect("frame"));
@@ -1521,4 +1524,99 @@ fn the_chat_rail_shows_the_crown_for_masters_and_the_inbox_counter() {
         state.overlay,
         Some(ClientShellOverlay::UserInbox(_))
     ));
+}
+
+#[test]
+fn a_form_runs_as_a_tab_in_the_inbox_space_and_the_inbox_returns_afterwards() {
+    let mut snapshot = master_snapshot();
+    snapshot.user_inbox = crate::protocol::ClientShellUserInbox {
+        important: 1,
+        revision: 1,
+        ..Default::default()
+    };
+    let mut state = chat_overlay_state_with(snapshot.clone());
+    let wide = state.surface_size(160, 28).cols;
+    let mut outcome = ClientShellInput::default();
+    state.open_user_inbox(&mut outcome);
+    let request = endpoint_request_id(&outcome, "chat.user_inbox");
+    state.handle_endpoint_result(
+        "boot-1",
+        &request,
+        Ok(crate::api::schema::ResponseResult::ChatUserInbox {
+            user_inbox: vec![crate::api::schema::UserInboxEntryInfo {
+                id: 4,
+                at: 1,
+                kind: "formular".into(),
+                important: true,
+                title: "Migration jetzt?".into(),
+                text: String::new(),
+                path: Some("/tmp/f.md".into()),
+                read: false,
+                finished: false,
+                workspace_id: "ws_2".into(),
+                chat: "Master Chat".into(),
+                master: true,
+            }],
+        }),
+    );
+
+    // `enter` startet das Formular im Inbox-Space; die Liste dockt links an
+    // und die Panes rücken nach rechts.
+    let outcome = press(&mut state, b"\r");
+    assert!(matches!(
+        methods(&outcome).as_slice(),
+        [Method::ChatUserInboxAct(params)]
+            if params.action == crate::api::schema::ChatUserInboxAction::Open
+                && params.workspace_id.as_deref() == Some("ws_2")
+                && params.ids == [4]
+    ));
+    assert!(state.overlay.is_none());
+    assert!(state.inbox_dock.is_some());
+    assert!(state.surface_size(160, 28).cols < wide);
+    state.set_pane_surface(surface());
+    let rows = frame_rows(&state.compose(160, 28).expect("frame"));
+    assert!(
+        rows.iter().any(|row| row.contains("zurück in die Inbox")),
+        "{rows:#?}"
+    );
+
+    // Der Server legt den Space mit dem Tab an und fokussiert ihn.
+    let mut with_space = snapshot.clone();
+    let mut space = with_space.workspaces[0].clone();
+    space.workspace_id = "ws_9".into();
+    space.team = None;
+    with_space.workspaces.push(space);
+    let mut tab = with_space.tabs[0].clone();
+    tab.workspace_id = "ws_9".into();
+    tab.tab_id = "tab_9".into();
+    with_space.tabs.push(tab);
+    with_space.focused_workspace_id = Some("ws_9".into());
+    with_space.user_inbox.space_workspace_id = Some("ws_9".into());
+    state.set_snapshot(Box::new(with_space.clone()));
+    let mut outcome = ClientShellInput::default();
+    state.tick_user_inbox(&mut outcome);
+    assert_eq!(
+        state.inbox_dock.as_ref().and_then(|dock| dock.space_tabs),
+        Some(1)
+    );
+    // Der Inbox-Space steht nicht in der Chat-Liste.
+    assert!(crate::client::shell::chats::all_chat_rows(&with_space)
+        .iter()
+        .all(|row| row.workspace_id != "ws_9"));
+
+    // Nach `:wq` schließt der Tab und mit ihm der Space: die Inbox ist
+    // wieder ganz offen und lädt neu.
+    let mut done = snapshot.clone();
+    done.revision = 3;
+    state.set_snapshot(Box::new(done));
+    let mut outcome = ClientShellInput::default();
+    state.tick_user_inbox(&mut outcome);
+    assert!(state.inbox_dock.is_none());
+    assert!(matches!(
+        state.overlay,
+        Some(ClientShellOverlay::UserInbox(_))
+    ));
+    assert!(methods(&outcome)
+        .iter()
+        .any(|method| matches!(method, Method::ChatUserInbox(params) if params.all)));
 }

@@ -301,6 +301,9 @@ pub(super) fn snapshot_with_completions(
                 important,
                 optional,
                 revision,
+                space_workspace_id: app
+                    .user_inbox_space()
+                    .map(|index| app.public_workspace_id(index)),
             }
         },
     };

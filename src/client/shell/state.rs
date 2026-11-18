@@ -121,6 +121,9 @@ pub(super) struct ShellHitMap {
     pub(super) user_inbox_counts: Vec<Rect>,
     /// collie: Fläche des Inbox-Overlays.
     pub(super) user_inbox_area: Rect,
+    /// collie: Angedockte Inbox-Liste und ihre Zeilen.
+    pub(super) inbox_dock_area: Rect,
+    pub(super) inbox_dock_rows: Vec<(Rect, usize)>,
     /// collie: Breadcrumb eines offenen Childs, mit der Pane-ID seines Masters.
     pub(super) master_breadcrumb: Option<(Rect, String)>,
     pub(super) new_workspace: Rect,
@@ -960,6 +963,9 @@ pub(crate) struct ClientShellState {
     pub(super) chat_line_hover_deadline: Option<std::time::Instant>,
     /// collie: Master, dessen Telescope zuletzt offen war.
     pub(super) last_master_workspace: Option<String>,
+    /// collie: Angedockte Inbox-Liste, solange eine Aufgabe im Inbox-Space
+    /// läuft.
+    pub(super) inbox_dock: Option<super::user_inbox::InboxDock>,
     /// collie: Beginn des Pulses der Chat-Linie (Unix-Millisekunden).
     pub(super) chat_pulse_started: Option<u64>,
     /// collie: Jüngste `attention_since` der wartenden Chats beim letzten Tick.
@@ -1150,6 +1156,7 @@ impl ClientShellState {
             ),
             chat_line_hover_deadline: None,
             last_master_workspace: None,
+            inbox_dock: None,
             chat_pulse_started: None,
             chat_attention_latest: None,
             last_sidebar_divider_click: None,
@@ -1338,6 +1345,9 @@ impl ClientShellState {
             self.focused_tab_count(),
             self.sidebar_width,
             self.chat_overlay_enabled(),
+            self.inbox_dock
+                .as_ref()
+                .map(|_| super::user_inbox::dock_width(cols)),
         )
     }
 

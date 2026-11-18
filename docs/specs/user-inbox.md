@@ -58,9 +58,13 @@ flowchart LR
 | `chat.user_inbox_act` | `read`, `done`, `restore`, `open`, `reply`, `answered`, `wizard_result`, `reply_written`, `flush`; mit `all` kommt die globale Liste zurück und `flush` gilt für alle Chats |
 | `pane.report_chat` | neue Felder `answer`, `answer_prompt`, `answer_key` vom Stop-Hook |
 
-- `open` und `reply` teilen das Agent-Pane des Chats und tippen dort den
-  Befehl ein: nvim für Formular und Rückfrage, `bash` für den Wizard. Das Pane
-  meldet sein Ergebnis mit `herdr chat user-inbox-result`.
+- `open` und `reply` öffnen einen Tab im Inbox-Space und tippen dort den
+  Befehl ein: nvim für Formular und Rückfrage, `bash` für den Wizard. Der Tab
+  meldet sein Ergebnis mit `herdr chat user-inbox-result` und schließt sich.
+- Der Inbox-Space entsteht beim ersten `open` (Name `Inbox`, Merkmal
+  `user_inbox_space`) und verschwindet mit seinem letzten Tab. Er steht weder
+  in der Chat- noch in der Space-Liste. Ist eine Aufgabe schon offen, springt
+  `open` zu ihrem Tab.
 - Ein Formular gilt als beantwortet, wenn sich die Datei beim Speichern
   geändert hat. `:q` ohne Änderung lässt es offen.
 
@@ -89,20 +93,22 @@ flowchart LR
 | --- | --- |
 | Sidebar-Kopf neben `󰭹 chats` | `󰇮 3 2`: wichtig rot, optional grau; Klick öffnet die Inbox |
 | eingeklappte Sidebar (Leiste) | `󰇮 3 2` unter der Zahl der Chats; Master zeigen die Krone statt des Kürzels |
-| Overlay | Tabelle wie im Telescope: Markierung, Status, Art, Chat, Titel, Alter; wichtig zuerst, neueste zuerst |
-| Vorschau unter der Tabelle | Text als gesetztes Markdown: Überschriften, Hervorhebung, Listen, Zitate, Code, Tabellen |
+| Inbox offen | fast volle Breite, links die Tabelle (Markierung, Status, Art, Chat, Titel, Alter; wichtig zuerst, neueste zuerst), rechts der Text als gesetztes Markdown; rechts bleibt ein Streifen frei, ein Klick dorthin schließt |
+| Aufgabe läuft | die Liste dockt links an, die Panes rücken nach rechts; Tastatur und Panes gehören dem Tab im Inbox-Space |
+| Aufgabe fertig | schließt sich ihr Tab, ist die Inbox wieder ganz offen; wechselst du in einen anderen Space, schließt sie |
 
 | Taste | Wirkung |
 | --- | --- |
 | `I` in der Sidebar, `prefix+i` | Inbox öffnen |
 | `j`/`k`, `g`/`G`, Mausrad | Cursor; beim Lesen scrollen |
-| `enter` | Nachricht lesen (Vollbild), Formular in nvim öffnen, Wizard starten |
+| `enter` | Nachricht lesen (Fokus auf den Text), Formular oder Wizard als Tab öffnen |
+| `prefix+i`, Klick auf die angedockte Liste | während einer Aufgabe zurück in die Inbox |
 | `space`, `m` | markieren; die erste Spalte zeigt dann eine Checkbox |
 | `d` `d` | markierte oder aktuelle Einträge erledigen; das erste `d` streicht sie rot durch |
 | `u` | letztes `dd` zurückholen |
 | `r` | Rückfrage in nvim |
 | `ctrl+d`/`ctrl+u`, Bild auf/ab | Text scrollen |
-| `esc`, `q` | schließen, zurückgehaltene Rückmeldungen gehen raus |
+| `esc`, `q` | schließen und zurück in den Chat, aus dem die Inbox kam; zurückgehaltene Rückmeldungen gehen raus |
 
 Der Zähler zählt ungelesene Nachrichten und Antworten sowie offene Formulare
 und Wizards. Es gibt keinen Toast und keinen Ton.

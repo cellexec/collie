@@ -326,6 +326,24 @@ pub struct ChatTeam {
     /// Zählt Änderungen an der Nutzer-Inbox.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub user_inbox_revision: u64,
+    /// Dieser Space ist der Inbox-Space: Formulare, Wizards und Rückfragen
+    /// laufen hier als Tabs.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub user_inbox_space: bool,
+    /// Offene Aufgaben im Inbox-Space, je mit ihrem Tab. Nur zur Laufzeit.
+    #[serde(skip)]
+    pub user_inbox_tasks: Vec<UserInboxTask>,
+}
+
+/// collie: Eine Aufgabe der Nutzer-Inbox, die als Tab im Inbox-Space läuft.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UserInboxTask {
+    /// Chat, der den Eintrag geschrieben hat.
+    pub workspace_id: String,
+    pub entry_id: u64,
+    /// `true` für eine Rückfrage, sonst Formular oder Wizard.
+    pub reply: bool,
+    pub tab_id: String,
 }
 
 fn is_zero(value: &u64) -> bool {

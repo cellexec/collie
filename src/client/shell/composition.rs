@@ -223,7 +223,9 @@ impl ClientShellState {
             ),
             _ => (None, None),
         };
-        let chat_line_enabled = self.chat_overlay_enabled() && layout.mobile_header.is_empty();
+        let chat_line_enabled = self.chat_overlay_enabled()
+            && layout.mobile_header.is_empty()
+            && self.inbox_dock.is_none();
         let chat_line_bright = super::chat_overlay::pulse_bright(
             self.chat_pulse_started,
             crate::workspace::unix_millis_now(),
@@ -266,6 +268,27 @@ impl ClientShellState {
                 chat_line_bright,
             },
         );
+        // collie: Die angedockte Inbox-Liste liegt über der Seitenspalte.
+        if let Some(dock) = self.inbox_dock.as_ref() {
+            if layout.sidebar.width > 0 {
+                buffer.set_style(layout.sidebar, ratatui::style::Style::reset());
+                for y in layout.sidebar.y..layout.sidebar.bottom() {
+                    for x in layout.sidebar.x..layout.sidebar.right() {
+                        buffer[(x, y)].reset();
+                    }
+                }
+                if let Some(rendered) = super::user_inbox::render_inbox_dock(
+                    &mut buffer,
+                    layout.sidebar,
+                    &dock.inbox,
+                    Some(snapshot),
+                    &self.config,
+                ) {
+                    self.hits.inbox_dock_area = rendered.area;
+                    self.hits.inbox_dock_rows = rendered.menu_rows;
+                }
+            }
+        }
         self.hits.panes = surface
             .panes
             .iter()

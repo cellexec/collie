@@ -800,7 +800,12 @@ pub(crate) fn workspace_entries(
         .collect::<HashSet<_>>();
     let mut emitted = HashSet::<&str>::new();
     let mut entries = Vec::new();
+    // collie: Der Inbox-Space steht nicht in der Liste.
+    let inbox_space = snapshot.user_inbox.space_workspace_id.as_deref();
     for (index, workspace) in snapshot.workspaces.iter().enumerate() {
+        if inbox_space == Some(workspace.workspace_id.as_str()) {
+            continue;
+        }
         let Some(worktree) = workspace
             .worktree
             .as_ref()
