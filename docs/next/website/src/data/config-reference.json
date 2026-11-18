@@ -1604,6 +1604,12 @@
           "type": "boolean",
           "default": "true",
           "description": "Answer Claude Code's folder trust prompt for agents that master chats start, so children do not wait for the user."
+        },
+        {
+          "key": "master.daily_digest",
+          "type": "string",
+          "default": "\"08:00\"",
+          "description": "Weekday time (HH:MM, local) of the daily digest in the user inbox: chats that are blocked, wait for you or finished since the last digest. A running master chat summarizes it. Empty or \"off\" disables it."
         }
       ]
     },

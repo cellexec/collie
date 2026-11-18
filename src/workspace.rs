@@ -333,6 +333,22 @@ pub struct ChatTeam {
     /// Offene Aufgaben im Inbox-Space, je mit ihrem Tab. Nur zur Laufzeit.
     #[serde(skip)]
     pub user_inbox_tasks: Vec<UserInboxTask>,
+    /// Tag (`2026-11-18`), dessen Tagesübersicht dieser Chat bekommen hat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub digest_day: Option<String>,
+    /// Tagesübersicht, die noch an diesen Master geht.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub digest_prompt: Option<DigestPrompt>,
+}
+
+/// collie: Tagesübersicht, die auf einen freien Master wartet.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DigestPrompt {
+    /// Unix-Millisekunden, seit wann sie wartet.
+    pub at: u64,
+    pub title: String,
+    /// Die Liste als Markdown.
+    pub list: String,
 }
 
 /// collie: Eine Aufgabe der Nutzer-Inbox, die als Tab im Inbox-Space läuft.

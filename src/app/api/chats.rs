@@ -618,6 +618,9 @@ impl App {
         let (replies_changed, replies_waiting) = self.deliver_user_replies(millis, &delivered);
         changed |= replies_changed;
         waiting |= replies_waiting;
+        let (digest_changed, digest_waiting) = self.run_daily_digest(millis);
+        changed |= digest_changed;
+        waiting |= digest_waiting;
         let stale = self
             .chat_resume_workspaces
             .iter()
@@ -644,6 +647,13 @@ impl App {
         {
             // Gestoppte Master prüfen wir selten.
             self.chat_inbox_deadline = Some(now + INBOX_RETRY * 10);
+        }
+        // collie: Zur nächsten Tagesübersicht wieder aufwachen.
+        if let Some(digest) = self.next_digest_check(now) {
+            self.chat_inbox_deadline = Some(
+                self.chat_inbox_deadline
+                    .map_or(digest, |deadline| deadline.min(digest)),
+            );
         }
         changed
     }

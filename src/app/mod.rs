@@ -149,6 +149,8 @@ pub struct App {
     pub(crate) max_running_children: usize,
     /// collie: Vertrauensfrage gestarteter Agents selbst beantworten.
     pub(crate) trust_child_folders: bool,
+    /// collie: Uhrzeit der Tagesübersicht, `master.daily_digest`.
+    pub(crate) daily_digest: String,
     /// collie: Prozess-ID hinter der API-Anfrage, die gerade läuft.
     pub(crate) api_caller_pid: Option<u32>,
     /// collie: Nächste Prüfung, ob eine Master-Inbox zugestellt werden kann.
@@ -680,6 +682,7 @@ impl App {
             resume_agents_lazily: config.session.resume_agents_lazily,
             max_running_children: config.master.max_running_children,
             trust_child_folders: config.master.trust_child_folders,
+            daily_digest: config.master.daily_digest.clone(),
             api_caller_pid: None,
             chat_inbox_deadline: None,
             stopping_chat_panes: std::collections::HashSet::new(),
@@ -964,6 +967,7 @@ impl App {
         if !invalid_section("master") {
             self.max_running_children = config.master.max_running_children;
             self.trust_child_folders = config.master.trust_child_folders;
+            self.daily_digest = config.master.daily_digest.clone();
         }
         if !invalid_section("session")
             && Duration::from_millis(config.session.startup_per_agent_delay_ms.into())
