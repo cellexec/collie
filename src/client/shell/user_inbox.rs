@@ -237,6 +237,15 @@ fn sheet(buffer: &mut Buffer, rect: Rect, palette: &Palette) -> Option<Rect> {
     if rect.width < 8 || rect.height < 4 {
         return None;
     }
+    // Die Inbox liegt im selben Puffer wie die Panes: erst leeren, sonst
+    // scheint deren Text durch.
+    for y in rect.y..rect.bottom() {
+        for x in rect.x..rect.right() {
+            if let Some(cell) = buffer.cell_mut((x, y)) {
+                cell.reset();
+            }
+        }
+    }
     super::render::render_sidebar_background(buffer, rect, palette);
     Some(Rect::new(
         rect.x.saturating_add(1),
@@ -1184,6 +1193,25 @@ mod tests {
         inbox.entries = entries;
         inbox.loaded = true;
         inbox
+    }
+
+    #[test]
+    fn the_sheet_hides_the_panes_below_it() {
+        let config = ClientShellConfig::from_config(&crate::config::Config::default());
+        let mut buffer = Buffer::empty(Rect::new(0, 0, 120, 20));
+        for cell in buffer.content.iter_mut() {
+            cell.set_symbol("X");
+        }
+        let inbox = inbox_with(vec![entry(1, true, 1)]);
+        render_user_inbox(&mut buffer, &inbox, None, &config).expect("rendered");
+        let sheet = inbox_rect(buffer.area);
+        for y in sheet.y..sheet.bottom() {
+            for x in sheet.x..sheet.right() {
+                assert_ne!(buffer[(x, y)].symbol(), "X", "pane text at {x},{y}");
+            }
+        }
+        // Der Streifen rechts bleibt Hintergrund.
+        assert_eq!(buffer[(119, 5)].symbol(), "X");
     }
 
     fn screen(inbox: &ClientUserInbox) -> String {
