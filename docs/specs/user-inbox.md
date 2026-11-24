@@ -119,6 +119,7 @@ flowchart LR
 | `d` `d` | markierte oder aktuelle Einträge erledigen; das erste `d` streicht sie rot durch |
 | `u` | letztes `dd` zurückholen |
 | `r` | Rückfrage in nvim |
+| Zoom-Taste (Standard `prefix+z`) | während einer Aufgabe: angedockte Liste aus- und wieder einblenden, die Aufgabe füllt dann den Bildschirm |
 | `ctrl+d`/`ctrl+u`, Bild auf/ab | Text scrollen |
 | `esc`, `q` | schließen und zurück in den Chat, aus dem die Inbox kam; zurückgehaltene Rückmeldungen gehen raus |
 

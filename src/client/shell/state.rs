@@ -1346,9 +1346,13 @@ impl ClientShellState {
             self.focused_tab_count(),
             self.sidebar_width,
             self.chat_overlay_enabled(),
-            self.inbox_dock
-                .as_ref()
-                .map(|_| super::user_inbox::dock_width(cols)),
+            self.inbox_dock.as_ref().map(|dock| {
+                if dock.hidden {
+                    0
+                } else {
+                    super::user_inbox::dock_width(cols)
+                }
+            }),
         )
     }
 

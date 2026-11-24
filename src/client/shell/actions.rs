@@ -19,6 +19,10 @@ impl ClientShellState {
                 outcome.resize = true;
                 self.persist_chrome_preferences(outcome);
             }
+            // collie: Bei angedockter Inbox blendet die Zoom-Taste die Liste
+            // aus und wieder ein.
+            crate::input::KeybindMatch::Action(crate::input::KeybindAction::Zoom)
+                if self.toggle_inbox_dock(outcome) => {}
             crate::input::KeybindMatch::Action(action) => {
                 if self.workspace_preview_action_blocked()
                     && matches!(

@@ -1678,6 +1678,14 @@ fn a_form_runs_as_a_tab_in_the_inbox_space_and_the_inbox_returns_afterwards() {
         .iter()
         .all(|row| row.workspace_id != "ws_9"));
 
+    // Die Zoom-Taste blendet die Liste aus und wieder ein, statt zu zoomen.
+    let docked = state.surface_size(160, 28).cols;
+    let outcome = press(&mut state, b"\x02z");
+    assert!(methods(&outcome).is_empty());
+    assert_eq!(state.surface_size(160, 28).cols, 160);
+    press(&mut state, b"\x02z");
+    assert_eq!(state.surface_size(160, 28).cols, docked);
+
     // Nach `:wq` schließt der Tab und mit ihm der Space: die Inbox ist
     // wieder ganz offen und lädt neu.
     let mut done = snapshot.clone();

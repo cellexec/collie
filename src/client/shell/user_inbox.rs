@@ -82,6 +82,9 @@ pub(super) struct InboxDock {
     /// Snapshot fokussiert ist.
     pub(super) space_tabs: Option<usize>,
     pub(super) since: std::time::Instant,
+    /// Mit der Zoom-Taste (`prefix+f`) ausgeblendet: die Aufgabe füllt den
+    /// ganzen Bildschirm, bis die Taste die Liste wieder zeigt.
+    pub(super) hidden: bool,
 }
 
 /// So lange wartet die Dock-Ansicht auf den neuen Tab, bevor sie aufgibt.
@@ -713,6 +716,19 @@ impl ClientShellState {
         outcome.repaint = true;
     }
 
+    /// Zoom-Taste, solange die Inbox angedockt ist: blendet die Liste aus
+    /// oder wieder ein, statt das Pane zu zoomen. Liefert, ob sie das tat.
+    pub(super) fn toggle_inbox_dock(&mut self, outcome: &mut ClientShellInput) -> bool {
+        let Some(dock) = self.inbox_dock.as_mut() else {
+            return false;
+        };
+        dock.hidden = !dock.hidden;
+        self.invalidate_pane_surface();
+        outcome.resize = true;
+        outcome.repaint = true;
+        true
+    }
+
     /// Die Inbox, ob offen oder angedockt.
     fn user_inbox_mut(&mut self) -> Option<&mut ClientUserInbox> {
         match self.overlay.as_mut() {
@@ -1044,6 +1060,7 @@ impl ClientShellState {
             tab: super::sheet_tabs::SheetTab::Inbox,
             space_tabs: None,
             since: std::time::Instant::now(),
+            hidden: false,
         });
         self.invalidate_pane_surface();
         outcome.resize = true;
