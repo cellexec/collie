@@ -115,6 +115,9 @@ Ohne Workspace-Argument gilt der Space aus `HERDR_PANE_ID`.
   Abschluss gemeldet hat. Sonst fragt er den Nutzer.
 - Nach einem Neustart bleiben Children gestoppt. Der Master bekommt einen
   `restart`-Eintrag und setzt sie gezielt mit `herdr chat resume` fort.
+- Ein gestopptes Child bleibt auch über `herdr live-restart` und Neustarts
+  gestoppt. Der Snapshot speichert seinen Plan zum Fortsetzen als
+  `agent_resume`, weil es kein laufendes Terminal mehr hat.
 
 ## Sidebar
 

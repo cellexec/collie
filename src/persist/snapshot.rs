@@ -8,6 +8,10 @@ use crate::layout::Node;
 use crate::terminal::TerminalRuntimeRegistry;
 use crate::workspace::Workspace;
 
+/// collie: Quelle eines gespeicherten Plans, mit dem ein gestoppter Chat
+/// fortgesetzt wird.
+const STOPPED_AGENT_RESUME_SOURCE: &str = "collie:stopped";
+
 /// Current snapshot format version.
 pub(super) const SNAPSHOT_VERSION: u32 = 3;
 
@@ -415,6 +419,18 @@ fn capture_tab(
                 source: resume.source.clone(),
                 agent: resume.agent.clone(),
                 argv: resume.argv.clone(),
+            })
+            .or_else(|| {
+                // collie: Ein gestoppter Chat hat kein laufendes Terminal mehr.
+                // Seine Session steckt nur noch im Plan zum Fortsetzen; ohne ihn
+                // käme er nach Handoff oder Neustart als leere Shell zurück.
+                let running = terminal_id.is_some_and(|id| terminal_runtimes.get(id).is_some());
+                let plan = terminal?.pending_agent_resume_plan.as_ref()?;
+                (!running).then(|| PaneAgentResumeSnapshot {
+                    source: STOPPED_AGENT_RESUME_SOURCE.into(),
+                    agent: plan.agent.clone(),
+                    argv: plan.argv.clone(),
+                })
             });
         panes.insert(
             id.raw(),
@@ -1403,6 +1419,68 @@ mod tests {
         assert_eq!(resume.source, "prime-agent");
         assert_eq!(resume.agent, "prime-agent");
         assert_eq!(resume.argv, vec!["prime-agent", "--resume", "a"]);
+    }
+
+    /// collie: Ein gestoppter Chat übersteht Snapshot und Handoff als
+    /// gestoppter Chat, statt als leere Shell zurückzukommen.
+    #[tokio::test]
+    async fn a_stopped_chat_keeps_its_resume_plan_through_handoff() {
+        let mut state = state_with_workspaces(&["one"]);
+        let root = state.workspaces[0].tabs[0].root_pane;
+        state.ensure_test_terminals();
+        let terminal_id = state.workspaces[0].tabs[0].panes[&root]
+            .attached_terminal_id
+            .clone();
+        let argv = vec![
+            "claude".to_string(),
+            "--resume".to_string(),
+            "bd5410c7-54fc-41cb-b68c-ecac99a0bc72".to_string(),
+        ];
+        // So hinterlässt `chat.stop` das Terminal: Plan gesetzt, kein Runtime,
+        // keine Hook-Session mehr.
+        state
+            .terminals
+            .get_mut(&terminal_id)
+            .unwrap()
+            .pending_agent_resume_plan = Some(crate::agent_resume::AgentResumePlan {
+            agent: "claude".into(),
+            argv: argv.clone(),
+            dedupe_key: "claude-stopped".into(),
+        });
+
+        let snapshot = capture_from_state(&state);
+        let resume = snapshot.workspaces[0].tabs[0].panes[&root.raw()]
+            .agent_resume
+            .as_ref()
+            .expect("the resume plan of a stopped chat should be captured");
+        assert_eq!(resume.agent, "claude");
+        assert_eq!(resume.argv, argv);
+
+        let mut imports = HashMap::new();
+        let (_workspaces, terminals, runtimes) = crate::persist::restore::restore_handoff(
+            &snapshot,
+            0,
+            if cfg!(windows) {
+                "C:\\Windows\\System32\\whoami.exe"
+            } else {
+                "/bin/sh"
+            },
+            crate::config::ShellModeConfig::NonLogin,
+            &mut imports,
+            tokio::sync::mpsc::channel(4).0,
+            std::sync::Arc::new(tokio::sync::Notify::new()),
+            std::sync::Arc::new(crate::render_signal::RenderSignal::new()),
+        )
+        .expect("handoff restore");
+        let plan = terminals
+            .values()
+            .find_map(|terminal| terminal.pending_agent_resume_plan.as_ref())
+            .expect("the stopped chat should still have its resume plan");
+        assert_eq!(plan.argv, argv);
+        assert!(
+            runtimes.is_empty(),
+            "a stopped chat must not come back as a shell"
+        );
     }
 
     #[test]
