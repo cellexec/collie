@@ -96,6 +96,51 @@ impl App {
         changed
     }
 
+    /// collie: Startet die Panes von Chats, die `chat.resume` ausdrücklich
+    /// fortsetzen soll. Anders als der verzögerte Start nach einem Neustart
+    /// wartet das weder auf einen ruhigen Durchlauf ohne Render-Bedarf noch
+    /// auf das Host-Theme: Auf einem Server mit vielen aktiven Chats kommt so
+    /// ein Durchlauf ohne Client sonst nie.
+    pub(crate) fn start_explicit_chat_resumes(&mut self) -> bool {
+        if self.chat_resume_workspaces.is_empty() {
+            return false;
+        }
+        let terminals = self
+            .state
+            .workspaces
+            .iter()
+            .filter(|ws| self.chat_resume_workspaces.contains(&ws.id))
+            .flat_map(|ws| ws.tabs.iter())
+            .flat_map(|tab| tab.panes.values())
+            .map(|pane| pane.attached_terminal_id.clone())
+            .collect::<std::collections::HashSet<_>>();
+        let pending = self
+            .pending_agent_resume_candidates()
+            .into_iter()
+            .filter(|candidate| terminals.contains(&candidate.terminal_id))
+            .collect::<Vec<_>>();
+        let mut changed = false;
+        for PendingAgentResumeCandidate {
+            pane_id,
+            terminal_id,
+            cwd,
+            plan,
+            rows,
+            cols,
+        } in pending
+        {
+            if self.terminal_runtimes.get(&terminal_id).is_some() {
+                continue;
+            }
+            changed |=
+                self.start_pending_agent_resume(pane_id, terminal_id, cwd, plan, rows, cols, true);
+        }
+        if changed {
+            self.schedule_session_save();
+        }
+        changed
+    }
+
     fn pending_agent_resume_candidates(&self) -> Vec<PendingAgentResumeCandidate> {
         let client_area = self.state.view.terminal_area;
         let client_attached = client_area.width > 0 && client_area.height > 0;

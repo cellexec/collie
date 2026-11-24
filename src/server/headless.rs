@@ -3383,6 +3383,9 @@ impl HeadlessServer {
         }
 
         changed |= self.app.handle_chat_inbox_tasks(now);
+        // collie: `chat.resume` startet sein Pane sofort, auch in Durchläufen
+        // mit Render-Bedarf, die den verzögerten Start unten aussetzen.
+        changed |= self.app.start_explicit_chat_resumes();
 
         changed |= self.app.release_host_appearance_if_ready(now);
         changed |= self.app.handle_tab_bar_status_tasks(now);

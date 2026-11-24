@@ -6327,6 +6327,50 @@ async fn headless_scheduled_tasks_start_pending_agent_resume_without_foreground_
     shutdown_test_runtimes(&mut server);
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn headless_chat_resume_starts_its_pane_even_when_every_tick_renders() {
+    let mut server = test_headless_server();
+    let workspace = crate::workspace::Workspace::test_new("child");
+    let pane_id = workspace.tabs[0].root_pane;
+    let terminal_id = workspace.terminal_id(pane_id).cloned().unwrap();
+    let workspace_id = workspace.id.clone();
+    server.app.state.workspaces = vec![workspace];
+    server.app.state.active = Some(0);
+    server.app.state.ensure_test_terminals();
+    server
+        .app
+        .state
+        .terminals
+        .get_mut(&terminal_id)
+        .expect("test terminal should exist")
+        .pending_agent_resume_plan = Some(crate::agent_resume::AgentResumePlan {
+        agent: "claude".into(),
+        argv: vec!["/bin/sh".into(), "-c".into(), "sleep 5".into()],
+        dedupe_key: "herdr:claude\0claude\0Id\0chat-resume".into(),
+    });
+
+    // Ohne explizites `chat.resume` startet ein Durchlauf mit Render-Bedarf
+    // nichts, wie bisher.
+    assert!(!server.handle_scheduled_tasks_headless(Instant::now(), true));
+    assert!(server.app.terminal_runtimes.get(&terminal_id).is_none());
+
+    // Kein Client, Render-Bedarf in jedem Durchlauf: `chat.resume` startet
+    // das Pane trotzdem im nächsten Tick.
+    server.app.chat_resume_workspaces.insert(workspace_id);
+    assert!(server.handle_scheduled_tasks_headless(Instant::now(), true));
+    assert!(server.app.terminal_runtimes.get(&terminal_id).is_some());
+    assert!(server
+        .app
+        .state
+        .terminals
+        .get(&terminal_id)
+        .expect("test terminal should still exist")
+        .pending_agent_resume_plan
+        .is_none());
+    shutdown_test_runtimes(&mut server);
+}
+
 #[test]
 fn terminal_attach_resize_uses_known_cell_geometry_without_pixel_mouse() {
     with_terminal_session_test_server(|server, _other_terminal_id, terminal_id, _pane_id| {

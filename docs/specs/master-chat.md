@@ -69,8 +69,10 @@ flowchart LR
   antwortet erst nach der Zustellung, `chat.prompt` endet mit
   `agent_not_ready`, Zustellungen an einen Master warten. Nach 60 Sekunden
   oder einem `chat.stop` gibt der Server das Warten auf.
-- `chat.resume` startet das Pane auch, wenn kein Client verbunden ist, in der
-  Größe für neue Panes ohne Client (`headless_size`). Ein Neustart ohne Client
+- `chat.resume` startet das Pane im nächsten Tick des Servers, ohne auf
+  einen ruhigen Durchlauf oder das Host-Theme zu warten, auch wenn kein
+  Client verbunden ist, dann in der Größe für neue Panes ohne Client
+  (`headless_size`). Ein Neustart ohne Client
   startet gestoppte Chats dagegen nicht von selbst. Startet das Pane bis zum
   Ende der Haltephase nicht, endet `agent.prompt` mit `agent_not_ready`.
 - Steht im Ziel-Pane eines Chats ein Claude-Code-Dialog offen (ein Footer wie
