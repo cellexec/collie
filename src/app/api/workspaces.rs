@@ -214,6 +214,14 @@ impl App {
                     },
                 });
             }
+            // Nur das Stop-Hook meldet `answer`; sein Bericht beendet den Turn.
+            if params.answer.is_some() {
+                self.note_master_turn_end(
+                    index,
+                    params.answer.as_deref(),
+                    params.answer_prompt.as_deref(),
+                );
+            }
             self.record_master_answer(
                 index,
                 params.answer,

@@ -244,6 +244,15 @@ pub struct ChatRuntime {
     /// Bis wann collie die Vertrauensfrage eines frisch gestarteten Agents
     /// selbst beantwortet (Unix-Millisekunden).
     pub trust_watch_until: Option<u64>,
+    /// Wann collie den Agent zuletzt gestartet oder fortgesetzt hat
+    /// (Unix-Millisekunden). Bis der Agent erkannt ist, zählt das Child so
+    /// trotzdem als laufend.
+    pub agent_started_at: Option<u64>,
+    /// Der Chat hat im laufenden Turn etwas per `chat.tell_user` abgelegt.
+    pub told_user: bool,
+    /// Seit wann ein Hinweis an den Master wartet, weil seine letzte Antwort
+    /// Aufgaben für den Nutzer enthielt, die nicht in der Inbox landeten.
+    pub inbox_nudge_at: Option<u64>,
     /// Master-Chat-Beziehungen. Anders als der Rest wird das gespeichert,
     /// siehe docs/specs/master-chat.md.
     pub team: ChatTeam,

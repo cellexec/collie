@@ -55,7 +55,17 @@ flowchart LR
   Haupt-Repo an, schließt `chat.spawn` ihn wieder (`known_workspace_ids`),
   sonst bliebe er als leere Shell in der Chat-Liste.
 - `chat.spawn` lehnt ab, wenn `master.max_running_children` (Default 6)
-  laufende Children erreicht sind. Gestoppte Children zählen nicht.
+  laufende Children erreicht sind. Es zählen nur Children, deren Agent läuft
+  oder in den letzten 2 Minuten per `chat.spawn` oder `chat.resume` gestartet
+  wurde. Gestoppte Children zählen nicht, ebenso wenig Children, deren Agent
+  sich beendet hat: Sie sind nur noch eine Shell, oft der Repo-Space für
+  Worktrees anderer Children, und brauchen keine Ressourcen.
+- Steht im Ziel-Pane eines Chats ein Claude-Code-Dialog offen (ein Footer wie
+  `Enter to confirm · Esc to cancel` in den unteren 10 Zeilen des
+  Erkennungspuffers), tippt der Server keinen Prompt hinein. `agent.prompt`
+  endet mit `agent_blocked`, `chat.prompt` überspringt das Pane, Zustellungen
+  an einen Master warten. Ein Child meldet das seinem Master als `blocked`
+  mit `Dialog offen: <Titel>`.
 - Aus einem Child-Pane lehnt der Server schreibende Methoden ab, die auf
   einen anderen Space zielen (`agent.prompt`, `agent.send_keys`,
   `pane.send_*`, `pane.run`, `chat.*`, `workspace.close`). Den Aufrufer
@@ -67,7 +77,7 @@ flowchart LR
 | --- | --- |
 | `report` | `herdr chat report <text>` aus dem Child |
 | `done` | Agent des Childs hört auf zu arbeiten |
-| `blocked` | Agent des Childs blockiert, etwa an einem Permission-Prompt |
+| `blocked` | Agent des Childs blockiert, etwa an einem Permission-Prompt oder einem offenen Dialog |
 | `user` | Nutzer schreibt im Telescope direkt an ein Child (`p`) |
 | `restart` | nach einem Neustart: Liste der gestoppten Children |
 

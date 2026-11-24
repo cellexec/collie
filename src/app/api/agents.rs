@@ -94,6 +94,27 @@ impl App {
                 return true;
             }
         };
+        // collie: Ein offener Claude-Code-Dialog in einem Chat würde den
+        // Prompt verschlucken. Ein Child meldet das seinem Master als blocked.
+        let is_chat = self
+            .state
+            .workspaces
+            .get(validated.ws_idx)
+            .is_some_and(|ws| ws.chat.team.role != crate::workspace::ChatRole::None);
+        if is_chat {
+            if let Some(title) = self.chat_dialog_open(validated.ws_idx, validated.pane_id) {
+                self.report_chat_dialog(validated.ws_idx, &title);
+                let _ = respond_to.send(encode_error(
+                    validated.id,
+                    "agent_blocked",
+                    format!(
+                        "agent {} shows a dialog ({title}) and requires interactive input",
+                        params.target
+                    ),
+                ));
+                return true;
+            }
+        }
         // Start the completion waiter before submitting, so a refused thread
         // fails the request while nothing has been sent yet.
         let (handoff_tx, handoff_rx) = std::sync::mpsc::channel::<(
@@ -773,6 +794,59 @@ mod tests {
             .await
             .is_err(),
             "blocked prompt wrote or scheduled terminal input"
+        );
+    }
+
+    #[tokio::test]
+    async fn agent_prompt_reports_an_open_dialog_in_a_child_as_blocked() {
+        let mut app = app_with_agent();
+        let pane_id = app.state.workspaces[0].tabs[0].root_pane;
+        let terminal_id = app.state.workspaces[0].tabs[0].panes[&pane_id]
+            .attached_terminal_id
+            .clone();
+        let terminal = app.state.terminals.get_mut(&terminal_id).unwrap();
+        terminal.set_agent_name("child".into());
+        // Die Erkennung hält den Dialog für idle; collie muss ihn selbst sehen.
+        terminal.set_detected_state(Some(Agent::Claude), AgentState::Idle);
+        let (runtime, mut rx) = crate::terminal::TerminalRuntime::test_with_channel(80, 24);
+        let screen =
+            crate::app::api::chat_guards::tests::TEACH_AUTO_MODE_SCREEN.replace('\n', "\r\n");
+        runtime.test_process_pty_bytes(screen.as_bytes());
+        app.state.insert_test_runtime(pane_id, runtime);
+        let mut master = Workspace::test_new("master");
+        master.chat.team.role = crate::workspace::ChatRole::Master;
+        app.state.workspaces[0].chat.team.role = crate::workspace::ChatRole::Child {
+            parent: master.id.clone(),
+        };
+        app.state.workspaces.push(master);
+
+        let response = run_deferred_agent_prompt(
+            &mut app,
+            "req",
+            AgentPromptParams {
+                target: "child".into(),
+                text: "Weiter mit Schritt 2".into(),
+                wait: None,
+            },
+        );
+
+        let error: crate::api::schema::ErrorResponse = serde_json::from_str(&response).unwrap();
+        assert_eq!(error.error.code, "agent_blocked");
+        assert!(error
+            .error
+            .message
+            .contains("Teach auto mode about your environment?"));
+        let inbox = &app.state.workspaces[1].chat.team.inbox;
+        assert_eq!(inbox.len(), 1);
+        assert_eq!(inbox[0].kind, crate::workspace::ChatInboxKind::Blocked);
+        assert!(
+            tokio::time::timeout(
+                AGENT_PROMPT_SUBMIT_DELAY + Duration::from_millis(100),
+                rx.recv()
+            )
+            .await
+            .is_err(),
+            "prompt was typed into the dialog"
         );
     }
 

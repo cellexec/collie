@@ -32,6 +32,9 @@ const INBOX_RETRY: Duration = Duration::from_secs(1);
 const TRUST_WATCH_MS: u64 = 120_000;
 /// Text der Vertrauensfrage von Claude Code, an dem collie sie erkennt.
 const TRUST_PROMPT_MARKERS: [&str; 2] = ["Yes, I trust this folder", "Do you trust the files"];
+/// So lange zählt ein frisch gestartetes Child als laufend, auch wenn sein
+/// Agent noch nicht erkannt ist.
+const CHILD_START_GRACE_MS: u64 = 120_000;
 /// Höchstlänge eines Auftrags.
 const MAX_ASSIGNMENT_CHARS: usize = 4_000;
 /// Höchstlänge einer Report-Nachricht.
@@ -61,6 +64,10 @@ impl App {
             if let Err(response) = self.guard_child_caller(&id, ws_idx) {
                 return response;
             }
+            if let Some(title) = self.chat_dialog_open(ws_idx, pane_id) {
+                self.report_chat_dialog(ws_idx, &title);
+                continue;
+            }
             if self.submit_to_pane(ws_idx, pane_id, &params.text) {
                 sent += 1;
             }
@@ -78,6 +85,11 @@ impl App {
         pane_id: crate::layout::PaneId,
         text: &str,
     ) -> bool {
+        // Ein offener Dialog würde den Prompt verschlucken.
+        if let Some(title) = self.chat_dialog_open(ws_idx, pane_id) {
+            tracing::info!(dialog = %title, "chat prompt held back by an open dialog");
+            return false;
+        }
         let Some(runtime) = self.lookup_runtime_sender(ws_idx, pane_id) else {
             return false;
         };
@@ -323,6 +335,7 @@ impl App {
             parent: master_id.clone(),
         };
         ws.chat.team.assignment = Some(assignment.clone());
+        ws.chat.agent_started_at = Some(crate::workspace::unix_millis_now());
         self.watch_trust_prompt(child);
         let ws = &mut self.state.workspaces[child];
         match params.title {
@@ -429,6 +442,8 @@ impl App {
         }
         self.chat_resume_workspaces
             .insert(self.state.workspaces[index].id.clone());
+        self.state.workspaces[index].chat.agent_started_at =
+            Some(crate::workspace::unix_millis_now());
         self.watch_trust_prompt(index);
         self.pending_agent_resume_deadline = Some(Instant::now());
         encode_success(
@@ -624,6 +639,9 @@ impl App {
         let (replies_changed, replies_waiting) = self.deliver_user_replies(millis, &delivered);
         changed |= replies_changed;
         waiting |= replies_waiting;
+        let (nudge_changed, nudge_waiting) = self.deliver_inbox_nudges(millis);
+        changed |= nudge_changed;
+        waiting |= nudge_waiting;
         let (digest_changed, digest_waiting) = self.run_daily_digest(millis);
         changed |= digest_changed;
         waiting |= digest_waiting;
@@ -946,11 +964,29 @@ impl App {
         });
     }
 
+    /// Children, die einen Platz im Limit belegen: Ihr Agent läuft oder
+    /// startet gerade. Ein Child, dessen Agent sich beendet hat, ist nur
+    /// noch eine Shell, oft der Repo-Space für Worktrees anderer Children.
+    /// Es braucht keine Ressourcen und nimmt keine Prompts an.
     fn running_children(&self, master: usize) -> usize {
+        let millis = crate::workspace::unix_millis_now();
         self.chat_children(master)
             .into_iter()
-            .filter(|&child| self.stopped_chat_agent(child).is_none())
+            .filter(|&child| self.child_occupies_slot(child, millis))
             .count()
+    }
+
+    fn child_occupies_slot(&self, child: usize, millis: u64) -> bool {
+        if self.stopped_chat_agent(child).is_some() {
+            return false;
+        }
+        if self.chat_agent_running(child) {
+            return true;
+        }
+        self.state.workspaces[child]
+            .chat
+            .agent_started_at
+            .is_some_and(|at| millis.saturating_sub(at) < CHILD_START_GRACE_MS)
     }
 
     fn adopt_child(&mut self, master: usize, child: usize) -> bool {
@@ -1450,6 +1486,27 @@ mod tests {
             parent: master.clone(),
         };
         app.max_running_children = 1;
+        // Ein Child, dessen Agent sich beendet hat, ist nur noch eine Shell
+        // und belegt keinen Platz.
+        let spawn_check = |app: &mut App| {
+            call(
+                app,
+                Method::ChatSpawn(ChatSpawnParams {
+                    master_workspace_id: Some(app.state.workspaces[0].id.clone()),
+                    prompt: "Baue X".into(),
+                    check_only: true,
+                    ..Default::default()
+                }),
+            )
+        };
+        let free = spawn_check(&mut app);
+        assert!(free.get("error").is_none(), "{free}");
+        app.state.workspaces[1].chat.agent_started_at = Some(1);
+        let free = spawn_check(&mut app);
+        assert!(free.get("error").is_none(), "{free}");
+
+        // Ein frisch gestartetes Child zählt, bevor sein Agent erkannt ist.
+        app.state.workspaces[1].chat.agent_started_at = Some(crate::workspace::unix_millis_now());
         let refused = call(
             &mut app,
             Method::ChatSpawn(ChatSpawnParams {

@@ -116,6 +116,7 @@ impl App {
                 finished: false,
                 deleted: false,
             });
+        self.note_told_user(master);
         tracing::info!(
             workspace = %self.state.workspaces[master].id,
             entry = entry_id,

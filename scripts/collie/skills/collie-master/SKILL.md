@@ -24,7 +24,9 @@ kannst.
 | `herdr chat close <id>` | schließt ein Child |
 
 Die Pane eines Childs findest du mit `herdr pane list --workspace <id>`.
-Gestoppte Children zählen nicht gegen das Limit laufender Children.
+Gegen das Limit laufender Children zählen nur Children, deren Agent läuft
+oder gerade startet. Gestoppte Children und Children, deren Agent sich
+beendet hat (Status `unknown`, nur noch eine Shell), zählen nicht.
 
 ## Inbox
 
@@ -36,12 +38,19 @@ Titel, Art und Text:
 | --- | --- |
 | `report` | das Child meldet sich per `herdr chat report` |
 | `done` | das Child hat aufgehört zu arbeiten; der Text ist seine letzte Nachricht |
-| `blocked` | das Child hängt, meist an einem Permission-Prompt |
+| `blocked` | das Child hängt, meist an einem Permission-Prompt oder einem offenen Dialog |
 | `user` | der Nutzer hat dem Child direkt geschrieben |
 | `restart` | collie wurde neu gestartet, Children sind gestoppt |
 
 Verarbeite jede Zeile: Beantworte Fragen, die du selbst entscheiden kannst,
 direkt beim Child. Sammle die übrigen.
+
+Steht in einem Child ein Claude-Code-Dialog offen (etwa „Teach auto mode about
+your environment?“), tippt collie keinen Prompt hinein. `herdr agent prompt`
+endet dann mit `agent_blocked`, und das Child erscheint als `blocked` mit
+`Dialog offen: …`. Beantworte den Dialog nicht selbst. Lege ihn dem Nutzer als
+Nachricht in die Inbox und schick den Prompt erneut, wenn das Child wieder
+idle ist.
 
 ## Regeln
 
@@ -57,6 +66,31 @@ direkt beim Child. Sammle die übrigen.
 - Mergen, Pushen, Löschen und alles Unumkehrbare gibst du nie selbst frei. Das
   entscheidet der Nutzer.
 - Nach einem `restart` entscheidest du pro Child, ob es fortgesetzt wird.
+
+## Aufgaben für den Nutzer
+
+Text im Chat zählt nie als Übergabe. Der Nutzer liest den Master-Chat nicht
+mit, und zwischen den Inbox-Prompts geht jede Bitte unter. Was der Nutzer tun
+oder entscheiden soll, geht deshalb immer per `herdr chat tell-user` in seine
+Inbox:
+
+| Was | Wie |
+| --- | --- |
+| Befehl auf diesem Host (`! ssh-keygen …`, `herdr update`) | immer als Wizard, der den Befehl ausführt oder Schritt für Schritt anleitet |
+| Schritte woanders (Laptop, PowerShell, Browser, Dashboard) | als Wizard mit Anleitung: jeder Schritt mit Befehl zum Kopieren und Prüffrage |
+| Entscheidung, Freigabe, Rückfrage | als Formular |
+| reine Info ohne Handlung | als Nachricht |
+
+Prüfe vor jedem Turn-Ende: Steht in deiner Antwort ein Befehl, eine Bitte oder
+eine Frage an den Nutzer? Dann muss im selben Turn der passende Eintrag in der
+Inbox liegen. Im Chat darfst du darauf verweisen, nicht ihn ersetzen.
+
+collie prüft das mit. Endet dein Turn mit Aufgaben oder Fragen für den Nutzer
+(`! `-Befehle, PowerShell-Blöcke, „bitte“, „sag Bescheid“, Fragen mit `?`),
+ohne dass du in diesem Turn `tell-user` aufgerufen hast, kommt ein Prompt, der
+mit `[collie hinweis]` beginnt. Lege die Aufgaben dann als Wizard oder
+Formular ab. War nichts davon für den Nutzer bestimmt, antworte nur mit ok.
+Auf diesen Turn folgt kein weiterer Hinweis.
 
 ## Nutzer-Inbox
 
