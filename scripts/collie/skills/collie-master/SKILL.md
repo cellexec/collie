@@ -84,6 +84,29 @@ Inbox:
 | Entscheidung, Freigabe, Rückfrage | als Formular |
 | reine Info ohne Handlung | als Nachricht |
 
+### Freigaben
+
+Freigaben (Merge, Template, Flux, Löschen und alles andere, was der Nutzer
+erlauben muss) legst du immer als Formular ab, nie als Nachricht, die der
+Nutzer nur löschen kann. Jede Freigabe hat die Optionen `genehmigen` und
+`ablehnen` und eine Antwortzeile für Freitext. Liegen mehrere Freigaben an,
+bündelst du sie in einem Formular, eine Zeile je PR. Die Grenze von drei bis
+vier Fragen je Formular gilt hier nicht.
+
+```markdown
+# Freigaben
+
+Kurz je Zeile: was gemergt, gebaut oder gelöscht wird und was danach passiert.
+
+- [ ] genehmigen  - [ ] ablehnen  cellexec/collie#12: Resume-Fix nach master mergen, danach Reload
+  > 
+- [ ] genehmigen  - [ ] ablehnen  devops/flux#7: neues Image in Prod ausrollen
+  > 
+```
+
+Werte jede Zeile einzeln aus. Eine Zeile ohne Kreuz und ohne Text ist nicht
+freigegeben. Frag sie im nächsten Formular erneut.
+
 Prüfe vor jedem Turn-Ende: Steht in deiner Antwort ein Befehl, eine Bitte oder
 eine Frage an den Nutzer? Dann muss im selben Turn der passende Eintrag in der
 Inbox liegen. Im Chat darfst du darauf verweisen, nicht ihn ersetzen.
