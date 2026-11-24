@@ -10,8 +10,8 @@
 //! - der untere Bildschirm war [`RESUME_QUIET_MS`] lang unverändert.
 //!
 //! `agent.prompt` antwortet erst, wenn der Prompt wirklich zugestellt ist.
-//! Nach [`RESUME_SETTLE_MAX_MS`] gibt collie das Warten auf und stellt zu,
-//! was zurückgehalten wurde.
+//! Nach [`RESUME_SETTLE_MAX_MS`] oder einem `chat.stop` gibt collie das Warten
+//! auf und stellt zu, was zurückgehalten wurde.
 
 use std::hash::{Hash, Hasher};
 
@@ -107,13 +107,7 @@ impl App {
                 continue;
             };
             let screen = self.chat_screen_digest(index);
-            let next = next_resume_settle(
-                settle,
-                screen,
-                millis,
-                self.stopped_chat_agent(index).is_some(),
-                self.chat_agent_idle(index),
-            );
+            let next = next_resume_settle(settle, screen, millis, self.chat_agent_idle(index));
             self.state.workspaces[index].chat.resume_settle = next;
             waiting |= next.is_some();
         }
@@ -169,10 +163,12 @@ fn next_resume_settle(
     settle: ResumeSettle,
     screen: u64,
     millis: u64,
-    stopped: bool,
     agent_idle: bool,
 ) -> Option<ResumeSettle> {
-    if stopped || millis.saturating_sub(settle.resumed_at) >= RESUME_SETTLE_MAX_MS {
+    // Gleich nach `chat.resume` gilt der Chat noch als gestoppt: Der Plan steht
+    // noch am Terminal, und das Pane startet erst einen Moment später. Das
+    // beendet die Haltephase nicht, das tut nur `chat.stop`.
+    if millis.saturating_sub(settle.resumed_at) >= RESUME_SETTLE_MAX_MS {
         return None;
     }
     if screen != settle.screen {
@@ -206,26 +202,26 @@ mod tests {
     fn a_resumed_chat_is_ready_only_after_session_idle_and_a_quiet_screen() {
         let ready_at = 1_000 + RESUME_QUIET_MS;
         // Idle, ruhig und Session gemeldet: bereit.
-        assert_eq!(next_resume_settle(settle(), 7, ready_at, false, true), None);
+        assert_eq!(next_resume_settle(settle(), 7, ready_at, true), None);
         // Der Bildschirm ist noch nicht lange genug ruhig.
-        assert!(next_resume_settle(settle(), 7, ready_at - 1, false, true).is_some());
+        assert!(next_resume_settle(settle(), 7, ready_at - 1, true).is_some());
         // Claude meldet idle, hat seine Session aber noch nicht geladen.
         let unloaded = ResumeSettle {
             session_started: false,
             ..settle()
         };
-        assert!(next_resume_settle(unloaded, 7, ready_at, false, true).is_some());
+        assert!(next_resume_settle(unloaded, 7, ready_at, true).is_some());
         // Nicht idle.
-        assert!(next_resume_settle(settle(), 7, ready_at, false, false).is_some());
+        assert!(next_resume_settle(settle(), 7, ready_at, false).is_some());
         // Der Bildschirm hat sich geändert: Die Ruhezeit beginnt neu.
-        let changed = next_resume_settle(settle(), 8, ready_at, false, true).unwrap();
+        let changed = next_resume_settle(settle(), 8, ready_at, true).unwrap();
         assert_eq!((changed.screen, changed.quiet_since), (8, ready_at));
     }
 
     #[test]
-    fn a_stopped_or_long_resuming_chat_stops_holding_prompts() {
-        assert_eq!(next_resume_settle(settle(), 8, 1_500, true, false), None);
+    fn a_long_resuming_chat_stops_holding_prompts() {
         let late = 1_000 + RESUME_SETTLE_MAX_MS;
-        assert_eq!(next_resume_settle(settle(), 8, late, false, false), None);
+        assert!(next_resume_settle(settle(), 8, late - 1, false).is_some());
+        assert_eq!(next_resume_settle(settle(), 8, late, false), None);
     }
 }

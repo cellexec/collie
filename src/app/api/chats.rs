@@ -385,6 +385,10 @@ impl App {
         if let Err(response) = self.guard_child_caller(&id, index) {
             return response;
         }
+        // Ein Stopp beendet die Haltephase nach `chat.resume`. Zurückgehaltene
+        // Prompts beantwortet danach `agent.prompt` selbst.
+        self.state.workspaces[index].chat.resume_settle = None;
+        self.chat_inbox_deadline = Some(Instant::now());
         if self.stopped_chat_agent(index).is_some() {
             return encode_success(
                 id,
@@ -420,7 +424,6 @@ impl App {
         ws.working_since = None;
         ws.blocked_reason = None;
         ws.chat.awaiting = None;
-        ws.chat.resume_settle = None;
         self.chat_resume_workspaces
             .remove(&self.state.workspaces[index].id);
         self.schedule_session_save();
@@ -1583,6 +1586,26 @@ mod tests {
         );
         assert!(resumed.get("error").is_none(), "{resumed}");
         assert!(app.state.workspaces[1].chat.resume_settle.is_some());
+        // Die nächste Prüfung läuft, bevor das Pane startet. Der Chat gilt
+        // dann noch als gestoppt, die Haltephase muss trotzdem bleiben.
+        app.handle_chat_inbox_tasks(Instant::now());
+        assert!(app.stopped_chat_agent(1).is_some());
+        assert!(app.state.workspaces[1].chat.resume_settle.is_some());
+        let public_pane_id = app.public_pane_id(1, pane_id).unwrap();
+        let (respond_to, response_rx) = std::sync::mpsc::channel();
+        let held = app.hold_agent_prompt_while_resuming(
+            Request {
+                id: "prompt".into(),
+                method: Method::AgentPrompt(crate::api::schema::AgentPromptParams {
+                    target: public_pane_id,
+                    text: "Weiter".into(),
+                    wait: None,
+                }),
+            },
+            respond_to,
+        );
+        assert!(held.is_none(), "agent prompt was not held");
+        assert!(response_rx.try_recv().is_err());
 
         let public_pane_id = app.public_pane_id(1, pane_id).unwrap();
         let refused = call(
