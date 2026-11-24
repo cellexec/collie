@@ -926,6 +926,66 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn agent_prompt_waits_for_a_resumed_chat_whose_pane_has_no_agent_yet() {
+        use crate::app::api::chat_resume::RESUME_QUIET_MS;
+        let mut app = app_with_agent();
+        let pane_id = app.state.workspaces[0].tabs[0].root_pane;
+        let terminal_id = app.state.workspaces[0].tabs[0].panes[&pane_id]
+            .attached_terminal_id
+            .clone();
+        let (runtime, mut rx) = crate::terminal::TerminalRuntime::test_with_channel(80, 24);
+        app.state.insert_test_runtime(pane_id, runtime);
+        let mut master = Workspace::test_new("master");
+        master.chat.team.role = crate::workspace::ChatRole::Master;
+        app.state.workspaces[0].chat.team.role = crate::workspace::ChatRole::Child {
+            parent: master.id.clone(),
+        };
+        app.state.workspaces.push(master);
+        let now = crate::workspace::unix_millis_now();
+        app.begin_resume_settle(0, now);
+        let public_pane_id = app.public_pane_id(0, pane_id).unwrap();
+
+        // 0,1 s nach dem Resume läuft in der Shell noch kein Claude.
+        let response_rx = start_deferred_agent_prompt(
+            &mut app,
+            "req",
+            AgentPromptParams {
+                target: public_pane_id,
+                text: "Weiter mit Schritt 2".into(),
+                wait: None,
+            },
+        );
+        assert_eq!(app.held_agent_prompts.len(), 1);
+        assert!(
+            response_rx.try_recv().is_err(),
+            "prompt was answered right away"
+        );
+
+        // Claude startet, lädt die Session und wird ruhig: zustellen.
+        app.state
+            .terminals
+            .get_mut(&terminal_id)
+            .unwrap()
+            .set_detected_state(Some(Agent::Claude), AgentState::Idle);
+        app.note_resume_session_started(0);
+        let screen = app.chat_screen_digest(0);
+        let settle = app.state.workspaces[0].chat.resume_settle.as_mut().unwrap();
+        settle.screen = screen;
+        settle.quiet_since = now - RESUME_QUIET_MS;
+        let (_, waiting) = app.advance_resume_settles(now);
+        assert!(!waiting);
+        let response = response_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("held prompt responds after delivery");
+        let success: SuccessResponse = serde_json::from_str(&response).unwrap();
+        assert!(matches!(
+            success.result,
+            ResponseResult::AgentPrompted { .. }
+        ));
+        assert!(rx.try_recv().is_ok(), "held prompt was not typed");
+    }
+
+    #[tokio::test]
     async fn agent_prompt_focuses_copilot_before_submitting() {
         let mut app = app_with_agent();
         let pane_id = app.state.workspaces[0].tabs[0].root_pane;

@@ -74,10 +74,16 @@ impl App {
         let crate::api::schema::Method::AgentPrompt(params) = &request.method else {
             return Some((request, respond_to));
         };
+        // Gleich nach dem Resume kennt das Pane den Agent noch nicht. Ein
+        // Pane-Ziel wie `w4E:p1` gehört dann trotzdem zum fortgesetzten Chat.
         let Some(index) = self
             .resolve_agent_target(&params.target)
             .ok()
             .map(|target| target.ws_idx)
+            .or_else(|| {
+                self.parse_current_public_pane_id(&params.target)
+                    .map(|(index, _)| index)
+            })
             .filter(|&index| self.chat_resume_settling(index))
         else {
             return Some((request, respond_to));

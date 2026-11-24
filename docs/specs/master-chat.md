@@ -65,7 +65,8 @@ flowchart LR
   an diesen Chat zurück, bis drei Dinge gelten: Der Hook hat die Session
   gemeldet (`pane.report_agent_session`), der Agent ist idle, und der
   Erkennungspuffer war 2 Sekunden unverändert. `agent.prompt` wartet so
-  lange und antwortet erst nach der Zustellung, `chat.prompt` endet mit
+  lange, auch auf ein Pane-Ziel, das den Agent noch nicht kennt, und
+  antwortet erst nach der Zustellung, `chat.prompt` endet mit
   `agent_not_ready`, Zustellungen an einen Master warten. Nach 60 Sekunden
   oder einem `chat.stop` gibt der Server das Warten auf.
 - Steht im Ziel-Pane eines Chats ein Claude-Code-Dialog offen (ein Footer wie
