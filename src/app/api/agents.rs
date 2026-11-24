@@ -84,6 +84,13 @@ impl App {
         request: crate::api::schema::Request,
         respond_to: std::sync::mpsc::Sender<String>,
     ) -> bool {
+        // collie: Ein Chat, den `chat.resume` gerade fortsetzt, bekommt den
+        // Prompt erst, wenn Claude Eingaben annimmt.
+        let Some((request, respond_to)) =
+            self.hold_agent_prompt_while_resuming(request, respond_to)
+        else {
+            return true;
+        };
         let crate::api::schema::Method::AgentPrompt(params) = request.method else {
             return false;
         };
@@ -848,6 +855,74 @@ mod tests {
             .is_err(),
             "prompt was typed into the dialog"
         );
+    }
+
+    #[tokio::test]
+    async fn agent_prompt_waits_until_a_resumed_chat_is_ready() {
+        use crate::app::api::chat_resume::RESUME_QUIET_MS;
+        let mut app = app_with_agent();
+        let pane_id = app.state.workspaces[0].tabs[0].root_pane;
+        let terminal_id = app.state.workspaces[0].tabs[0].panes[&pane_id]
+            .attached_terminal_id
+            .clone();
+        let terminal = app.state.terminals.get_mut(&terminal_id).unwrap();
+        terminal.set_agent_name("child".into());
+        // Gleich nach dem Resume meldet die Erkennung Claude schon als idle.
+        terminal.set_detected_state(Some(Agent::Claude), AgentState::Idle);
+        let (runtime, mut rx) = crate::terminal::TerminalRuntime::test_with_channel(80, 24);
+        app.state.insert_test_runtime(pane_id, runtime);
+        let mut master = Workspace::test_new("master");
+        master.chat.team.role = crate::workspace::ChatRole::Master;
+        app.state.workspaces[0].chat.team.role = crate::workspace::ChatRole::Child {
+            parent: master.id.clone(),
+        };
+        app.state.workspaces.push(master);
+        let now = crate::workspace::unix_millis_now();
+        app.begin_resume_settle(0, now);
+
+        let response_rx = start_deferred_agent_prompt(
+            &mut app,
+            "req",
+            AgentPromptParams {
+                target: "child".into(),
+                text: "Weiter mit Schritt 2".into(),
+                wait: None,
+            },
+        );
+        assert_eq!(app.held_agent_prompts.len(), 1);
+        // Idle und ruhig, aber Claude hat seine Session noch nicht geladen.
+        let screen = app.chat_screen_digest(0);
+        let settle = app.state.workspaces[0].chat.resume_settle.as_mut().unwrap();
+        settle.screen = screen;
+        settle.quiet_since = now - RESUME_QUIET_MS;
+        assert_eq!(app.advance_resume_settles(now), (false, true));
+        assert_eq!(app.held_agent_prompts.len(), 1);
+        assert!(
+            tokio::time::timeout(
+                AGENT_PROMPT_SUBMIT_DELAY + Duration::from_millis(100),
+                rx.recv()
+            )
+            .await
+            .is_err(),
+            "prompt was typed while claude was still loading"
+        );
+        assert!(response_rx.try_recv().is_err());
+
+        // Der Hook meldet die Session, der Bildschirm bleibt ruhig: zustellen.
+        app.note_resume_session_started(0);
+        let (_, waiting) = app.advance_resume_settles(now);
+        assert!(!waiting);
+        assert!(app.held_agent_prompts.is_empty());
+        assert!(app.state.workspaces[0].chat.resume_settle.is_none());
+        let response = response_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("held prompt responds after delivery");
+        let success: SuccessResponse = serde_json::from_str(&response).unwrap();
+        assert!(matches!(
+            success.result,
+            ResponseResult::AgentPrompted { .. }
+        ));
+        assert!(rx.try_recv().is_ok(), "held prompt was not typed");
     }
 
     #[tokio::test]

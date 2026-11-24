@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 mod agent_view;
 mod agents;
 pub(crate) mod chat_guards;
+pub(crate) mod chat_resume;
 mod chats;
 mod daily_digest;
 mod env;

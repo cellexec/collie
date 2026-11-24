@@ -57,6 +57,7 @@ impl App {
             return encode_error(id, "empty_chat_prompt", "chat prompt must not be empty");
         }
         let mut sent = 0;
+        let mut resuming = false;
         for public_id in &params.pane_ids {
             let Some((ws_idx, pane_id)) = self.parse_pane_id(public_id) else {
                 continue;
@@ -68,9 +69,20 @@ impl App {
                 self.report_chat_dialog(ws_idx, &title);
                 continue;
             }
+            if self.chat_resume_settling(ws_idx) {
+                resuming = true;
+                continue;
+            }
             if self.submit_to_pane(ws_idx, pane_id, &params.text) {
                 sent += 1;
             }
+        }
+        if sent == 0 && resuming {
+            return encode_error(
+                id,
+                "agent_not_ready",
+                "the chat is still resuming; retry in a few seconds or use agent prompt, which waits",
+            );
         }
         if sent == 0 {
             return encode_error(id, "pane_not_found", "no chat could receive the prompt");
@@ -85,6 +97,11 @@ impl App {
         pane_id: crate::layout::PaneId,
         text: &str,
     ) -> bool {
+        // Ein fortgesetztes Claude verwirft Eingaben, bis es bereit ist.
+        if self.chat_resume_settling(ws_idx) {
+            tracing::info!("chat prompt held back while the chat resumes");
+            return false;
+        }
         // Ein offener Dialog würde den Prompt verschlucken.
         if let Some(title) = self.chat_dialog_open(ws_idx, pane_id) {
             tracing::info!(dialog = %title, "chat prompt held back by an open dialog");
@@ -403,6 +420,7 @@ impl App {
         ws.working_since = None;
         ws.blocked_reason = None;
         ws.chat.awaiting = None;
+        ws.chat.resume_settle = None;
         self.chat_resume_workspaces
             .remove(&self.state.workspaces[index].id);
         self.schedule_session_save();
@@ -442,8 +460,9 @@ impl App {
         }
         self.chat_resume_workspaces
             .insert(self.state.workspaces[index].id.clone());
-        self.state.workspaces[index].chat.agent_started_at =
-            Some(crate::workspace::unix_millis_now());
+        let millis = crate::workspace::unix_millis_now();
+        self.state.workspaces[index].chat.agent_started_at = Some(millis);
+        self.begin_resume_settle(index, millis);
         self.watch_trust_prompt(index);
         self.pending_agent_resume_deadline = Some(Instant::now());
         encode_success(
@@ -639,6 +658,9 @@ impl App {
         let (replies_changed, replies_waiting) = self.deliver_user_replies(millis, &delivered);
         changed |= replies_changed;
         waiting |= replies_waiting;
+        let (resume_changed, resume_waiting) = self.advance_resume_settles(millis);
+        changed |= resume_changed;
+        waiting |= resume_waiting;
         let (nudge_changed, nudge_waiting) = self.deliver_inbox_nudges(millis);
         changed |= nudge_changed;
         waiting |= nudge_waiting;
@@ -1529,6 +1551,48 @@ mod tests {
             }),
         );
         assert!(allowed.get("error").is_none(), "{allowed}");
+    }
+
+    #[test]
+    fn a_resuming_chat_refuses_chat_prompts_until_it_is_ready() {
+        let mut app = test_app();
+        app.state.ensure_test_terminals();
+        let master = app.state.workspaces[0].id.clone();
+        app.state.workspaces[0].chat.team.role = ChatRole::Master;
+        app.state.workspaces[1].chat.team.role = ChatRole::Child { parent: master };
+        let pane_id = app.state.workspaces[1].tabs[0].root_pane;
+        let terminal_id = app.state.workspaces[1].tabs[0].panes[&pane_id]
+            .attached_terminal_id
+            .clone();
+        app.state
+            .terminals
+            .get_mut(&terminal_id)
+            .unwrap()
+            .pending_agent_resume_plan = Some(crate::agent_resume::AgentResumePlan {
+            agent: "claude".into(),
+            argv: vec!["claude".into(), "--resume".into(), "abc".into()],
+            dedupe_key: "abc".into(),
+        });
+        let child = app.state.workspaces[1].id.clone();
+        let resumed = call(
+            &mut app,
+            Method::ChatResume(crate::api::schema::ChatWorkspaceParams {
+                workspace_id: Some(child),
+                ..Default::default()
+            }),
+        );
+        assert!(resumed.get("error").is_none(), "{resumed}");
+        assert!(app.state.workspaces[1].chat.resume_settle.is_some());
+
+        let public_pane_id = app.public_pane_id(1, pane_id).unwrap();
+        let refused = call(
+            &mut app,
+            Method::ChatPrompt(ChatPromptParams {
+                pane_ids: vec![public_pane_id],
+                text: "Weiter".into(),
+            }),
+        );
+        assert_eq!(refused["error"]["code"], "agent_not_ready");
     }
 
     #[test]

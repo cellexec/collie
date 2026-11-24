@@ -60,6 +60,14 @@ flowchart LR
   wurde. Gestoppte Children zählen nicht, ebenso wenig Children, deren Agent
   sich beendet hat: Sie sind nur noch eine Shell, oft der Repo-Space für
   Worktrees anderer Children, und brauchen keine Ressourcen.
+- Nach `chat.resume` lädt Claude die alte Session und verwirft dabei
+  Eingaben, obwohl die Erkennung schon idle meldet. Der Server hält Prompts
+  an diesen Chat zurück, bis drei Dinge gelten: Der Hook hat die Session
+  gemeldet (`pane.report_agent_session`), der Agent ist idle, und der
+  Erkennungspuffer war 2 Sekunden unverändert. `agent.prompt` wartet so
+  lange und antwortet erst nach der Zustellung, `chat.prompt` endet mit
+  `agent_not_ready`, Zustellungen an einen Master warten. Nach 60 Sekunden
+  oder einem `chat.stop` gibt der Server das Warten auf.
 - Steht im Ziel-Pane eines Chats ein Claude-Code-Dialog offen (ein Footer wie
   `Enter to confirm · Esc to cancel` in den unteren 10 Zeilen des
   Erkennungspuffers), tippt der Server keinen Prompt hinein. `agent.prompt`

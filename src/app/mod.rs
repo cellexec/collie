@@ -160,6 +160,9 @@ pub struct App {
     pub(crate) stopping_chat_panes: std::collections::HashSet<crate::layout::PaneId>,
     /// collie: Spaces, deren gestoppter Agent trotz Lazy Resume starten soll.
     pub(crate) chat_resume_workspaces: std::collections::HashSet<String>,
+    /// collie: `agent.prompt`-Anfragen an Chats, die nach `chat.resume` noch
+    /// nicht bereit sind.
+    pub(crate) held_agent_prompts: Vec<crate::app::api::chat_resume::HeldAgentPrompt>,
     /// collie: Die Master wissen schon von Children, die ein Neustart gestoppt hat.
     pub(crate) chat_restart_noted: bool,
     next_agent_resume_at: Option<Instant>,
@@ -687,6 +690,7 @@ impl App {
             chat_inbox_deadline: None,
             stopping_chat_panes: std::collections::HashSet::new(),
             chat_resume_workspaces: std::collections::HashSet::new(),
+            held_agent_prompts: Vec::new(),
             chat_restart_noted: false,
             next_agent_resume_at: None,
             session_save_deadline: None,

@@ -1619,6 +1619,8 @@ impl App {
             params.agent_session_id,
             params.agent_session_path,
         );
+        // collie: Ein fortgesetzter Chat hat seine Session geladen.
+        self.note_resume_session_started(ws_idx);
         self.handle_internal_event(crate::events::AppEvent::AgentSessionReported {
             pane_id,
             session_ref: session_ref.clone(),

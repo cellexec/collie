@@ -24,6 +24,9 @@ kannst.
 | `herdr chat close <id>` | schließt ein Child |
 
 Die Pane eines Childs findest du mit `herdr pane list --workspace <id>`.
+Direkt nach `herdr chat resume` darfst du `herdr agent prompt` schicken: Der
+Server hält den Prompt zurück, bis Claude die alte Session geladen hat, und
+der Befehl kehrt erst nach der Zustellung zurück.
 Gegen das Limit laufender Children zählen nur Children, deren Agent läuft
 oder gerade startet. Gestoppte Children und Children, deren Agent sich
 beendet hat (Status `unknown`, nur noch eine Shell), zählen nicht.

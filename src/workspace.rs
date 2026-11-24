@@ -253,9 +253,26 @@ pub struct ChatRuntime {
     /// Seit wann ein Hinweis an den Master wartet, weil seine letzte Antwort
     /// Aufgaben für den Nutzer enthielt, die nicht in der Inbox landeten.
     pub inbox_nudge_at: Option<u64>,
+    /// Der Chat wurde per `chat.resume` fortgesetzt, und Claude ist noch
+    /// nicht bereit für Eingaben. Solange hält collie Prompts zurück.
+    pub resume_settle: Option<ResumeSettle>,
     /// Master-Chat-Beziehungen. Anders als der Rest wird das gespeichert,
     /// siehe docs/specs/master-chat.md.
     pub team: ChatTeam,
+}
+
+/// collie: Wie weit ein per `chat.resume` fortgesetzter Agent gestartet ist.
+/// Zeiten in Unix-Millisekunden.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ResumeSettle {
+    /// Wann collie den Agent fortgesetzt hat.
+    pub resumed_at: u64,
+    /// Der Agent hat seine fortgesetzte Session per Hook gemeldet.
+    pub session_started: bool,
+    /// Prüfsumme des unteren Bildschirms bei der letzten Prüfung.
+    pub screen: u64,
+    /// Seit wann der untere Bildschirm unverändert ist.
+    pub quiet_since: u64,
 }
 
 /// collie: Rolle eines Space im Master-Chat-Modell.
