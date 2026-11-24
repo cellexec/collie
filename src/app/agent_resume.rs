@@ -97,19 +97,28 @@ impl App {
     }
 
     fn pending_agent_resume_candidates(&self) -> Vec<PendingAgentResumeCandidate> {
-        let terminal_area = self.state.view.terminal_area;
-        if terminal_area.width == 0 || terminal_area.height == 0 {
+        let client_area = self.state.view.terminal_area;
+        let client_attached = client_area.width > 0 && client_area.height > 0;
+        // collie: Ohne verbundenen Client gibt es keine Fenstergröße. Ein
+        // ausdrückliches `chat.resume` startet dann trotzdem, in der Größe, die
+        // auch neue Panes ohne Client bekommen.
+        let (headless_cols, headless_rows) = self.state.headless_size;
+        let headless_area = Rect::new(0, 0, headless_cols, headless_rows);
+        if !client_attached && (headless_area.width == 0 || headless_area.height == 0) {
             return Vec::new();
-        };
+        }
 
         let mut pending = Vec::new();
         for (ws_idx, ws) in self.state.workspaces.iter().enumerate() {
+            let chat_resume = self.chat_resume_workspaces.contains(&ws.id);
+            let terminal_area = match (client_attached, chat_resume) {
+                (true, _) => client_area,
+                (false, true) => headless_area,
+                (false, false) => continue,
+            };
             // collie: Ein gestoppter Chat startet erst, wenn sein Space aktiv ist.
             // `chat.resume` startet ein Child, ohne dass sein Space aktiv ist.
-            if self.resume_agents_lazily
-                && self.state.active != Some(ws_idx)
-                && !self.chat_resume_workspaces.contains(&ws.id)
-            {
+            if self.resume_agents_lazily && self.state.active != Some(ws_idx) && !chat_resume {
                 continue;
             }
             for (tab_idx, tab) in ws.tabs.iter().enumerate() {
@@ -1017,6 +1026,50 @@ mod tests {
         );
 
         app.state.active = Some(1);
+        assert!(app.start_pending_agent_resumes(Instant::now(), true));
+        assert!(app.terminal_runtimes.get(&stopped_terminal).is_some());
+        assert_eq!(app.stopped_chat_agent(1), None);
+        for (_, runtime) in app.terminal_runtimes.drain() {
+            runtime.shutdown();
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn chat_resume_starts_without_an_attached_client() {
+        let mut app = test_app();
+        app.resume_agents_lazily = true;
+        let master = crate::workspace::Workspace::test_new("master");
+        let stopped = crate::workspace::Workspace::test_new("stopped");
+        let stopped_terminal = stopped
+            .terminal_id(stopped.tabs[0].root_pane)
+            .cloned()
+            .unwrap();
+        let stopped_id = stopped.id.clone();
+        app.state.workspaces = vec![master, stopped];
+        app.state.active = Some(0);
+        app.state.ensure_test_terminals();
+        // Kein Client verbunden: keine Fenstergröße, kein Host-Theme.
+        app.state.view.terminal_area = ratatui::layout::Rect::default();
+        app.state.headless_size = (120, 40);
+        app.state
+            .terminals
+            .get_mut(&stopped_terminal)
+            .expect("test terminal should exist")
+            .pending_agent_resume_plan = Some(crate::agent_resume::AgentResumePlan {
+            agent: "claude".into(),
+            argv: marker_resume_test_argv(),
+            dedupe_key: "herdr:claude\0claude\0Id\0headless".into(),
+        });
+
+        // Ein Neustart ohne Client startet gestoppte Chats nicht von selbst.
+        assert!(!app.start_pending_agent_resumes(Instant::now(), true));
+        assert!(app.terminal_runtimes.get(&stopped_terminal).is_none());
+
+        // `chat.resume` startet den Chat in der Größe ohne Client.
+        app.chat_resume_workspaces.insert(stopped_id);
+        app.sync_pending_agent_resume_deadline(Instant::now());
+        assert!(app.pending_agent_resume_deadline.is_some());
         assert!(app.start_pending_agent_resumes(Instant::now(), true));
         assert!(app.terminal_runtimes.get(&stopped_terminal).is_some());
         assert_eq!(app.stopped_chat_agent(1), None);

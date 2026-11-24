@@ -127,6 +127,19 @@ impl App {
         self.held_agent_prompts = held;
         let mut changed = false;
         for held in ready {
+            // Läuft das Pane nach der Haltephase noch immer nicht, sagt die
+            // Antwort das, statt `agent_not_found` zu melden.
+            if self
+                .parse_workspace_id(&held.workspace_id)
+                .is_some_and(|index| self.stopped_chat_agent(index).is_some())
+            {
+                let _ = held.respond_to.send(super::responses::encode_error(
+                    held.request.id,
+                    "agent_not_ready",
+                    "the resumed chat did not start; its pane has no running terminal",
+                ));
+                continue;
+            }
             changed |= self.handle_deferred_agent_api_request(held.request, held.respond_to);
         }
         changed

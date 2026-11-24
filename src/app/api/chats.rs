@@ -1616,6 +1616,18 @@ mod tests {
             }),
         );
         assert_eq!(refused["error"]["code"], "agent_not_ready");
+
+        // Startet das Pane bis zum Ende der Haltephase nicht, sagt die Antwort
+        // das, statt `agent_not_found` zu melden.
+        let settle = app.state.workspaces[1].chat.resume_settle.as_mut().unwrap();
+        settle.resumed_at = settle
+            .resumed_at
+            .saturating_sub(crate::app::api::chat_resume::RESUME_SETTLE_MAX_MS);
+        app.handle_chat_inbox_tasks(Instant::now());
+        let response: serde_json::Value =
+            serde_json::from_str(&response_rx.try_recv().expect("held prompt was answered"))
+                .unwrap();
+        assert_eq!(response["error"]["code"], "agent_not_ready");
     }
 
     #[test]
