@@ -45,6 +45,14 @@ const USER_TASK_PHRASES: [&str; 20] = [
     "entscheide",
     "führ das aus",
 ];
+/// Wendungen, mit denen eine Antwort auf einen Eintrag verweist, der schon
+/// in der Inbox liegt. Kleingeschrieben.
+const INBOX_REFERENCES: [&str; 4] = [
+    "in deiner inbox",
+    "in der inbox",
+    "in deine inbox",
+    "liegt in der inbox",
+];
 /// Sprachen von Codeblöcken, die nur der Nutzer ausführen kann.
 const USER_SHELL_LANGS: [&str; 5] = ["powershell", "pwsh", "ps1", "cmd", "bat"];
 
@@ -79,6 +87,17 @@ impl App {
         if prompt.is_some_and(|prompt| prompt.trim_start().starts_with(NUDGE_HEADER))
             || !answer_has_user_tasks(answer)
         {
+            return;
+        }
+        // Verweist die Antwort nur auf etwas, das schon offen in der Inbox
+        // liegt, etwa „wartet auf deine Freigabe“, ist nichts verloren.
+        // Neue Befehle gehen trotzdem immer in einen Hinweis.
+        let open_entries = ws.chat.team.user_inbox.iter().any(|entry| {
+            entry.kind != crate::workspace::UserInboxKind::Antwort
+                && !entry.finished
+                && !entry.deleted
+        });
+        if !answer_has_user_commands(answer) && (open_entries || answer_points_to_inbox(answer)) {
             return;
         }
         ws.chat.inbox_nudge_at = Some(crate::workspace::unix_millis_now());
@@ -161,6 +180,22 @@ impl App {
         self.chat_inbox_deadline = Some(Instant::now());
         self.schedule_session_save();
     }
+}
+
+/// Enthält eine Antwort neue Befehle: `! `-Zeilen oder Codeblöcke?
+pub(crate) fn answer_has_user_commands(answer: &str) -> bool {
+    answer.lines().map(str::trim).any(|line| {
+        line.starts_with("```")
+            || line
+                .trim_start_matches(['`', '-', '*', ' '])
+                .starts_with("! ")
+    })
+}
+
+/// Verweist eine Antwort auf die Inbox des Nutzers?
+pub(crate) fn answer_points_to_inbox(answer: &str) -> bool {
+    let lower = answer.to_lowercase();
+    INBOX_REFERENCES.iter().any(|phrase| lower.contains(phrase))
 }
 
 /// Enthält eine Antwort erkennbar Aufgaben oder Fragen für den Nutzer?
@@ -366,6 +401,68 @@ pub(crate) mod tests {
         let mut app = master_app();
         app.state.workspaces[0].chat.team.role = ChatRole::None;
         app.note_master_turn_end(0, Some(answer), Some("x"));
+        assert!(app.state.workspaces[0].chat.inbox_nudge_at.is_none());
+    }
+
+    fn open_entry(kind: crate::workspace::UserInboxKind) -> crate::workspace::UserInboxEntry {
+        crate::workspace::UserInboxEntry {
+            id: 0,
+            at: 1,
+            kind,
+            important: true,
+            title: "Merge #54 freigeben".into(),
+            text: String::new(),
+            path: None,
+            key: None,
+            read: false,
+            finished: false,
+            deleted: false,
+        }
+    }
+
+    #[test]
+    fn references_to_open_inbox_entries_need_no_nudge() {
+        let waiting = "#54 wartet auf deine Freigabe.";
+        assert!(answer_has_user_tasks(waiting));
+
+        // Ohne offenen Eintrag feuert der Hinweis.
+        let mut app = master_app();
+        app.note_master_turn_end(0, Some(waiting), Some("[collie inbox]"));
+        assert!(app.state.workspaces[0].chat.inbox_nudge_at.is_some());
+
+        // Eine automatische Antwort zählt nicht als offener Eintrag.
+        let mut app = master_app();
+        app.state.workspaces[0]
+            .chat
+            .team
+            .push_user_inbox(open_entry(crate::workspace::UserInboxKind::Antwort));
+        app.note_master_turn_end(0, Some(waiting), Some("[collie inbox]"));
+        assert!(app.state.workspaces[0].chat.inbox_nudge_at.is_some());
+
+        // Mit offenem Formular ist der Verweis kein Fehlalarm.
+        let mut app = master_app();
+        app.state.workspaces[0]
+            .chat
+            .team
+            .push_user_inbox(open_entry(crate::workspace::UserInboxKind::Formular));
+        app.note_master_turn_end(0, Some(waiting), Some("[collie inbox]"));
+        assert!(app.state.workspaces[0].chat.inbox_nudge_at.is_none());
+
+        // Neue Befehle feuern trotz offener Einträge.
+        app.note_master_turn_end(
+            0,
+            Some("Bitte auf dem Laptop:\n! ssh-keygen"),
+            Some("[collie inbox]"),
+        );
+        assert!(app.state.workspaces[0].chat.inbox_nudge_at.is_some());
+
+        // Ein Verweis auf die Inbox reicht auch ohne offenen Eintrag.
+        let mut app = master_app();
+        app.note_master_turn_end(
+            0,
+            Some("Die Freigabe für #54 liegt in deiner Inbox, bitte dort beantworten."),
+            Some("[collie inbox]"),
+        );
         assert!(app.state.workspaces[0].chat.inbox_nudge_at.is_none());
     }
 

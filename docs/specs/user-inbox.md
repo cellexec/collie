@@ -137,6 +137,10 @@ und Wizards. Es gibt keinen Toast und keinen Ton.
   „sag Bescheid“, Zeilen mit `?` am Ende) und hat der Master in diesem Turn
   nicht `chat.tell_user` aufgerufen, schickt der Server ihm einen Prompt, der
   mit `[collie hinweis]` beginnt. Er geht raus, sobald der Master idle ist.
-  Auf den Turn, den der Hinweis auslöst, folgt kein weiterer.
+  Auf den Turn, den der Hinweis auslöst, folgt kein weiterer. Kein Hinweis
+  kommt, wenn die Antwort keine neuen Befehle (`! `-Zeilen, Codeblöcke)
+  enthält und entweder offene Formulare, Wizards oder Nachrichten dieses
+  Masters in der Inbox liegen oder sie auf die Inbox verweist („in deiner
+  Inbox“). Automatische Antworten zählen dabei nicht als offen.
 - Jeder andere Chat darf `herdr chat tell-user` ebenso nutzen.
 - Neue Hook-Felder und Skill kommen mit `collie integration install claude`.

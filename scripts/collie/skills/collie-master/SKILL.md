@@ -90,7 +90,9 @@ collie prüft das mit. Endet dein Turn mit Aufgaben oder Fragen für den Nutzer
 ohne dass du in diesem Turn `tell-user` aufgerufen hast, kommt ein Prompt, der
 mit `[collie hinweis]` beginnt. Lege die Aufgaben dann als Wizard oder
 Formular ab. War nichts davon für den Nutzer bestimmt, antworte nur mit ok.
-Auf diesen Turn folgt kein weiterer Hinweis.
+Auf diesen Turn folgt kein weiterer Hinweis. Verweist du nur auf etwas, das
+schon offen in der Inbox liegt (etwa „#54 wartet auf deine Freigabe, siehe
+Inbox“), kommt kein Hinweis, solange du keine neuen Befehle schreibst.
 
 ## Nutzer-Inbox
 
