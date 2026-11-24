@@ -145,6 +145,11 @@ pub struct ChatSpawnParams {
     /// Only check whether the master may start another child.
     #[serde(default, skip_serializing_if = "super::is_false")]
     pub check_only: bool,
+    /// Workspaces that existed before `worktree.create` ran for this child.
+    /// A repo workspace that `worktree.create` opened in addition is closed
+    /// again, so no empty shell stays behind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub known_workspace_ids: Option<Vec<String>>,
 }
 
 /// collie: What happens to the children when a master closes.

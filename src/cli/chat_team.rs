@@ -203,6 +203,7 @@ fn spawn(args: &[String]) -> std::io::Result<i32> {
         ..Default::default()
     };
     let mut workspace_id = None;
+    let mut known_workspace_ids = None;
     if let Some(branch) = args.value("worktree") {
         // Erst prüfen, ob noch ein Child starten darf, damit kein verwaister
         // Worktree entsteht.
@@ -221,6 +222,9 @@ fn spawn(args: &[String]) -> std::io::Result<i32> {
                 .ok()
                 .map(|dir| dir.display().to_string())
         });
+        // worktree.create legt bei Bedarf einen Space für das Haupt-Repo an;
+        // chat.spawn schließt ihn anhand dieser Liste wieder.
+        known_workspace_ids = Some(workspace_ids()?);
         let created = request(
             "spawn:worktree",
             Method::WorktreeCreate(WorktreeCreateParams {
@@ -248,6 +252,7 @@ fn spawn(args: &[String]) -> std::io::Result<i32> {
         "spawn",
         Method::ChatSpawn(ChatSpawnParams {
             workspace_id,
+            known_workspace_ids,
             cwd: args.value("cwd"),
             ..base
         }),
@@ -257,6 +262,21 @@ fn spawn(args: &[String]) -> std::io::Result<i32> {
     }
     print_workspace(&response);
     Ok(0)
+}
+
+/// IDs aller offenen Workspaces.
+fn workspace_ids() -> std::io::Result<Vec<String>> {
+    let response = request("spawn:workspaces", Method::WorkspaceList(EmptyParams {}))?;
+    Ok(response
+        .pointer("/result/workspaces")
+        .and_then(serde_json::Value::as_array)
+        .map(|workspaces| {
+            workspaces
+                .iter()
+                .filter_map(|ws| ws.get("workspace_id")?.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default())
 }
 
 fn children(args: &[String]) -> std::io::Result<i32> {

@@ -2051,6 +2051,16 @@
                 "null"
               ]
             },
+            "known_workspace_ids": {
+              "description": "Workspaces that existed before `worktree.create` ran for this child.\nA repo workspace that `worktree.create` opened in addition is closed\nagain, so no empty shell stays behind.",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
             "master_workspace_id": {
               "description": "Master workspace; the caller's workspace when omitted.",
               "type": [

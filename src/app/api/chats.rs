@@ -276,6 +276,12 @@ impl App {
             .take(MAX_ASSIGNMENT_CHARS)
             .collect::<String>();
         let agent = params.agent.as_deref().unwrap_or("claude").to_owned();
+        if let (Some(workspace_id), Some(known)) = (
+            params.workspace_id.as_deref(),
+            params.known_workspace_ids.as_deref(),
+        ) {
+            self.close_spare_worktree_parent(workspace_id, known);
+        }
         let (child_id, pane_id, has_env) = match params.workspace_id.as_deref() {
             Some(workspace_id) => {
                 let Some(index) = self.parse_workspace_id(workspace_id) else {
@@ -898,6 +904,48 @@ impl App {
             .collect()
     }
 
+    /// `worktree.create` legt einen Space für das Haupt-Repo an, wenn es noch
+    /// keinen gibt. Für ein Child bliebe er als leere Shell stehen. Schließt
+    /// ihn wieder, wenn er erst mit diesem Worktree entstanden ist.
+    fn close_spare_worktree_parent(&mut self, workspace_id: &str, known: &[String]) {
+        let Some(child) = self.parse_workspace_id(workspace_id) else {
+            return;
+        };
+        let Some(key) = self.state.workspaces[child]
+            .worktree_space()
+            .filter(|space| space.is_linked_worktree)
+            .map(|space| space.key.clone())
+        else {
+            return;
+        };
+        let spare = (0..self.state.workspaces.len()).find(|&index| {
+            let ws = &self.state.workspaces[index];
+            index != child
+                && !known.contains(&self.public_workspace_id(index))
+                && ws
+                    .worktree_space()
+                    .is_some_and(|space| !space.is_linked_worktree && space.key == key)
+                && ws.chat.team.role == ChatRole::None
+                && !ws.chat.team.user_inbox_space
+                && ws.tabs.len() == 1
+                && self.workspace_info(index).pane_count == 1
+        });
+        let Some(spare) = spare else {
+            return;
+        };
+        let spare_id = self.public_workspace_id(spare);
+        let info = self.workspace_info(spare);
+        self.state.close_workspaces(vec![spare]);
+        self.shutdown_detached_terminal_runtimes();
+        self.emit_event(crate::api::schema::EventEnvelope {
+            event: crate::api::schema::EventKind::WorkspaceClosed,
+            data: crate::api::schema::EventData::WorkspaceClosed {
+                workspace_id: spare_id,
+                workspace: Some(info),
+            },
+        });
+    }
+
     fn running_children(&self, master: usize) -> usize {
         self.chat_children(master)
             .into_iter()
@@ -1424,6 +1472,47 @@ mod tests {
             }),
         );
         assert!(allowed.get("error").is_none(), "{allowed}");
+    }
+
+    #[test]
+    fn spawn_closes_the_repo_space_that_the_worktree_opened() {
+        let membership = |linked: bool| crate::workspace::WorktreeSpaceMembership {
+            key: "/repo/.git".into(),
+            label: "repo".into(),
+            repo_root: "/repo".into(),
+            checkout_path: if linked {
+                "/wt/feat".into()
+            } else {
+                "/repo".into()
+            },
+            is_linked_worktree: linked,
+        };
+        let mut app = test_app();
+        let mut worktree = crate::workspace::Workspace::test_new("feat");
+        worktree.worktree_space = Some(membership(true));
+        let mut spare = crate::workspace::Workspace::test_new("repo");
+        spare.worktree_space = Some(membership(false));
+        app.state.workspaces.push(spare);
+        app.state.workspaces.push(worktree);
+        let known = vec![app.public_workspace_id(0), app.public_workspace_id(1)];
+        let worktree_id = app.public_workspace_id(3);
+
+        // Ein Repo-Space, den es vorher schon gab, bleibt.
+        let mut all = known.clone();
+        all.push(app.public_workspace_id(2));
+        app.close_spare_worktree_parent(&worktree_id, &all);
+        assert_eq!(app.state.workspaces.len(), 4);
+
+        app.close_spare_worktree_parent(&worktree_id, &known);
+        assert_eq!(app.state.workspaces.len(), 3);
+        assert!(app
+            .state
+            .workspaces
+            .iter()
+            .all(|ws| ws.custom_name.as_deref() != Some("repo")
+                && ws
+                    .worktree_space()
+                    .is_none_or(|space| space.is_linked_worktree)));
     }
 
     #[test]

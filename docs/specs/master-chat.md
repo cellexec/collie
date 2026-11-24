@@ -50,6 +50,10 @@ flowchart LR
   `resume`), beantwortet es 2 Minuten lang die Vertrauensfrage von Claude
   Code (`Yes, I trust this folder`) selbst. Abschalten mit
   `master.trust_child_folders = false`.
+- `herdr chat spawn --worktree` merkt sich die offenen Spaces vor
+  `worktree.create`. Legt `worktree.create` dabei einen Space für das
+  Haupt-Repo an, schließt `chat.spawn` ihn wieder (`known_workspace_ids`),
+  sonst bliebe er als leere Shell in der Chat-Liste.
 - `chat.spawn` lehnt ab, wenn `master.max_running_children` (Default 6)
   laufende Children erreicht sind. Gestoppte Children zählen nicht.
 - Aus einem Child-Pane lehnt der Server schreibende Methoden ab, die auf
