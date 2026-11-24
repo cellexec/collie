@@ -457,6 +457,10 @@ pub struct UserReply {
     /// Hält die Zustellung zurück, bis der Nutzer das Overlay verlässt.
     #[serde(default)]
     pub held: bool,
+    /// Eine neue Nachricht des Nutzers aus dem Composer. Sie geht als
+    /// eigener Prompt an den Chat, nicht als Zeile der Rückmeldungen.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub message: bool,
 }
 
 /// Höchstens so viele gelöschte Einträge hält die Nutzer-Inbox für `u`.

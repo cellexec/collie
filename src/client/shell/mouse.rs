@@ -2086,6 +2086,16 @@ impl ClientShellState {
                     );
                     return;
                 }
+                // collie: `Neue Nachricht` öffnet den Composer für den Chat.
+                if let Some((_, target)) = self
+                    .hits
+                    .composer_button
+                    .clone()
+                    .filter(|(rect, _)| super::contains(*rect, point))
+                {
+                    self.compose_chat_message(target, outcome);
+                    return;
+                }
                 // collie: Der Breadcrumb eines Childs führt zum Master zurück.
                 if let Some((_, master)) = self
                     .hits

@@ -551,7 +551,7 @@ fn user_inbox(args: &[String]) -> std::io::Result<i32> {
 /// Intern: Panes, die collie für Formulare, Wizards und Rückfragen öffnet,
 /// melden damit ihr Ergebnis.
 fn user_inbox_result(args: &[String]) -> std::io::Result<i32> {
-    let args = match Args::parse(args, &["workspace", "exit", "reply"]) {
+    let args = match Args::parse(args, &["workspace", "exit", "reply", "message"]) {
         Ok(args) => args,
         Err(err) => return usage_error(err),
     };
@@ -572,8 +572,10 @@ fn user_inbox_result(args: &[String]) -> std::io::Result<i32> {
         )
     } else if let Some(file) = args.value("reply") {
         (ChatUserInboxAction::ReplyWritten, None, Some(file))
+    } else if let Some(file) = args.value("message") {
+        (ChatUserInboxAction::MessageWritten, None, Some(file))
     } else {
-        return usage_error("use --answered, --exit CODE or --reply FILE");
+        return usage_error("use --answered, --exit CODE, --reply FILE or --message FILE");
     };
     let response = request(
         "user-inbox-result",

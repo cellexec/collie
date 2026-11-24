@@ -10,6 +10,7 @@ mod chat_rail;
 mod chat_telescope;
 mod chat_visuals;
 mod chats;
+mod composer;
 mod machine_diagnostics;
 mod markdown;
 mod sheet_tabs;

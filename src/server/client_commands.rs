@@ -277,7 +277,7 @@ mod tests {
         ),
         (
             "chat.user_inbox_act",
-            "c9cad8bb6cf149fd620bb1d0a9ad4d605b7bdba236a1a15ffa26ae9e44a683f6",
+            "2e102156de16fe923fbec5a5e00cf06ac72706e4a4017f0fbe2df18573409f1b",
         ),
     ];
 

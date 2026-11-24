@@ -23,6 +23,14 @@ use super::responses::{encode_error, encode_success};
 pub(crate) const USER_REPLY_HEADER: &str = "[collie user]";
 /// Prompts, die collie selbst schickt, erzeugen keine Antwort in der Inbox.
 const COLLIE_PROMPT_PREFIX: &str = "[collie ";
+/// Kopfzeile einer Nachricht aus dem Composer an einen Master. Sie kommt vom
+/// Nutzer selbst; die Antwort landet deshalb wie bei getippten Prompts in der
+/// Inbox.
+pub(crate) const USER_MESSAGE_HEADER: &str = "[collie nutzer]";
+/// Höchstlänge einer Nachricht aus dem Composer.
+const MAX_MESSAGE_CHARS: usize = 32_000;
+/// nvim-Plugin des Composers: Filetype, Vervollständigung für `/` und `@`.
+const MESSAGE_NVIM_PLUGIN: &str = include_str!("../../../scripts/collie/nvim/collie-message.lua");
 /// So lange wartet eine Rückmeldung, damit mehrere zusammen ankommen.
 const REPLY_QUIET_MS: u64 = 2_000;
 /// So lange wartet die Zustellung, nachdem der Nutzer im Master getippt hat.
@@ -200,6 +208,10 @@ impl App {
                 }
                 Ok(())
             }
+            ChatUserInboxAction::Compose => self.open_user_message(master),
+            ChatUserInboxAction::MessageWritten => {
+                self.note_message_written(master, params.path.as_deref(), now)
+            }
         };
         if let Err((code, message)) = result {
             return encode_error(id, code, message);
@@ -229,7 +241,7 @@ impl App {
             return;
         };
         let answer = answer.trim();
-        let prompt = prompt.trim();
+        let prompt = message_body(prompt.trim()).unwrap_or(prompt.trim());
         if answer.is_empty() || prompt.is_empty() || prompt.starts_with(COLLIE_PROMPT_PREFIX) {
             return;
         }
@@ -405,6 +417,7 @@ impl App {
                 entry_id: *id,
                 text,
                 held: true,
+                message: false,
             });
         }
     }
@@ -505,6 +518,86 @@ impl App {
         )
     }
 
+    /// `a`: Neue Nachricht an den Chat, geschrieben in nvim in einem Popup
+    /// über dem aktuellen Space. `:wq` reiht sie ein, `:q!` verwirft sie.
+    fn open_user_message(&mut self, chat: usize) -> Result<(), (&'static str, String)> {
+        let failed = |err: String| ("user_message_failed", err);
+        if self.state.popup_pane.is_some() {
+            return Err((
+                "user_message_busy",
+                "another popup is open; close it first".to_owned(),
+            ));
+        }
+        let workspace = self.state.workspaces[chat].id.clone();
+        let label = self.workspace_info(chat).label;
+        let dir = crate::session::data_dir().join("user-inbox");
+        std::fs::create_dir_all(&dir).map_err(|err| failed(err.to_string()))?;
+        let plugin = dir.join("collie-message.lua");
+        if std::fs::read_to_string(&plugin).ok().as_deref() != Some(MESSAGE_NVIM_PLUGIN) {
+            std::fs::write(&plugin, MESSAGE_NVIM_PLUGIN).map_err(|err| failed(err.to_string()))?;
+        }
+        let file = dir.join(format!(
+            "nachricht-{}.md",
+            crate::workspace::unix_millis_now()
+        ));
+        std::fs::write(&file, "").map_err(|err| failed(err.to_string()))?;
+        let command = format!(
+            "nvim -S {plugin} -- {file}; {herdr} chat user-inbox-result 0 --workspace {ws} --message {file}",
+            plugin = shell_word(&plugin.to_string_lossy()),
+            file = shell_word(&file.to_string_lossy()),
+            herdr = herdr_command(),
+            ws = shell_word(&workspace),
+        );
+        let mut env = self.custom_command_env().0;
+        env.push(("COLLIE_MESSAGE_TO".to_owned(), label));
+        let cwd = self.chat_cwd(chat).map(PathBuf::from);
+        self.spawn_popup_shell_command(
+            &command,
+            cwd,
+            env,
+            crate::app::popup::PopupGeometry {
+                width: Some(crate::popup_size::PopupSize::Percent(70)),
+                height: Some(crate::popup_size::PopupSize::Percent(45)),
+            },
+        )
+        .map_err(|err| failed(err.to_string()))
+    }
+
+    fn note_message_written(
+        &mut self,
+        chat: usize,
+        path: Option<&str>,
+        now: u64,
+    ) -> Result<(), (&'static str, String)> {
+        let path = path.ok_or((
+            "user_inbox_path_required",
+            "message needs --message FILE".to_owned(),
+        ))?;
+        let text = std::fs::read_to_string(path)
+            .map_err(|err| ("user_message_failed", err.to_string()))?;
+        let _ = std::fs::remove_file(path);
+        let text = text
+            .trim()
+            .chars()
+            .take(MAX_MESSAGE_CHARS)
+            .collect::<String>();
+        if text.is_empty() {
+            return Ok(());
+        }
+        self.state.workspaces[chat]
+            .chat
+            .team
+            .user_replies
+            .push(UserReply {
+                at: now,
+                entry_id: 0,
+                text,
+                held: false,
+                message: true,
+            });
+        Ok(())
+    }
+
     fn note_form_answered(
         &mut self,
         master: usize,
@@ -600,6 +693,7 @@ impl App {
                 entry_id,
                 text,
                 held: false,
+                message: false,
             });
     }
 
@@ -747,10 +841,27 @@ impl App {
         let Some(pane_id) = self.chat_agent_pane(master) else {
             return false;
         };
+        // Nachrichten aus dem Composer gehen einzeln und vor den
+        // Rückmeldungen raus, damit jede ihre eigene Antwort bekommt.
+        let team = &self.state.workspaces[master].chat.team;
+        if let Some(index) = team.user_replies.iter().position(|reply| reply.message) {
+            let prompt = message_prompt(&team.user_replies[index].text, team.is_master());
+            if !self.submit_to_pane(master, pane_id, &prompt) {
+                return false;
+            }
+            self.state.workspaces[master]
+                .chat
+                .team
+                .user_replies
+                .remove(index);
+            self.schedule_session_save();
+            return true;
+        }
         let lines = self.state.workspaces[master]
             .chat
             .team
             .deliverable_user_replies()
+            .filter(|reply| !reply.message)
             .map(|reply| format!("- {}", reply.text))
             .collect::<Vec<_>>();
         if lines.is_empty() || !self.submit_to_pane(master, pane_id, &user_reply_prompt(&lines)) {
@@ -776,6 +887,22 @@ fn single(ids: &[u64]) -> Option<u64> {
 /// `#3 formular „Titel“`
 fn entry_label(entry: &UserInboxEntry) -> String {
     format!("#{} {} „{}“", entry.id, entry.kind.as_str(), entry.title)
+}
+
+/// Prompt einer Nachricht aus dem Composer. Ein Master bekommt den Hinweis,
+/// dass sie vom Nutzer kommt; Slash-Befehle gehen unverändert raus, sonst
+/// erkennt Claude Code sie nicht.
+fn message_prompt(text: &str, master: bool) -> String {
+    if !master || text.starts_with('/') {
+        return text.to_owned();
+    }
+    format!("{USER_MESSAGE_HEADER} Nachricht direkt von mir, nicht von einem Child:\n\n{text}")
+}
+
+/// Text einer Composer-Nachricht ohne ihre Kopfzeile.
+fn message_body(prompt: &str) -> Option<&str> {
+    let rest = prompt.strip_prefix(USER_MESSAGE_HEADER)?;
+    Some(rest.split_once('\n').map_or("", |(_, body)| body).trim())
 }
 
 fn user_reply_prompt(lines: &[String]) -> String {
@@ -1070,6 +1197,73 @@ mod tests {
         assert_eq!(inbox[0].kind, UserInboxKind::Antwort);
         assert!(inbox[0].important);
         assert_eq!(inbox[0].title, "Was ist seit gestern passiert?");
+    }
+
+    #[test]
+    fn a_composed_message_is_queued_and_its_answer_lands_in_the_inbox() {
+        let mut app = test_app();
+        let dir = std::env::temp_dir().join(format!(
+            "collie-message-{}-{}",
+            std::process::id(),
+            crate::workspace::unix_millis_now()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let write = |name: &str, text: &str| {
+            let file = dir.join(name);
+            std::fs::write(&file, text).unwrap();
+            file.to_string_lossy().into_owned()
+        };
+        let written = |app: &mut App, path: String| {
+            let workspace_id = app.state.workspaces[0].id.clone();
+            call(
+                app,
+                Method::ChatUserInboxAct(ChatUserInboxActParams {
+                    workspace_id: Some(workspace_id),
+                    caller_pane_id: None,
+                    action: ChatUserInboxAction::MessageWritten,
+                    ids: vec![0],
+                    exit_code: None,
+                    path: Some(path),
+                    all: false,
+                }),
+            )
+        };
+
+        // `:q!` lässt die Datei leer: nichts geht raus.
+        let empty = write("leer.md", "\n  \n");
+        assert!(written(&mut app, empty.clone()).get("error").is_none());
+        assert!(app.state.workspaces[0].chat.team.user_replies.is_empty());
+        assert!(!Path::new(&empty).exists());
+
+        let full = write("voll.md", "Wie weit ist @src/main.rs?\n");
+        assert!(written(&mut app, full.clone()).get("error").is_none());
+        let replies = &app.state.workspaces[0].chat.team.user_replies;
+        assert_eq!(replies.len(), 1);
+        assert!(replies[0].message && !replies[0].held);
+        assert_eq!(replies[0].text, "Wie weit ist @src/main.rs?");
+        assert!(!Path::new(&full).exists());
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // Ein Master erfährt, dass die Nachricht vom Nutzer kommt; die
+        // Antwort darauf landet wie bei getippten Prompts in der Inbox.
+        let prompt = message_prompt("Wie weit ist @src/main.rs?", true);
+        assert!(prompt.starts_with(USER_MESSAGE_HEADER));
+        assert!(prompt.ends_with("Wie weit ist @src/main.rs?"));
+        app.record_master_answer(0, Some("Fast fertig.".into()), Some(prompt), None);
+        let inbox = &app.state.workspaces[0].chat.team.user_inbox;
+        assert_eq!(inbox.len(), 1);
+        assert_eq!(inbox[0].title, "Wie weit ist @src/main.rs?");
+    }
+
+    #[test]
+    fn slash_commands_and_plain_chats_get_the_message_unchanged() {
+        assert_eq!(message_prompt("/compact kurz", true), "/compact kurz");
+        assert_eq!(message_prompt("Hallo", false), "Hallo");
+        assert_eq!(message_body("Hallo"), None);
+        assert_eq!(
+            message_body(&message_prompt("Zeile 1\nZeile 2", true)),
+            Some("Zeile 1\nZeile 2")
+        );
     }
 
     #[test]

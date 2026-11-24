@@ -1702,3 +1702,50 @@ fn a_form_runs_as_a_tab_in_the_inbox_space_and_the_inbox_returns_afterwards() {
         .iter()
         .any(|method| matches!(method, Method::ChatUserInbox(params) if params.all)));
 }
+
+fn composed_workspace(outcome: &ClientShellInput) -> Option<String> {
+    methods(outcome)
+        .into_iter()
+        .find_map(|method| match method {
+            Method::ChatUserInboxAct(params)
+                if params.action == crate::api::schema::ChatUserInboxAction::Compose =>
+            {
+                params.workspace_id.clone()
+            }
+            _ => None,
+        })
+}
+
+#[test]
+fn new_messages_open_the_composer_from_the_button_the_list_and_prefix_a() {
+    let (mut state, rows) = agents_only_state_with(master_snapshot());
+    // Der fokussierte Chat hat einen laufenden Agent: die Tab-Leiste zeigt
+    // den Button.
+    assert!(
+        rows.iter().any(|row| row.contains("Neue Nachricht")),
+        "{rows:#?}"
+    );
+    let (button, target) = state.hits.composer_button.clone().expect("button");
+    assert_eq!(target, "ws_1");
+    let outcome = mouse(
+        &mut state,
+        MouseEventKind::Down(MouseButton::Left),
+        (button.x + 2, button.y),
+    );
+    assert_eq!(composed_workspace(&outcome).as_deref(), Some("ws_1"));
+
+    let outcome = press(&mut state, b"\x02a");
+    assert_eq!(composed_workspace(&outcome).as_deref(), Some("ws_1"));
+
+    // `a` in der Liste schreibt an den Chat unter dem Cursor und gibt die
+    // Tastatur an das Popup ab.
+    focus_sidebar(&mut state);
+    let cursor = state
+        .local_sidebar_agent_cursor()
+        .and_then(|cursor| state.sidebar_chat_row(&cursor.pane_id))
+        .map(|row| row.workspace_id)
+        .expect("cursor on a chat");
+    let outcome = press(&mut state, b"a");
+    assert_eq!(composed_workspace(&outcome), Some(cursor));
+    assert_ne!(state.mode, ClientShellMode::Navigate);
+}

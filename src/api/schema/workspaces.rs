@@ -254,6 +254,11 @@ pub enum ChatUserInboxAction {
     ReplyWritten,
     /// The user left the inbox: deliver held replies now.
     Flush,
+    /// Write a new message to the chat in nvim, in a popup.
+    Compose,
+    /// A new message was written to `path`; it goes to the chat as its own
+    /// prompt once the chat is idle.
+    MessageWritten,
 }
 
 /// collie: Act on user inbox entries.
@@ -268,7 +273,7 @@ pub struct ChatUserInboxActParams {
     pub ids: Vec<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exit_code: Option<i32>,
-    /// Wizard log or follow-up question file.
+    /// Wizard log, follow-up question or message file.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
     /// Answer with the global inbox; `flush` then covers every chat.

@@ -150,7 +150,10 @@ pub(super) fn child_rows(
         .collect()
 }
 
-fn chat_row(snapshot: &ClientShellSnapshot, workspace: &ClientShellWorkspace) -> Option<ChatRow> {
+pub(super) fn chat_row(
+    snapshot: &ClientShellSnapshot,
+    workspace: &ClientShellWorkspace,
+) -> Option<ChatRow> {
     // collie: Der Inbox-Space ist kein Chat.
     if snapshot.user_inbox.space_workspace_id.as_deref() == Some(workspace.workspace_id.as_str()) {
         return None;

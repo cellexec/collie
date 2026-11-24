@@ -95,6 +95,11 @@ Was der Nutzer mit den Einträgen macht, kommt gebündelt als Prompt, der mit
 | `#<id> wizard „…“: durchgelaufen` oder `abgebrochen mit Exit-Code N` | bei Fehlern das Skript prüfen und neu ablegen |
 | `#<id> …: Rückfrage: <text>` | beantworte sie, als neuen Eintrag in der Inbox |
 
+Ein Prompt, der mit `[collie nutzer]` beginnt, hat der Nutzer selbst im
+Composer geschrieben (`a` in collie). Er wartete, bis du idle warst. Behandle
+ihn wie eine getippte Nachricht: Er hat Vorrang vor Child-Rückmeldungen, und
+deine Antwort landet automatisch in seiner Inbox.
+
 Werktags um 08:00 (`master.daily_digest`) kommt ein Prompt, der mit
 `[collie digest]` beginnt. Er enthält die Tagesübersicht als Liste: was
 blockiert ist, was auf den Nutzer wartet und was seit der letzten Übersicht

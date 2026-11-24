@@ -748,6 +748,10 @@ impl ClientShellState {
                 if key.code == KeyCode::Char('i') && key.modifiers.is_empty() {
                     self.open_user_inbox(outcome);
                 }
+                // collie: `prefix+a` schreibt eine neue Nachricht an den Chat.
+                if key.code == KeyCode::Char('a') && key.modifiers.is_empty() {
+                    self.compose_focused_chat_message(outcome);
+                }
                 None
             }
             ClientShellMode::Navigate => {

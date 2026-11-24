@@ -2167,7 +2167,7 @@
               "type": "array"
             },
             "path": {
-              "description": "Wizard log or follow-up question file.",
+              "description": "Wizard log, follow-up question or message file.",
               "type": [
                 "string",
                 "null"
@@ -2231,6 +2231,16 @@
             {
               "const": "flush",
               "description": "The user left the inbox: deliver held replies now.",
+              "type": "string"
+            },
+            {
+              "const": "compose",
+              "description": "Write a new message to the chat in nvim, in a popup.",
+              "type": "string"
+            },
+            {
+              "const": "message_written",
+              "description": "A new message was written to `path`; it goes to the chat as its own\nprompt once the chat is idle.",
               "type": "string"
             }
           ]

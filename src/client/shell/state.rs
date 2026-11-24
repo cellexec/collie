@@ -126,6 +126,8 @@ pub(super) struct ShellHitMap {
     pub(super) inbox_dock_rows: Vec<(Rect, usize)>,
     /// collie: Breadcrumb eines offenen Childs, mit der Pane-ID seines Masters.
     pub(super) master_breadcrumb: Option<(Rect, String)>,
+    /// collie: Button `Neue Nachricht` in der Tab-Leiste und sein Chat.
+    pub(super) composer_button: Option<(Rect, String)>,
     pub(super) new_workspace: Rect,
     pub(super) new_tab: Rect,
     pub(super) tab_scroll_left: Rect,

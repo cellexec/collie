@@ -43,6 +43,8 @@ impl ClientShellState {
             }
             // collie: `[` und `]` wechseln im Sheet zum Inbox-Tab.
             KeyCode::Char('[' | ']') if plain => return self.open_cursor_user_inbox(outcome),
+            // collie: `a` schreibt eine neue Nachricht an den Chat in nvim.
+            KeyCode::Char('a') if plain => return self.compose_cursor_chat_message(outcome),
             // `m` ohne Master unter dem Cursor bleibt das globale Menü.
             KeyCode::Char('m') if plain => return self.open_cursor_telescope(outcome),
             _ => return false,

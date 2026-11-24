@@ -222,6 +222,7 @@ pub(crate) fn render_tab_bar(
         }
     }
     render_tab_bar_status(buffer, area, snapshot, palette);
+    render_composer_button(buffer, area, snapshot, palette, hits);
 }
 
 pub(crate) fn tab_bar_status_width(snapshot: &ClientShellSnapshot) -> u16 {
@@ -248,7 +249,12 @@ fn tab_bar_status_area(snapshot: &ClientShellSnapshot, area: Rect) -> Option<Rec
 fn tab_bar_content_area(snapshot: &ClientShellSnapshot, area: Rect) -> Rect {
     let reserved = tab_bar_status_area(snapshot, area)
         .map(|status| status.width.saturating_add(1))
-        .unwrap_or(0);
+        .unwrap_or(0)
+        .saturating_add(
+            composer_button_area(snapshot, area)
+                .map(|button| button.width.saturating_add(1))
+                .unwrap_or(0),
+        );
     let breadcrumb = master_breadcrumb(snapshot)
         .map(|(label, _)| display_width(&label).saturating_add(1))
         .unwrap_or(0)
@@ -261,6 +267,47 @@ fn tab_bar_content_area(snapshot: &ClientShellSnapshot, area: Rect) -> Rect {
             .saturating_sub(breadcrumb),
         ..area
     }
+}
+
+/// collie: Button `Neue Nachricht` links vom Status, solange ein Chat mit
+/// laufendem Agent fokussiert ist. Liefert Fläche und Ziel-Space.
+fn composer_button_area(snapshot: &ClientShellSnapshot, area: Rect) -> Option<Rect> {
+    super::composer::composer_target(snapshot)?;
+    let width = display_width(super::composer::COMPOSER_BUTTON);
+    let status = tab_bar_status_area(snapshot, area)
+        .map(|status| status.width.saturating_add(1))
+        .unwrap_or(0);
+    let right = area.right().saturating_sub(status);
+    (right.saturating_sub(area.x) >= width.saturating_add(MIN_TAB_STRIP_WIDTH))
+        .then(|| Rect::new(right.saturating_sub(width), area.y, width, 1))
+}
+
+fn render_composer_button(
+    buffer: &mut Buffer,
+    area: Rect,
+    snapshot: &ClientShellSnapshot,
+    palette: &Palette,
+    hits: &mut ShellHitMap,
+) {
+    hits.composer_button = None;
+    let Some(rect) = composer_button_area(snapshot, area) else {
+        return;
+    };
+    let Some(target) = super::composer::composer_target(snapshot) else {
+        return;
+    };
+    put_text(
+        buffer,
+        rect.x,
+        rect.y,
+        rect.width,
+        super::composer::COMPOSER_BUTTON,
+        Style::default()
+            .fg(palette.accent)
+            .bg(palette.surface0)
+            .add_modifier(Modifier::BOLD),
+    );
+    hits.composer_button = Some((rect, target));
 }
 
 /// collie: Breadcrumb eines offenen Childs, `󰆥 Master Chat › Titel `, und der
