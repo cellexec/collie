@@ -111,8 +111,10 @@ flowchart LR
 | --- | --- |
 | `I`, `[` oder `]` in den Chats, `prefix+i` | Inbox öffnen |
 | `[` oder `]` in der Inbox | zurück zu den Chats |
-| `j`/`k`, `g`/`G`, Mausrad | Cursor; beim Lesen scrollen |
-| `enter` | Nachricht lesen (Fokus auf den Text), Formular oder Wizard als Tab öffnen |
+| `j`/`k`, `g`/`G`, Mausrad | Cursor; beim Lesen scrollen, ohne über das Textende zu laufen |
+| `enter` | Nachricht im Vollbild lesen (ohne Tabelle, umgebrochen statt gekürzt), Formular oder Wizard als Tab öffnen |
+| `y` | Text des Eintrags als Markdown in die Zwischenablage (nativ, sonst OSC 52) |
+| `n` | Nachricht als temporäre Markdown-Datei in `$EDITOR` (sonst nvim) als Tab im Inbox-Space; die Datei verschwindet mit dem Editor. Bei Formularen und Wizards wie `enter` |
 | `prefix+i`, Klick auf die angedockte Liste | während einer Aufgabe zurück in die Inbox |
 | Klick auf `chats` im angedockten Sheet | Chat-Karten statt Liste; Klick auf eine Karte öffnet den Chat |
 | `space`, `m` | markieren; die erste Spalte zeigt dann eine Checkbox |
@@ -120,7 +122,8 @@ flowchart LR
 | `u` | letztes `dd` zurückholen |
 | `r` | Rückfrage in nvim |
 | Zoom-Taste (Standard `prefix+z`) | während einer Aufgabe: angedockte Liste aus- und wieder einblenden, die Aufgabe füllt dann den Bildschirm |
-| `ctrl+d`/`ctrl+u`, Bild auf/ab | Text scrollen |
+| `ctrl+d`/`ctrl+u`, `ctrl+f`/`ctrl+b`, Bild auf/ab | Text halbe bzw. ganze Seite scrollen |
+| `esc`, `q` beim Lesen | zurück zur Tabelle |
 | `esc`, `q` | schließen und zurück in den Chat, aus dem die Inbox kam; zurückgehaltene Rückmeldungen gehen raus |
 
 Der Zähler zählt ungelesene Nachrichten und Antworten sowie offene Formulare

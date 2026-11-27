@@ -444,14 +444,19 @@ impl App {
             ))
     }
 
-    /// `Enter` auf einem Formular oder Wizard: öffnet ein Pane neben dem
-    /// Master. Nachrichten öffnet die TUI selbst.
+    /// `Enter` auf einem Formular oder Wizard: öffnet ein Tab im
+    /// Inbox-Space. `n` auf einer Nachricht öffnet ihren Text als temporäre
+    /// Markdown-Datei in `$EDITOR` (sonst nvim); die Datei verschwindet mit
+    /// dem Editor.
     fn open_user_entry(
         &mut self,
         master: usize,
         id: Option<u64>,
     ) -> Result<(), (&'static str, String)> {
         let entry = self.user_entry(master, id)?.clone();
+        if !matches!(entry.kind, UserInboxKind::Formular | UserInboxKind::Wizard) {
+            return self.open_user_entry_text(master, &entry);
+        }
         let workspace = self.state.workspaces[master].id.clone();
         let herdr = herdr_command();
         let path = entry.path.clone().ok_or((
@@ -486,6 +491,24 @@ impl App {
                 ));
             }
         };
+        self.run_in_inbox_tab(master, entry.id, false, &command, &entry.title)?;
+        self.update_user_entries(master, &[entry.id], |entry| entry.read = true);
+        Ok(())
+    }
+
+    fn open_user_entry_text(
+        &mut self,
+        master: usize,
+        entry: &UserInboxEntry,
+    ) -> Result<(), (&'static str, String)> {
+        let file =
+            inbox_file("nachricht", entry.id).map_err(|err| ("user_inbox_open_failed", err))?;
+        std::fs::write(&file, entry_markdown(entry))
+            .map_err(|err| ("user_inbox_open_failed", err.to_string()))?;
+        let command = format!(
+            " ${{EDITOR:-nvim}} {file}; rm -f {file}; exit",
+            file = shell_word(&file.to_string_lossy()),
+        );
         self.run_in_inbox_tab(master, entry.id, false, &command, &entry.title)?;
         self.update_user_entries(master, &[entry.id], |entry| entry.read = true);
         Ok(())
@@ -949,12 +972,29 @@ fn absolute_file(path: &str) -> Option<String> {
 }
 
 fn reply_file(id: u64) -> Result<PathBuf, String> {
+    inbox_file("rueckfrage", id)
+}
+
+fn inbox_file(prefix: &str, id: u64) -> Result<PathBuf, String> {
     let dir = crate::session::data_dir().join("user-inbox");
     std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
     Ok(dir.join(format!(
-        "rueckfrage-{id}-{}.md",
+        "{prefix}-{id}-{}.md",
         crate::workspace::unix_millis_now()
     )))
+}
+
+/// Text eines Eintrags als Markdown-Datei: Titel als Überschrift, dann der
+/// Text, sofern er nicht schon mit dem Titel beginnt.
+fn entry_markdown(entry: &UserInboxEntry) -> String {
+    let text = entry.text.trim_end();
+    let titled = text.lines().next().is_some_and(|line| {
+        line.starts_with('#') && line.trim_start_matches('#').trim() == entry.title
+    });
+    if entry.title.is_empty() || titled {
+        return format!("{text}\n");
+    }
+    format!("# {}\n\n{text}\n", entry.title)
 }
 
 /// Pfad des laufenden Binaries für Befehle in neuen Panes. Nach einem
@@ -1336,5 +1376,71 @@ mod tests {
         let (important, _, _) = app.global_user_inbox();
         assert_eq!(important, 2);
         let _ = std::fs::remove_file(file);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn n_opens_a_message_as_markdown_in_the_editor() {
+        let mut app = test_app();
+        app.state.default_shell = "/bin/cat".into();
+        app.state.shell_mode = crate::config::ShellModeConfig::NonLogin;
+        app.state.ensure_test_terminals();
+        tell(
+            &mut app,
+            "nachricht",
+            "## Child fertig\nAlles **grün**.",
+            None,
+        );
+
+        let before: std::collections::HashSet<_> =
+            std::fs::read_dir(crate::session::data_dir().join("user-inbox"))
+                .map(|dir| dir.flatten().map(|entry| entry.path()).collect())
+                .unwrap_or_default();
+        let opened = act(&mut app, ChatUserInboxAction::Open, vec![1]);
+        assert!(opened.get("error").is_none(), "{opened}");
+        let space = app.user_inbox_space().expect("inbox space");
+        assert_eq!(app.state.workspaces[space].tabs.len(), 1);
+        assert!(app.state.workspaces[0].chat.team.user_inbox[0].read);
+
+        let created: Vec<_> = std::fs::read_dir(crate::session::data_dir().join("user-inbox"))
+            .expect("inbox dir")
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| {
+                !before.contains(path)
+                    && path
+                        .file_name()
+                        .is_some_and(|name| name.to_string_lossy().starts_with("nachricht-1-"))
+            })
+            .collect();
+        let [file] = created.as_slice() else {
+            panic!("expected one new file: {created:?}");
+        };
+        assert!(file.to_string_lossy().ends_with(".md"));
+        assert_eq!(
+            std::fs::read_to_string(file).unwrap(),
+            "## Child fertig\nAlles **grün**.\n"
+        );
+        let _ = std::fs::remove_file(file);
+    }
+
+    #[test]
+    fn entry_markdown_adds_the_title_only_when_missing() {
+        let mut entry = UserInboxEntry {
+            id: 1,
+            at: 0,
+            kind: UserInboxKind::Nachricht,
+            important: false,
+            title: "Fertig".into(),
+            text: "Alles gut.".into(),
+            path: None,
+            key: None,
+            read: false,
+            finished: false,
+            deleted: false,
+        };
+        assert_eq!(entry_markdown(&entry), "# Fertig\n\nAlles gut.\n");
+        entry.text = "## Fertig\n\nAlles gut.".into();
+        assert_eq!(entry_markdown(&entry), "## Fertig\n\nAlles gut.\n");
     }
 }

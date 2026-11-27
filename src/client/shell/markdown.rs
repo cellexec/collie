@@ -318,10 +318,13 @@ impl Writer<'_> {
             .width
             .saturating_sub(display_width_of(&self.indent()) + 2);
         for text in code {
-            let mut line = self.indent();
-            line.push(("  ".to_owned(), self.base));
-            line.push((truncate_end(&text.replace('\t', "    "), room), style));
-            self.lines.push(line);
+            // Lange Zeilen brechen hart um, damit kein Zeichen verloren geht.
+            for chunk in split_to_width(&text.replace('\t', "    "), room.max(1)) {
+                let mut line = self.indent();
+                line.push(("  ".to_owned(), self.base));
+                line.push((chunk, style));
+                self.lines.push(line);
+            }
         }
         self.blank();
     }
@@ -510,13 +513,26 @@ fn wrap_spans(
             line.push((" ".to_owned(), style));
             used += 1;
         }
+        // Ein Wort breiter als die Zeile (URL, Pfad) bricht hart um.
         let room = width.saturating_sub(used).max(1);
-        let word = if word_width > room {
-            truncate_end(&word, room)
-        } else {
-            word
-        };
-        used += display_width(&word) as usize;
+        if word_width > room {
+            let mut chunks = split_to_width(&word, room).into_iter();
+            let head = chunks.next().unwrap_or_default();
+            used += display_width(&head) as usize;
+            line.push((head, style));
+            let tail: String = chunks.collect();
+            if !tail.is_empty() {
+                let rest_room = width.saturating_sub(display_width_of(rest)).max(1);
+                for chunk in split_to_width(&tail, rest_room) {
+                    lines.push(std::mem::replace(&mut line, rest.clone()));
+                    used = display_width_of(rest) + display_width(&chunk) as usize;
+                    line.push((chunk, style));
+                }
+            }
+            empty = false;
+            continue;
+        }
+        used += word_width;
         line.push((word, style));
         empty = false;
     }
@@ -524,6 +540,26 @@ fn wrap_spans(
         lines.push(line);
     }
     lines
+}
+
+/// Teilt `text` in Stücke von höchstens `width` Spalten.
+fn split_to_width(text: &str, width: usize) -> Vec<String> {
+    let mut chunks = Vec::new();
+    let mut current = String::new();
+    let mut used = 0;
+    for ch in text.chars() {
+        let ch_width = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
+        if used + ch_width > width && !current.is_empty() {
+            chunks.push(std::mem::take(&mut current));
+            used = 0;
+        }
+        current.push(ch);
+        used += ch_width;
+    }
+    if !current.is_empty() || chunks.is_empty() {
+        chunks.push(current);
+    }
+    chunks
 }
 
 #[cfg(test)]
@@ -593,6 +629,23 @@ mod tests {
     fn code_blocks_and_quotes_keep_their_shape() {
         let lines = plain("```sh\ncargo test\n```\n\n> Zitat", 30);
         assert_eq!(lines, vec!["  sh", "  cargo test", "", "│ Zitat"]);
+    }
+
+    #[test]
+    fn long_words_and_code_lines_wrap_instead_of_being_cut() {
+        let lines = plain("siehe /home/marcel/projects/collie/src/main.rs bitte", 20);
+        assert_eq!(
+            lines,
+            vec![
+                "siehe",
+                "/home/marcel/project",
+                "s/collie/src/main.rs",
+                "bitte"
+            ]
+        );
+        let lines = plain("```\nabcdefghijklmnopqrstuvwxyz\n```", 12);
+        assert_eq!(lines, vec!["  abcdefghij", "  klmnopqrst", "  uvwxyz"]);
+        assert!(lines.iter().all(|line| !line.contains('…')));
     }
 
     #[test]

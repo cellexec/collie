@@ -1749,3 +1749,107 @@ fn new_messages_open_the_composer_from_the_button_the_list_and_prefix_a() {
     assert_eq!(composed_workspace(&outcome), Some(cursor));
     assert_ne!(state.mode, ClientShellMode::Navigate);
 }
+
+#[test]
+fn enter_reads_an_inbox_message_in_full_and_y_and_n_take_it_out() {
+    let mut snapshot = master_snapshot();
+    snapshot.workspaces[0].focused = false;
+    snapshot.user_inbox = crate::protocol::ClientShellUserInbox {
+        important: 1,
+        revision: 3,
+        ..Default::default()
+    };
+    let (mut state, _) = agents_only_state_with(snapshot);
+    focus_sidebar(&mut state);
+    let outcome = press(&mut state, b"I");
+    let request = endpoint_request_id(&outcome, "chat.user_inbox");
+    let path = format!("/home/marcel/{}/ende.rs", "verzeichnis/".repeat(20));
+    let mut text = format!("Pfad: {path}\n\n");
+    for line in 1..=60 {
+        text.push_str(&format!("Absatz {line}\n\n"));
+    }
+    state.handle_endpoint_result(
+        "boot-1",
+        &request,
+        Ok(crate::api::schema::ResponseResult::ChatUserInbox {
+            user_inbox: vec![crate::api::schema::UserInboxEntryInfo {
+                id: 1,
+                at: 1,
+                kind: "nachricht".into(),
+                important: true,
+                title: "Langer Bericht".into(),
+                text: text.clone(),
+                path: None,
+                read: false,
+                finished: false,
+                workspace_id: "ws_1".into(),
+                chat: "ws_1".into(),
+                master: false,
+            }],
+        }),
+    );
+    state.compose(160, 28).expect("frame");
+
+    let outcome = press(&mut state, b"\r");
+    assert!(methods(&outcome).iter().any(|method| matches!(
+        method,
+        Method::ChatUserInboxAct(params)
+            if params.action == crate::api::schema::ChatUserInboxAction::Read
+    )));
+    let rows = frame_rows(&state.compose(160, 28).expect("frame"));
+    let screen = rows.join("\n");
+    // Vollbild: keine Tabelle, der Titel oben, der Pfad umgebrochen statt
+    // mit … gekürzt.
+    assert!(!screen.contains("Titel"), "{screen}");
+    assert!(screen.contains("Langer Bericht"), "{screen}");
+    assert!(screen.contains("ende.rs"), "{screen}");
+    assert!(!screen.contains('…'), "{screen}");
+    assert!(screen.contains("q/esc zurück"), "{screen}");
+
+    let scroll = |state: &ClientShellState| match state.overlay.as_ref() {
+        Some(ClientShellOverlay::UserInbox(inbox)) => inbox.detail_scroll,
+        _ => panic!("inbox closed"),
+    };
+    press(&mut state, b"G");
+    let bottom = scroll(&state);
+    assert!(bottom > 0);
+    // Am Ende läuft `j` nicht weiter, `k` geht sofort eine Zeile hoch.
+    press(&mut state, b"j");
+    assert_eq!(scroll(&state), bottom);
+    press(&mut state, b"k");
+    assert_eq!(scroll(&state), bottom - 1);
+    press(&mut state, b"g");
+    assert_eq!(scroll(&state), 0);
+    press(&mut state, b"\x04");
+    let half = scroll(&state);
+    assert!(half > 1);
+    press(&mut state, b"\x15");
+    assert_eq!(scroll(&state), 0);
+    let rows = frame_rows(&state.compose(160, 28).expect("frame"));
+    assert!(rows.iter().any(|row| row.contains("Absatz 1")), "{rows:#?}");
+
+    let outcome = press(&mut state, b"y");
+    assert!(matches!(
+        outcome.actions.as_slice(),
+        [ClientShellAction::ClipboardWrite(bytes)] if bytes == text.as_bytes()
+    ));
+
+    let outcome = press(&mut state, b"n");
+    assert!(methods(&outcome).iter().any(|method| matches!(
+        method,
+        Method::ChatUserInboxAct(params)
+            if params.action == crate::api::schema::ChatUserInboxAction::Open
+                && params.ids == vec![1]
+    )));
+    assert!(state.inbox_dock.is_some());
+
+    // `q` im Lesemodus führt zurück zur Tabelle.
+    let mut inbox = state.inbox_dock.take().expect("dock").inbox;
+    inbox.reading = true;
+    state.overlay = Some(ClientShellOverlay::UserInbox(inbox));
+    press(&mut state, b"q");
+    assert!(matches!(
+        state.overlay.as_ref(),
+        Some(ClientShellOverlay::UserInbox(inbox)) if !inbox.reading
+    ));
+}

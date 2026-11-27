@@ -252,12 +252,76 @@ fn sheet(buffer: &mut Buffer, rect: Rect, palette: &Palette) -> Option<Rect> {
         }
     }
     super::render::render_sidebar_background(buffer, rect, palette);
-    Some(Rect::new(
+    Some(sheet_inner(rect))
+}
+
+fn sheet_inner(rect: Rect) -> Rect {
+    Rect::new(
         rect.x.saturating_add(1),
         rect.y.saturating_add(2),
         rect.width.saturating_sub(3),
         rect.height.saturating_sub(2),
-    ))
+    )
+}
+
+/// Fläche zwischen Kopf- und Fußzeile der offenen Inbox.
+fn inbox_body(inner: Rect) -> Rect {
+    let footer_y = inner.bottom().saturating_sub(1);
+    Rect::new(
+        inner.x,
+        inner.y,
+        inner.width,
+        footer_y.saturating_sub(1).saturating_sub(inner.y),
+    )
+}
+
+/// Tabelle und Lesebereich. Im Lesemodus füllt der Text die ganze Fläche.
+fn split_body(body: Rect, reading: bool) -> (Option<Rect>, Rect) {
+    if reading {
+        return (None, body);
+    }
+    let table_width = (body.width * 9 / 20).clamp(40.min(body.width), body.width);
+    let table = Rect::new(body.x, body.y, table_width, body.height);
+    let detail_x = table.right().saturating_add(3);
+    let detail = Rect::new(
+        detail_x,
+        body.y,
+        body.right().saturating_sub(detail_x),
+        body.height,
+    );
+    (Some(table), detail)
+}
+
+/// Zeilen über dem Text: Kopf, im Lesemodus der Titel, eine Leerzeile.
+fn detail_text_top(reading: bool) -> u16 {
+    if reading {
+        3
+    } else {
+        2
+    }
+}
+
+fn detail_lines(entry: &UserInboxEntryInfo, width: u16, palette: &Palette) -> Vec<MdLine> {
+    let base = Style::default().bg(palette.sidebar_bg);
+    render_markdown(
+        &entry.text,
+        usize::from(width),
+        palette,
+        base.fg(palette.text),
+    )
+}
+
+/// Größter sinnvoller Scroll-Versatz des Textes in `detail`.
+fn detail_max_scroll(
+    entry: &UserInboxEntryInfo,
+    detail: Rect,
+    reading: bool,
+    palette: &Palette,
+) -> usize {
+    let room = usize::from(detail.height.saturating_sub(detail_text_top(reading)));
+    detail_lines(entry, detail.width, palette)
+        .len()
+        .saturating_sub(room)
 }
 
 /// Kopfzeile mit den Tabs Chats und Inbox, rechts die Zahl der
@@ -350,24 +414,19 @@ pub(super) fn render_user_inbox(
         )
     } else if inbox.reading {
         (
-            "j/k scrollen · esc zur Tabelle · r Rückfrage · dd erledigt",
+            "j/k ^d/^u g/G scrollen · y kopieren · n in nvim · r Rückfrage · dd erledigt · q/esc zurück",
             base.fg(palette.overlay0),
         )
     } else {
         (
-            "enter öffnen · space markieren · dd erledigt · u zurück · r Rückfrage · [ ] chats · esc",
+            "enter lesen · y kopieren · n in nvim · space markieren · dd erledigt · u zurück · r Rückfrage · [ ] chats · esc",
             base.fg(palette.overlay0),
         )
     };
     put_text(buffer, inner.x, footer_y, inner.width, footer.0, footer.1);
 
     let mut menu_rows = Vec::new();
-    let body = Rect::new(
-        inner.x,
-        inner.y,
-        inner.width,
-        footer_y.saturating_sub(1).saturating_sub(inner.y),
-    );
+    let body = inbox_body(inner);
     if render_empty(buffer, body, inbox, palette) {
         return Some(TelescopeRender {
             area: rect,
@@ -375,42 +434,33 @@ pub(super) fn render_user_inbox(
         });
     }
 
-    // Links die Tabelle, rechts der Text des gewählten Eintrags.
-    let table_width = (body.width * 9 / 20).clamp(40.min(body.width), body.width);
-    let table = Rect::new(body.x, body.y, table_width, body.height);
-    render_table(
-        buffer,
-        table,
-        inbox,
-        selected,
-        snapshot,
-        now,
-        palette,
-        &mut menu_rows,
-    );
-    let divider_x = table.right().saturating_add(1);
-    let divider = if inbox.reading {
-        palette.accent
-    } else {
-        palette.surface1
-    };
-    for y in body.y..body.bottom() {
-        put_text(buffer, divider_x, y, 1, "│", base.fg(divider));
-    }
-    let detail_x = divider_x.saturating_add(2);
-    if let Some(entry) = inbox.entries.get(selected) {
-        let detail = Rect::new(
-            detail_x,
-            body.y,
-            body.right().saturating_sub(detail_x),
-            body.height,
+    // Links die Tabelle, rechts der Text des gewählten Eintrags. Im
+    // Lesemodus steht nur der Text da, umgebrochen über die ganze Breite.
+    let (table, detail) = split_body(body, inbox.reading);
+    if let Some(table) = table {
+        render_table(
+            buffer,
+            table,
+            inbox,
+            selected,
+            snapshot,
+            now,
+            palette,
+            &mut menu_rows,
         );
+        let divider_x = table.right().saturating_add(1);
+        for y in body.y..body.bottom() {
+            put_text(buffer, divider_x, y, 1, "│", base.fg(palette.surface1));
+        }
+    }
+    if let Some(entry) = inbox.entries.get(selected) {
         render_detail(
             buffer,
             detail,
             entry,
             &chat_label(snapshot, entry),
             inbox.detail_scroll,
+            inbox.reading,
             palette,
         );
     }
@@ -617,6 +667,7 @@ fn render_detail(
     entry: &UserInboxEntryInfo,
     chat: &str,
     scroll: usize,
+    reading: bool,
     palette: &Palette,
 ) {
     if rect.height == 0 {
@@ -645,21 +696,39 @@ fn render_detail(
         &truncate_end(&header, usize::from(rect.width)),
         base.fg(palette.overlay0).add_modifier(Modifier::BOLD),
     );
-    let lines = render_markdown(
-        &entry.text,
-        usize::from(rect.width),
-        palette,
-        base.fg(palette.text),
-    );
-    let room = usize::from(rect.height.saturating_sub(2));
+    let top = detail_text_top(reading);
+    if reading && rect.height > 1 {
+        put_text(
+            buffer,
+            rect.x,
+            rect.y + 1,
+            rect.width,
+            &truncate_end(&entry.title, usize::from(rect.width)),
+            base.fg(palette.text).add_modifier(Modifier::BOLD),
+        );
+    }
+    let lines = detail_lines(entry, rect.width, palette);
+    let room = usize::from(rect.height.saturating_sub(top));
     let scroll = scroll.min(lines.len().saturating_sub(room));
     for (offset, line) in lines.iter().skip(scroll).take(room).enumerate() {
         put_spans(
             buffer,
             rect.x,
-            rect.y + 2 + offset as u16,
+            rect.y + top + offset as u16,
             rect.right(),
             line,
+        );
+    }
+    if scroll > 0 {
+        let less = format!(" ↑ {scroll} Zeilen ");
+        let width = display_width(&less);
+        put_text(
+            buffer,
+            rect.right().saturating_sub(width),
+            rect.y,
+            width,
+            &less,
+            base.fg(palette.overlay0),
         );
     }
     if scroll + room < lines.len() {
@@ -1067,11 +1136,31 @@ impl ClientShellState {
         outcome.repaint = true;
     }
 
+    /// Größter Scroll-Versatz und halbe Seite des Lesebereichs, gemessen an
+    /// der zuletzt gezeichneten Fläche. Vor dem ersten Bild ohne Grenze.
+    fn user_inbox_detail_bounds(&self) -> (usize, usize) {
+        let Some(ClientShellOverlay::UserInbox(inbox)) = self.overlay.as_ref() else {
+            return (0, 1);
+        };
+        let area = self.hits.user_inbox_area;
+        let (_, detail) = split_body(inbox_body(sheet_inner(area)), inbox.reading);
+        let room = detail.height.saturating_sub(detail_text_top(inbox.reading));
+        let page = usize::from(room / 2).max(1);
+        if detail.width == 0 || room == 0 {
+            return (usize::MAX, page);
+        }
+        let max = inbox.entries.get(selected_index(inbox)).map_or(0, |entry| {
+            detail_max_scroll(entry, detail, inbox.reading, &self.config.palette)
+        });
+        (max, page)
+    }
+
     pub(super) fn route_user_inbox_key(
         &mut self,
         key: &crate::input::TerminalKey,
         outcome: &mut ClientShellInput,
     ) -> bool {
+        let (max_scroll, page) = self.user_inbox_detail_bounds();
         let Some(ClientShellOverlay::UserInbox(inbox)) = self.overlay.as_mut() else {
             return false;
         };
@@ -1115,26 +1204,50 @@ impl ClientShellState {
                 inbox.detail_scroll = 0;
             }
         };
+        // Scrollt den Text, ohne über sein Ende hinauszulaufen.
+        let scroll = |inbox: &mut ClientUserInbox, delta: isize| {
+            let current = inbox.detail_scroll.min(max_scroll);
+            inbox.detail_scroll = current.saturating_add_signed(delta).min(max_scroll);
+        };
+        let page = isize::try_from(page).unwrap_or(isize::MAX);
         match code {
             KeyCode::Esc | KeyCode::Char('q') if inbox.reading => inbox.reading = false,
             KeyCode::Esc | KeyCode::Char('q') => self.close_user_inbox(outcome),
             KeyCode::Char('[' | ']') if !ctrl => self.switch_user_inbox_to_chats(outcome),
-            KeyCode::Down | KeyCode::Char('j') if inbox.reading => inbox.detail_scroll += 1,
-            KeyCode::Up | KeyCode::Char('k') if inbox.reading => {
-                inbox.detail_scroll = inbox.detail_scroll.saturating_sub(1);
-            }
+            KeyCode::Down | KeyCode::Char('j') if inbox.reading => scroll(inbox, 1),
+            KeyCode::Up | KeyCode::Char('k') if inbox.reading => scroll(inbox, -1),
+            KeyCode::Char('g') if inbox.reading => inbox.detail_scroll = 0,
+            KeyCode::Char('G') if inbox.reading => inbox.detail_scroll = max_scroll,
             KeyCode::Down | KeyCode::Char('j') => select(inbox, (index + 1).min(last)),
             KeyCode::Up | KeyCode::Char('k') => select(inbox, index.saturating_sub(1)),
             KeyCode::Char('n') if ctrl => select(inbox, (index + 1).min(last)),
             KeyCode::Char('p') if ctrl => select(inbox, index.saturating_sub(1)),
-            KeyCode::Char('d') if ctrl => inbox.detail_scroll += 10,
-            KeyCode::Char('u') if ctrl => {
-                inbox.detail_scroll = inbox.detail_scroll.saturating_sub(10);
-            }
-            KeyCode::PageDown => inbox.detail_scroll += 10,
-            KeyCode::PageUp => inbox.detail_scroll = inbox.detail_scroll.saturating_sub(10),
+            KeyCode::Char('d') if ctrl => scroll(inbox, page),
+            KeyCode::Char('u') if ctrl => scroll(inbox, -page),
+            KeyCode::Char('f') if ctrl => scroll(inbox, page * 2),
+            KeyCode::Char('b') if ctrl => scroll(inbox, -page * 2),
+            KeyCode::PageDown => scroll(inbox, page * 2),
+            KeyCode::PageUp => scroll(inbox, -page * 2),
             KeyCode::Char('g') => select(inbox, 0),
             KeyCode::Char('G') => select(inbox, last),
+            KeyCode::Char('y') if !ctrl => {
+                if let Some(entry) = current {
+                    outcome
+                        .actions
+                        .push(ClientShellAction::ClipboardWrite(entry.text.into_bytes()));
+                }
+            }
+            KeyCode::Char('n') if !ctrl => {
+                // Nachrichten öffnet der Server als Markdown-Datei im Editor,
+                // Formulare und Wizards wie mit `enter`.
+                if let Some(entry) = current {
+                    self.open_user_inbox_pane(
+                        ChatUserInboxAction::Open,
+                        EntryKey::of(&entry),
+                        outcome,
+                    );
+                }
+            }
             KeyCode::Char(' ' | 'm') if !inbox.reading => {
                 if let Some(entry) = current.as_ref() {
                     if let Some(position) = inbox.marked.iter().position(|key| key.matches(entry)) {
@@ -1212,6 +1325,7 @@ impl ClientShellState {
             .find(|(rect, _)| super::contains(*rect, point))
             .map(|(_, index)| *index);
         let area = self.hits.user_inbox_area;
+        let (max_scroll, _) = self.user_inbox_detail_bounds();
         let Some(ClientShellOverlay::UserInbox(inbox)) = self.overlay.as_mut() else {
             return false;
         };
@@ -1258,10 +1372,11 @@ impl ClientShellState {
                     .max()
                     .unwrap_or(0);
                 if inbox.reading || point.0 > table_right {
+                    let current = inbox.detail_scroll.min(max_scroll);
                     inbox.detail_scroll = if down {
-                        inbox.detail_scroll + 3
+                        current.saturating_add(3).min(max_scroll)
                     } else {
-                        inbox.detail_scroll.saturating_sub(3)
+                        current.saturating_sub(3)
                     };
                 } else {
                     let index = selected_index(inbox);
@@ -1398,10 +1513,14 @@ mod tests {
         inbox.pending_delete = false;
         inbox.reading = true;
         let reading = screen(&inbox);
-        // Die Tabelle bleibt sichtbar, der Text daneben hat den Fokus.
-        assert!(reading.contains("Titel"));
+        // Der Text füllt die ganze Fläche, der Titel steht darüber.
+        assert!(!reading.contains("Titel"), "{reading}");
+        assert!(
+            reading.contains("Was ist seit gestern passiert?"),
+            "{reading}"
+        );
         assert!(reading.contains("Stand"));
-        assert!(reading.contains("esc zur Tabelle"));
+        assert!(reading.contains("q/esc zurück"));
         // Rechts bleibt der Streifen zum Schließen frei.
         let first = reading.lines().next().unwrap_or_default();
         assert!(display_width(first) <= 160 - BACKDROP_COLS, "{first}");
