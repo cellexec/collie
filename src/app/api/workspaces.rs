@@ -441,6 +441,28 @@ impl App {
                 "workspace has linked worktree workspaces; use --group (close_group=true in the API) to close the group",
             );
         }
+        self.close_workspace_indices(id, index, close_indices)
+    }
+
+    /// collie: Schließt genau einen Space, auch wenn er der Haupt-Checkout
+    /// einer Worktree-Gruppe ist. Die anderen Spaces der Gruppe bleiben
+    /// stehen; auf der Platte wird nichts gelöscht.
+    pub(super) fn close_single_workspace(&mut self, id: String, workspace_id: &str) -> String {
+        let Some(index) = self.parse_workspace_id(workspace_id) else {
+            return workspace_not_found(id, workspace_id);
+        };
+        if self.state.workspaces.get(index).is_none() {
+            return workspace_not_found(id, workspace_id);
+        }
+        self.close_workspace_indices(id, index, vec![index])
+    }
+
+    fn close_workspace_indices(
+        &mut self,
+        id: String,
+        index: usize,
+        close_indices: Vec<usize>,
+    ) -> String {
         let closed_workspaces = close_indices
             .iter()
             .map(|index| {

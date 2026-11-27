@@ -8,8 +8,7 @@ use bytes::Bytes;
 use crate::api::schema::{
     ChatAdoptParams, ChatCloseChildren, ChatCloseParams, ChatInboxEntryInfo, ChatInboxParams,
     ChatMasterCreateParams, ChatPromptParams, ChatReportParams, ChatSpawnParams, ChatTeamInfo,
-    ChatTeamRole, ChatWorkspaceParams, PaneSendInputParams, ResponseResult, WorkspaceCloseParams,
-    WorkspaceCreateParams,
+    ChatTeamRole, ChatWorkspaceParams, PaneSendInputParams, ResponseResult, WorkspaceCreateParams,
 };
 use crate::app::App;
 use crate::workspace::{ChatInboxEntry, ChatInboxKind, ChatRole};
@@ -397,6 +396,16 @@ impl App {
                 },
             );
         }
+        // Läuft kein Agent mehr, ist nur noch eine Shell übrig. Sie belegt
+        // keinen Platz im Limit, es gibt also nichts zu stoppen.
+        if !self.chat_agent_running(index) {
+            return encode_success(
+                id,
+                ResponseResult::WorkspaceInfo {
+                    workspace: self.workspace_info(index),
+                },
+            );
+        }
         let Some(pane_id) = self.chat_agent_pane(index) else {
             return encode_error(id, "agent_not_found", "chat has no agent");
         };
@@ -412,7 +421,7 @@ impl App {
             return encode_error(
                 id,
                 "no_resume_plan",
-                "the agent reported no session; it could not be resumed after a stop",
+                "the agent reported no session; it could not be resumed after a stop. Use `herdr chat close` to end it",
             );
         };
         if let Some(terminal) = self.state.terminals.get_mut(&terminal_id) {
@@ -508,13 +517,10 @@ impl App {
         close_ids.push(self.state.workspaces[index].id.clone());
         let mut failure = None;
         for workspace_id in close_ids {
-            let response = self.handle_workspace_close(
-                format!("{id}:{workspace_id}"),
-                WorkspaceCloseParams {
-                    workspace_id,
-                    close_group: false,
-                },
-            );
+            // Ein Chat schließt nur seinen eigenen Space. Liegt er im
+            // Haupt-Checkout, bleiben die Worktree-Spaces anderer Chats stehen.
+            let response =
+                self.close_single_workspace(format!("{id}:{workspace_id}"), &workspace_id);
             if response.contains("\"error\"") {
                 failure = Some(response);
             }
@@ -1690,6 +1696,65 @@ mod tests {
         assert!(closed.get("error").is_none(), "{closed}");
         assert_eq!(app.state.workspaces.len(), 1);
         assert!(app.state.workspaces[0].chat.team.is_default());
+    }
+
+    #[test]
+    fn closing_a_child_in_the_main_checkout_keeps_other_worktree_chats() {
+        let membership = |linked: bool| crate::workspace::WorktreeSpaceMembership {
+            key: "/repo/.git".into(),
+            label: "repo".into(),
+            repo_root: "/repo".into(),
+            checkout_path: if linked {
+                "/wt/feat".into()
+            } else {
+                "/repo".into()
+            },
+            is_linked_worktree: linked,
+        };
+        let mut app = test_app();
+        let master = app.state.workspaces[0].id.clone();
+        app.state.workspaces[0].chat.team.role = ChatRole::Master;
+        app.state.workspaces[1].chat.team.role = ChatRole::Child {
+            parent: master.clone(),
+        };
+        app.state.workspaces[1].worktree_space = Some(membership(false));
+        let mut worktree = crate::workspace::Workspace::test_new("feat");
+        worktree.worktree_space = Some(membership(true));
+        worktree.chat.team.role = ChatRole::Child { parent: master };
+        app.state.workspaces.push(worktree);
+        let child = app.state.workspaces[1].id.clone();
+
+        let closed = call(
+            &mut app,
+            Method::ChatClose(ChatCloseParams {
+                workspace_id: child,
+                children: ChatCloseChildren::Release,
+                caller_pane_id: None,
+            }),
+        );
+        assert!(closed.get("error").is_none(), "{closed}");
+        let names = app
+            .state
+            .workspaces
+            .iter()
+            .map(|ws| ws.custom_name.clone().unwrap_or_default())
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["master", "feat"]);
+    }
+
+    #[test]
+    fn stopping_a_chat_without_a_running_agent_succeeds() {
+        let mut app = test_app();
+        let child = app.state.workspaces[1].id.clone();
+        let stopped = call(
+            &mut app,
+            Method::ChatStop(ChatWorkspaceParams {
+                workspace_id: Some(child),
+                caller_pane_id: None,
+            }),
+        );
+        assert!(stopped.get("error").is_none(), "{stopped}");
+        assert_eq!(app.state.workspaces.len(), 2);
     }
 
     #[test]
